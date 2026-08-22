@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RELEVÉ — éditeur de cartes</title>
+<style>
+  :root{
+    --encre:#0b1016;        /* fond : plan au négatif */
+    --grille:#141d26;
+    --trait:#243240;
+    --mine:#b9c6cf;         /* linework, texte */
+    --mine-faible:#5d6b76;
+    --repere:#7fb3c8;       /* sélection, mesure */
+    --alerte:#c9614a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--encre);color:var(--mine);overflow:hidden;
+    font:11px/1.5 "SF Mono","Roboto Mono",Menlo,Consolas,monospace;
+    letter-spacing:.05em;-webkit-font-smoothing:antialiased}
+
+  #cadre{display:grid;grid-template-columns:212px 1fr;grid-template-rows:38px 1fr 96px;
+    height:100vh}
+
+  header{grid-column:1/-1;display:flex;align-items:center;gap:18px;
+    padding:0 16px;border-bottom:1px solid var(--trait)}
+  header b{font-weight:500;letter-spacing:.42em;font-size:11px}
+  header span{color:var(--mine-faible)}
+  header .droite{margin-left:auto;display:flex;gap:8px}
+
+  aside{border-right:1px solid var(--trait);overflow-y:auto;padding:12px 12px 24px}
+  h4{font-size:9px;font-weight:500;letter-spacing:.22em;color:var(--mine-faible);
+    margin:16px 0 7px}
+  h4:first-child{margin-top:0}
+
+  .swatch{display:flex;align-items:center;gap:8px;width:100%;padding:5px 7px;
+    border:1px solid transparent;background:none;color:var(--mine);cursor:pointer;
+    font:inherit;letter-spacing:.05em;text-align:left}
+  .swatch:hover{border-color:var(--trait)}
+  .swatch[aria-pressed="true"]{border-color:var(--repere);background:#111a22}
+  .swatch i{width:13px;height:13px;flex:none;border:1px solid #2c3a46}
+  .swatch u{margin-left:auto;text-decoration:none;color:var(--mine-faible);font-size:9px}
+
+  .champ{margin:0 0 9px}
+  .champ label{display:flex;justify-content:space-between;color:var(--mine-faible);
+    margin-bottom:3px;font-size:10px}
+  .champ label em{font-style:normal;color:var(--repere)}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:2px;
+    background:var(--trait);outline:none;display:block}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:9px;
+    background:var(--mine);cursor:ew-resize}
+  input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;background:var(--mine)}
+
+  .rangee{display:flex;gap:5px;flex-wrap:wrap}
+  button.act{flex:1;min-width:64px;padding:6px 4px;background:none;border:1px solid var(--trait);
+    color:var(--mine);font:inherit;letter-spacing:.09em;cursor:pointer;font-size:10px}
+  button.act:hover{border-color:var(--repere);color:var(--repere)}
+  button.act[aria-pressed="true"]{border-color:var(--repere);background:#111a22;color:var(--repere)}
+  button.act:focus-visible{outline:1px solid var(--repere);outline-offset:2px}
+
+  #zone{position:relative;overflow:hidden;display:grid;place-items:center;background:var(--encre)}
+  #plan{cursor:crosshair;image-rendering:pixelated;border:1px solid var(--trait)}
+
+  #verdict{margin-top:9px;padding:8px 9px;border:1px solid var(--trait);font-size:10px;
+    color:var(--mine-faible);line-height:1.7}
+  #verdict b{display:block;color:var(--mine);font-weight:500;letter-spacing:.16em;
+    margin-bottom:4px;font-size:9px}
+  #verdict .ko{color:var(--alerte)}
+  #verdict .ok{color:var(--repere)}
+
+  footer{grid-column:1/-1;border-top:1px solid var(--trait);padding:8px 16px;
+    display:flex;gap:16px;align-items:stretch}
+  #coupe{flex:1;display:block}
+  #lecture{width:190px;flex:none;color:var(--mine-faible);font-size:10px;line-height:1.75}
+  #lecture b{color:var(--mine);font-weight:400}
+  .cle{color:var(--repere)}
+</style>
+</head>
+<body>
+<div id="cadre">
+
+  <header>
+    <b>RELEVÉ</b>
+    <span id="dim">80 × 80 · maille 3 m</span>
+    <span id="curseur">—</span>
+    <div class="droite">
+      <button class="act" id="bImport">Ouvrir un PNG</button>
+      <button class="act" id="bExport">Enregistrer le PNG</button>
+    </div>
+  </header>
+
+  <aside>
+    <h4>Couche</h4>
+    <div class="rangee">
+      <button class="act" id="mBiome" aria-pressed="true">Biomes</button>
+      <button class="act" id="mAlt">Altitude</button>
+    </div>
+
+    <h4>Code couleur</h4>
+    <div id="palette"></div>
+
+    <h4>Altitude du pinceau</h4>
+    <div class="champ">
+      <label>Cote posée <em id="vAlt">0 m</em></label>
+      <input id="sAlt" type="range" min="-20" max="20" step="0.5" value="0">
+    </div>
+    <div class="rangee">
+      <button class="act" id="aPose" aria-pressed="true">Poser</button>
+      <button class="act" id="aMonte">Monter</button>
+      <button class="act" id="aDescend">Descendre</button>
+      <button class="act" id="aLisse">Adoucir</button>
+    </div>
+
+    <h4>Pinceau</h4>
+    <div class="champ">
+      <label>Rayon <em id="vRay">3</em></label>
+      <input id="sRay" type="range" min="1" max="14" step="1" value="3">
+    </div>
+    <div class="rangee">
+      <button class="act" id="tPinceau" aria-pressed="true">Tracer</button>
+      <button class="act" id="tRemplir">Remplir</button>
+      <button class="act" id="tPipette">Prélever</button>
+    </div>
+
+    <h4>Contrôle</h4>
+    <div class="rangee">
+      <button class="act" id="bVerif">Vérifier</button>
+      <button class="act" id="bVider">Tout effacer</button>
+    </div>
+    <div id="verdict"><b>AUCUN CONTRÔLE</b>Trace ta carte, puis vérifie qu'on peut la parcourir.</div>
+  </aside>
+
+  <div id="zone"><canvas id="plan"></canvas></div>
+
+  <footer>
+    <canvas id="coupe"></canvas>
+    <div id="lecture">
+      <b>Coupe</b> — survole le plan pour lire le profil de la ligne.<br>
+      <span class="cle">1–5</span> code couleur · <span class="cle">B</span>/<span class="cle">A</span> couche<br>
+      <span class="cle">[ ]</span> rayon · <span class="cle">Alt</span> prélever · <span class="cle">Ctrl+Z</span> annuler
+    </div>
+  </footer>
+</div>
+
+<input type="file" id="fichier" accept="image/png" hidden>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════
+   RELEVÉ — éditeur de cartes du scoléopandre.
+
+   Ce n'est pas un logiciel de dessin, c'est un relevé topographique : les
+   courbes de niveau et les hachures de falaise se tracent toutes seules à
+   partir de l'altitude, et la coupe se lit en bas. Une carte qu'on ne peut
+   pas lire en relief est une carte qu'on dessinera plate.
+
+   Deux couches, une seule image :
+     PNG de 2N × N — moitié gauche le biome (couleur), moitié droite la cote
+     (gris, 128 = 0 m, ±127 = ±20 m). Modifiable dans n'importe quel outil.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const N = 80, MAILLE = 3, ALT_MAX = 20;
+
+const BIOMES = [
+  {id:0, nom:'Roche',      code:'#000000', cle:'1', plein:true},
+  {id:1, nom:'Souterrain', code:'#8a4a22', cle:'2'},
+  {id:2, nom:'Glacière',   code:'#2f7fa8', cle:'3'},
+  {id:3, nom:'Barrage',    code:'#9a8b4a', cle:'4'},
+  {id:4, nom:'Surface',    code:'#cfd8dd', cle:'5'},
+];
+const RVB = BIOMES.map(b => [parseInt(b.code.slice(1,3),16),
+                             parseInt(b.code.slice(3,5),16),
+                             parseInt(b.code.slice(5,7),16)]);
+
+const biome = new Uint8Array(N*N);           // 0 = roche
+const alt   = new Float32Array(N*N);
+const ix = (x,z) => z*N + x;
+
+let couche='biome', outil='pinceau', modeAlt='pose';
+let choix=1, cote=0, rayon=3;
+let survol=null, piege=null;
+const pile=[];
+
+const plan=document.getElementById('plan'), ctx=plan.getContext('2d');
+const coupe=document.getElementById('coupe'), cctx=coupe.getContext('2d');
+let CASE=8;
+
+/* ── palette ── */
+const elPal=document.getElementById('palette');
+BIOMES.forEach(b=>{
+  const el=document.createElement('button');
+  el.className='swatch'; el.type='button';
+  el.setAttribute('aria-pressed', String(b.id===choix));
+  el.dataset.id=b.id;
+  el.innerHTML=`<i style="background:${b.code}"></i>${b.nom}<u>${b.cle}</u>`;
+  el.addEventListener('click',()=>{choix=b.id;couche='biome';majBoutons();dessiner();});
+  elPal.appendChild(el);
+});
+
+function majBoutons(){
+  [...elPal.children].forEach(el=>
+    el.setAttribute('aria-pressed', String(+el.dataset.id===choix)));
+  const p=(id,v)=>document.getElementById(id).setAttribute('aria-pressed',String(v));
+  p('mBiome',couche==='biome'); p('mAlt',couche==='alt');
+  p('aPose',modeAlt==='pose'); p('aMonte',modeAlt==='monte');
+  p('aDescend',modeAlt==='descend'); p('aLisse',modeAlt==='lisse');
+  p('tPinceau',outil==='pinceau'); p('tRemplir',outil==='remplir');
+  p('tPipette',outil==='pipette');
+}
+
+/* ── historique ── */
+function memoriser(){
+  pile.push({b:biome.slice(), a:alt.slice()});
+  if(pile.length>40) pile.shift();
+}
+function annuler(){
+  const e=pile.pop(); if(!e) return;
+  biome.set(e.b); alt.set(e.a); piege=null; dessiner();
+}
+
+/* ── tracé ── */
+function poser(cx,cz){
+  const r=rayon;
+  for(let dz=-r;dz<=r;dz++) for(let dx=-r;dx<=r;dx++){
+    if(dx*dx+dz*dz > r*r) continue;
+    const x=cx+dx, z=cz+dz;
+    if(x<0||z<0||x>=N||z>=N) continue;
+    const i=ix(x,z);
+    if(couche==='biome'){
+      biome[i]=choix;
+      if(choix===0) alt[i]=0;
+    } else {
+      if(biome[i]===0) continue;             // pas de cote dans la roche
+      if(modeAlt==='pose') alt[i]=cote;
+      else if(modeAlt==='monte') alt[i]=Math.min(ALT_MAX, alt[i]+0.35);
+      else if(modeAlt==='descend') alt[i]=Math.max(-ALT_MAX, alt[i]-0.35);
+      else {                                  // adoucir
+        let s=0,n=0;
+        for(let b=-1;b<=1;b++) for(let a=-1;a<=1;a++){
+          const j=x+a, k=z+b;
+          if(j<0||k<0||j>=N||k>=N||biome[ix(j,k)]===0) continue;
+          s+=alt[ix(j,k)]; n++;
+        }
+        if(n) alt[i]=lerp(alt[i], s/n, 0.5);
+      }
+    }
+  }
+  piege=null;
+}
+function remplir(cx,cz){
+  const src=biome[ix(cx,cz)];
+  if(src===choix) return;
+  const pileF=[[cx,cz]];
+  while(pileF.length){
+    const [x,z]=pileF.pop();
+    if(x<0||z<0||x>=N||z>=N) continue;
+    const i=ix(x,z);
+    if(biome[i]!==src) continue;
+    biome[i]=choix; if(choix===0) alt[i]=0;
+    pileF.push([x+1,z],[x-1,z],[x,z+1],[x,z-1]);
+  }
+  piege=null;
+}
+const lerp=(a,b,t)=>a+(b-a)*t;
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+
+/* ── rendu du plan ─────────────────────────────────────────────────────
+   Le fond porte la couleur du biome, assombrie ou éclaircie selon la cote.
+   Par-dessus : les courbes de niveau tous les 4 m, et des hachures sur les
+   arêtes où la dénivellation dépasse 6 m — la falaise se voit alors sans
+   avoir à cliquer. */
+const PAS_COURBE = 4;
+
+function dessiner(){
+  const w=N*CASE;
+  if(plan.width!==w){ plan.width=w; plan.height=w; }
+  ctx.fillStyle='#0b1016'; ctx.fillRect(0,0,w,w);
+
+  for(let z=0;z<N;z++) for(let x=0;x<N;x++){
+    const i=ix(x,z), b=biome[i];
+    if(b===0){
+      ctx.fillStyle = ((x>>2)+(z>>2))&1 ? '#0e141b' : '#0b1016';
+      ctx.fillRect(x*CASE,z*CASE,CASE,CASE);
+      continue;
+    }
+    const [r,g,bl]=RVB[b];
+    const t=clamp(alt[i]/ALT_MAX,-1,1);
+    const k=0.42+0.58*(t*0.5+0.5);            // haut = clair, bas = sombre
+    ctx.fillStyle=`rgb(${r*k|0},${g*k|0},${bl*k|0})`;
+    ctx.fillRect(x*CASE,z*CASE,CASE,CASE);
+  }
+
+  // courbes de niveau
+  ctx.strokeStyle='rgba(185,198,207,.34)'; ctx.lineWidth=1;
+  ctx.beginPath();
+  for(let z=0;z<N;z++) for(let x=0;x<N;x++){
+    const i=ix(x,z); if(biome[i]===0) continue;
+    for(const [dx,dz] of [[1,0],[0,1]]){
+      const j=x+dx, k=z+dz;
+      if(j>=N||k>=N||biome[ix(j,k)]===0) continue;
+      const a=alt[i], b2=alt[ix(j,k)];
+      const n1=Math.floor(a/PAS_COURBE), n2=Math.floor(b2/PAS_COURBE);
+      if(n1===n2) continue;
+      if(dx){ ctx.moveTo((x+1)*CASE, z*CASE); ctx.lineTo((x+1)*CASE,(z+1)*CASE); }
+      else   { ctx.moveTo(x*CASE,(z+1)*CASE); ctx.lineTo((x+1)*CASE,(z+1)*CASE); }
+    }
+  }
+  ctx.stroke();
+
+  // hachures de falaise
+  ctx.strokeStyle='rgba(201,97,74,.75)'; ctx.lineWidth=1.4;
+  ctx.beginPath();
+  for(let z=0;z<N;z++) for(let x=0;x<N;x++){
+    const i=ix(x,z); if(biome[i]===0) continue;
+    for(const [dx,dz] of [[1,0],[0,1]]){
+      const j=x+dx,k=z+dz;
+      if(j>=N||k>=N||biome[ix(j,k)]===0) continue;
+      if(Math.abs(alt[i]-alt[ix(j,k)])<6) continue;
+      const mx=(x+0.5+dx*0.5)*CASE, my=(z+0.5+dz*0.5)*CASE;
+      const px=dz*CASE*0.42, py=dx*CASE*0.42;
+      ctx.moveTo(mx-px,my-py); ctx.lineTo(mx+px,my+py);
+    }
+  }
+  ctx.stroke();
+
+  // culs-de-sac relevés au dernier contrôle
+  if(piege){
+    ctx.fillStyle='rgba(201,97,74,.5)';
+    for(const i of piege) ctx.fillRect((i%N)*CASE,((i/N)|0)*CASE,CASE,CASE);
+  }
+
+  // amorces de graticule tous les 10 carreaux
+  ctx.strokeStyle='rgba(36,50,64,.9)'; ctx.lineWidth=1; ctx.beginPath();
+  for(let g=10;g<N;g+=10){
+    ctx.moveTo(g*CASE,0); ctx.lineTo(g*CASE,w);
+    ctx.moveTo(0,g*CASE); ctx.lineTo(w,g*CASE);
+  }
+  ctx.stroke();
+
+  if(survol){
+    ctx.strokeStyle='rgba(127,179,200,.85)'; ctx.lineWidth=1;
+    ctx.beginPath();
+    ctx.arc((survol.x+0.5)*CASE,(survol.z+0.5)*CASE,rayon*CASE,0,6.283);
+    ctx.stroke();
+    ctx.strokeStyle='rgba(127,179,200,.25)';
+    ctx.beginPath();
+    ctx.moveTo(0,(survol.z+0.5)*CASE); ctx.lineTo(w,(survol.z+0.5)*CASE);
+    ctx.stroke();
+  }
+  dessinerCoupe();
+}
+
+/* ── coupe altimétrique : la preuve visuelle qu'un niveau est plat ── */
+function dessinerCoupe(){
+  const w=coupe.clientWidth||600, h=80;
+  if(coupe.width!==w){ coupe.width=w; coupe.height=h; }
+  cctx.clearRect(0,0,w,h);
+  const z = survol ? survol.z : (N>>1);
+  const Y = a => h*0.5 - (a/ALT_MAX)*(h*0.42);
+
+  cctx.strokeStyle='rgba(36,50,64,.9)'; cctx.lineWidth=1;
+  for(const a of [-20,-10,0,10,20]){
+    cctx.beginPath(); cctx.moveTo(0,Y(a)); cctx.lineTo(w,Y(a)); cctx.stroke();
+  }
+  cctx.fillStyle='#5d6b76'; cctx.font='9px monospace';
+  cctx.fillText('+20', 3, Y(20)+9); cctx.fillText('0', 3, Y(0)-3);
+  cctx.fillText('-20', 3, Y(-20)-3);
+
+  for(let x=0;x<N;x++){
+    const i=ix(x,z);
+    const x0=x*w/N, x1=(x+1)*w/N;
+    if(biome[i]===0){
+      cctx.fillStyle='#141d26'; cctx.fillRect(x0,0,x1-x0,h);
+      continue;
+    }
+    const [r,g,b]=RVB[biome[i]];
+    cctx.fillStyle=`rgba(${r},${g},${b},.85)`;
+    const y=Y(alt[i]);
+    cctx.fillRect(x0, y, Math.max(1,x1-x0), h-y);
+  }
+  cctx.fillStyle='#b9c6cf'; cctx.font='9px monospace';
+  cctx.fillText('ligne '+z, w-58, 11);
+}
+
+/* ── contrôle de parcours ──────────────────────────────────────────────
+   On ne corrige rien : la falaise que tu traces est voulue. On signale
+   seulement les endroits d'où l'on ne peut plus ressortir — on descend
+   librement, on ne remonte que d'un pas de 1,25 m. */
+const PAS_JOUEUR = 1.25;
+
+function verifier(){
+  const sol=[]; for(let i=0;i<N*N;i++) if(biome[i]!==0) sol.push(i);
+  const el=document.getElementById('verdict');
+  if(sol.length<20){
+    el.innerHTML='<b>CARTE TROP PETITE</b>Trace au moins une salle avant de vérifier.';
+    piege=null; dessiner(); return;
+  }
+  const VOIS=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+  const parcours=(dep,rev)=>{
+    const vu=new Uint8Array(N*N); vu[dep]=1; const p=[dep]; let n=1;
+    while(p.length){
+      const k=p.pop(), x=k%N, z=(k/N)|0;
+      for(const [dx,dz] of VOIS){
+        const j=x+dx, m=z+dz;
+        if(j<0||m<0||j>=N||m>=N) continue;
+        const q=ix(j,m);
+        if(biome[q]===0||vu[q]) continue;
+        const montee = rev ? alt[k]-alt[q] : alt[q]-alt[k];
+        if(montee>PAS_JOUEUR) continue;
+        vu[q]=1; n++; p.push(q);
+      }
+    }
+    return {vu,n};
+  };
+  // on part du point le plus bas : le pire cas pour remonter
+  let dep=sol[0]; for(const i of sol) if(alt[i]<alt[dep]) dep=i;
+  const A=parcours(dep,false), R=parcours(dep,true);
+  const pieges=[]; for(let i=0;i<N*N;i++) if(A.vu[i]&&!R.vu[i]) pieges.push(i);
+
+  // parties jamais atteintes depuis le bas
+  let orphelins=0; for(const i of sol) if(!A.vu[i]) orphelins++;
+
+  let mn=Infinity,mx=-Infinity;
+  for(const i of sol){ mn=Math.min(mn,alt[i]); mx=Math.max(mx,alt[i]); }
+  const parts=[];
+  for(let b=1;b<BIOMES.length;b++){
+    const c=sol.filter(i=>biome[i]===b).length;
+    if(c) parts.push(`${BIOMES[b].nom} ${Math.round(100*c/sol.length)}%`);
+  }
+  piege = pieges.length ? pieges : null;
+  el.innerHTML =
+    `<b>CONTRÔLE</b>`+
+    `Dénivelé <span class="ok">${(mx-mn).toFixed(1)} m</span> · `+
+    `sol ${Math.round(100*sol.length/(N*N))}% de la planche<br>`+
+    (pieges.length
+      ? `<span class="ko">${pieges.length} cases sans issue</span> — marquées en rouge. `+
+        `On y tombe, on n'en remonte pas.<br>`
+      : `<span class="ok">Aucune case sans issue.</span><br>`)+
+    (orphelins
+      ? `<span class="ko">${orphelins} cases coupées du reste</span> depuis le point bas.<br>`
+      : `<span class="ok">Tout se rejoint depuis le point bas.</span><br>`)+
+    parts.join(' · ');
+  dessiner();
+}
+
+/* ── import / export PNG ── */
+function exporter(){
+  const c=document.createElement('canvas'); c.width=N*2; c.height=N;
+  const g=c.getContext('2d'); const img=g.createImageData(N*2,N);
+  for(let z=0;z<N;z++) for(let x=0;x<N;x++){
+    const i=ix(x,z);
+    const [r,gg,b]=RVB[biome[i]];
+    let p=(z*(N*2)+x)*4;
+    img.data[p]=r; img.data[p+1]=gg; img.data[p+2]=b; img.data[p+3]=255;
+    const v = biome[i]===0 ? 128
+            : Math.round(128 + clamp(alt[i]/ALT_MAX,-1,1)*127);
+    p=(z*(N*2)+N+x)*4;
+    img.data[p]=img.data[p+1]=img.data[p+2]=v; img.data[p+3]=255;
+  }
+  g.putImageData(img,0,0);
+  const a=document.createElement('a');
+  a.download='carte-scoleopandre.png';
+  a.href=c.toDataURL('image/png');
+  a.click();
+}
+function importer(fichier){
+  const img=new Image();
+  img.onload=()=>{
+    if(img.width!==N*2||img.height!==N){
+      document.getElementById('verdict').innerHTML=
+        `<b>FORMAT INATTENDU</b>Il faut une image de ${N*2} × ${N} : `+
+        `le biome à gauche, la cote en gris à droite. Reçu ${img.width} × ${img.height}.`;
+      return;
+    }
+    const c=document.createElement('canvas'); c.width=img.width; c.height=img.height;
+    const g=c.getContext('2d'); g.drawImage(img,0,0);
+    const d=g.getImageData(0,0,img.width,img.height).data;
+    memoriser();
+    for(let z=0;z<N;z++) for(let x=0;x<N;x++){
+      let p=(z*(N*2)+x)*4;
+      const r=d[p],gg=d[p+1],b=d[p+2];
+      let best=0,bd=1e9;
+      RVB.forEach(([R,G,B],k)=>{
+        const dd=(r-R)**2+(gg-G)**2+(b-B)**2;
+        if(dd<bd){bd=dd;best=k;}
+      });
+      const i=ix(x,z); biome[i]=best;
+      p=(z*(N*2)+N+x)*4;
+      alt[i]= best===0 ? 0 : (d[p]-128)/127*ALT_MAX;
+    }
+    piege=null; verifier();
+  };
+  img.src=URL.createObjectURL(fichier);
+}
+
+/* ── entrées ── */
+function caseSous(e){
+  const r=plan.getBoundingClientRect();
+  const x=Math.floor((e.clientX-r.left)/CASE), z=Math.floor((e.clientY-r.top)/CASE);
+  return (x<0||z<0||x>=N||z>=N)?null:{x,z};
+}
+let trace=false;
+plan.addEventListener('pointerdown',e=>{
+  const c=caseSous(e); if(!c) return;
+  plan.setPointerCapture(e.pointerId);
+  if(outil==='pipette'||e.altKey){
+    const i=ix(c.x,c.z);
+    if(couche==='biome'){choix=biome[i];}
+    else{cote=alt[i];document.getElementById('sAlt').value=cote;
+         document.getElementById('vAlt').textContent=cote.toFixed(1)+' m';}
+    majBoutons(); dessiner(); return;
+  }
+  memoriser(); trace=true;
+  outil==='remplir' ? remplir(c.x,c.z) : poser(c.x,c.z);
+  dessiner();
+});
+plan.addEventListener('pointermove',e=>{
+  const c=caseSous(e); survol=c;
+  if(c){
+    const i=ix(c.x,c.z);
+    document.getElementById('curseur').textContent=
+      `${c.x}, ${c.z} · ${BIOMES[biome[i]].nom} · ${alt[i].toFixed(1)} m`;
+  }
+  if(trace&&c&&outil!=='remplir') poser(c.x,c.z);
+  dessiner();
+});
+addEventListener('pointerup',()=>{trace=false});
+plan.addEventListener('pointerleave',()=>{survol=null;dessiner()});
+
+const lier=(id,fn)=>document.getElementById(id).addEventListener('click',()=>{fn();majBoutons();dessiner();});
+lier('mBiome',()=>couche='biome');
+lier('mAlt',()=>couche='alt');
+lier('aPose',()=>{modeAlt='pose';couche='alt'});
+lier('aMonte',()=>{modeAlt='monte';couche='alt'});
+lier('aDescend',()=>{modeAlt='descend';couche='alt'});
+lier('aLisse',()=>{modeAlt='lisse';couche='alt'});
+lier('tPinceau',()=>outil='pinceau');
+lier('tRemplir',()=>outil='remplir');
+lier('tPipette',()=>outil='pipette');
+document.getElementById('bVerif').addEventListener('click',verifier);
+document.getElementById('bVider').addEventListener('click',()=>{
+  memoriser(); biome.fill(0); alt.fill(0); piege=null;
+  document.getElementById('verdict').innerHTML=
+    '<b>PLANCHE VIERGE</b>Trace ta carte, puis vérifie qu\'on peut la parcourir.';
+  dessiner();
+});
+document.getElementById('bExport').addEventListener('click',exporter);
+document.getElementById('bImport').addEventListener('click',()=>
+  document.getElementById('fichier').click());
+document.getElementById('fichier').addEventListener('change',e=>{
+  if(e.target.files[0]) importer(e.target.files[0]);
+});
+addEventListener('dragover',e=>e.preventDefault());
+addEventListener('drop',e=>{
+  e.preventDefault();
+  const f=e.dataTransfer.files[0];
+  if(f&&f.type==='image/png') importer(f);
+});
+
+document.getElementById('sAlt').addEventListener('input',e=>{
+  cote=parseFloat(e.target.value);
+  document.getElementById('vAlt').textContent=cote.toFixed(1)+' m';
+  couche='alt'; majBoutons();
+});
+document.getElementById('sRay').addEventListener('input',e=>{
+  rayon=parseInt(e.target.value);
+  document.getElementById('vRay').textContent=rayon;
+  dessiner();
+});
+addEventListener('keydown',e=>{
+  if(e.ctrlKey&&e.code==='KeyZ'){e.preventDefault();annuler();return;}
+  const b=BIOMES.find(b=>b.cle===e.key);
+  if(b){choix=b.id;couche='biome';majBoutons();dessiner();return;}
+  if(e.code==='KeyB'){couche='biome';majBoutons();dessiner();}
+  if(e.code==='KeyA'){couche='alt';majBoutons();dessiner();}
+  if(e.key==='['){rayon=Math.max(1,rayon-1);}
+  if(e.key===']'){rayon=Math.min(14,rayon+1);}
+  if(e.key==='['||e.key===']'){
+    document.getElementById('sRay').value=rayon;
+    document.getElementById('vRay').textContent=rayon; dessiner();
+  }
+});
+
+function ajuster(){
+  const z=document.getElementById('zone');
+  CASE=Math.max(4,Math.floor(Math.min(z.clientWidth-24,z.clientHeight-24)/N));
+  dessiner();
+}
+addEventListener('resize',ajuster);
+
+/* ── une amorce, pour ne pas ouvrir sur une planche vide ── */
+(function amorce(){
+  const salles=[[18,20,11,-9,3],[46,18,9,-4,1],[24,50,10,4,1],[54,52,12,13,4],[38,36,8,0,1]];
+  for(const [cx,cz,r,e,b] of salles){
+    for(let z=cz-r;z<=cz+r;z++) for(let x=cx-r;x<=cx+r;x++){
+      if((x-cx)**2+(z-cz)**2>r*r) continue;
+      if(x<1||z<1||x>=N-1||z>=N-1) continue;
+      biome[ix(x,z)]=b; alt[ix(x,z)]=e;
+    }
+  }
+  for(let k=0;k<salles.length-1;k++){
+    const [ax,az,,ae,ab]=salles[k], [bx,bz,,be]=salles[k+1];
+    let x=ax,z=az,t=0;
+    const pas=Math.abs(bx-ax)+Math.abs(bz-az);
+    while(x!==bx||z!==bz){
+      for(let d=-1;d<=1;d++){
+        const zz=z+d; if(zz<1||zz>=N-1) continue;
+        const i=ix(x,zz);
+        if(biome[i]===0){ biome[i]=ab; alt[i]=lerp(ae,be,t/pas); }
+      }
+      if(x!==bx) x+=Math.sign(bx-x); else z+=Math.sign(bz-z);
+      t++;
+    }
+  }
+  ajuster(); verifier();
+})();
+</script>
+</body>
+</html>

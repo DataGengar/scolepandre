@@ -1,0 +1,33 @@
+{
+  "_avertissement": "GÉNÉRÉ par outils/exporter_biomes.py — ne pas éditer. La source est src/monde/biomes.js.",
+  "roche": "#000000",
+  "biomes": [
+    {
+      "nom": "SOUTERRAIN",
+      "code": "#8a4a22"
+    },
+    {
+      "nom": "GLACIÈRE",
+      "code": "#2f7fa8"
+    },
+    {
+      "nom": "BARRAGE",
+      "code": "#9a8b4a"
+    },
+    {
+      "nom": "SURFACE GELÉE",
+      "code": "#cfd8dd"
+    },
+    {
+      "nom": "VILLE ROUGE",
+      "code": "#7a1410"
+    }
+  ],
+  "touches": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5"
+  ]
+}
