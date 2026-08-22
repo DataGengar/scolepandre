@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SCOLÉOPANDRE — v3</title>
+<!--
+  Cette page ne contient QUE le markup et le style. Toute la logique vit dans
+  src/. Les valeurs par défaut des curseurs ne sont plus écrites ici : le
+  panneau RÉGLAGES est construit à partir de src/setup.js (voir ui/reglages.js),
+  ce qui évite qu'un défaut du HTML contredise un défaut du code.
+
+  Les modules ES exigent un serveur :   python -m http.server 8000
+  Pour un fichier unique double-cliquable :  python outils/bundler.py
+-->
+<style>
+  :root{--void:#07080a;--bone:#cfc7b4;--signal:#8fa88c;--alarm:#b4553f;--dim:#4a4a46;--rule:#1c1e21}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--void);overflow:hidden;color:var(--bone);
+    font-family:"SF Mono","Roboto Mono",Menlo,Consolas,monospace;-webkit-font-smoothing:antialiased}
+  #gl{display:block;width:100vw;height:100vh}
+  canvas{touch-action:none}
+  .panel{position:fixed;background:rgba(7,8,10,.84);border:1px solid var(--rule);
+    backdrop-filter:blur(2px);font-size:10px;letter-spacing:.06em;line-height:1.5}
+  #scope{top:14px;right:14px;width:284px}
+  #scopeHead{display:flex;justify-content:space-between;align-items:baseline;
+    padding:7px 9px;border-bottom:1px solid var(--rule);color:var(--dim)}
+  #scopeHead b{color:var(--bone);font-weight:500;letter-spacing:.14em}
+  #dbg{display:block;width:284px;height:284px}
+  #readout{padding:7px 9px;border-top:1px solid var(--rule);color:var(--dim)}
+  #readout div{display:flex;justify-content:space-between}
+  #readout span{color:var(--signal)}#readout span.hot{color:var(--alarm)}
+  #tune{width:100%;padding:0;max-height:46vh;overflow:auto;text-align:left}
+  #menuOnglets{display:flex;gap:6px;justify-content:center;margin:20px 0 16px}
+  .mo{padding:7px 16px;background:none;border:1px solid var(--rule);color:var(--dim);
+    font:inherit;font-size:10px;letter-spacing:.16em;cursor:pointer}
+  .mo:hover{color:var(--bone);border-color:var(--signal)}
+  .mo[aria-pressed="true"]{color:var(--bone);border-color:var(--signal);background:#11161b}
+  .mvue{min-height:210px}
+  #veil .in{max-width:560px}
+  #grille{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;max-height:44vh;overflow:auto}
+  .carte{aspect-ratio:2/3;border:1px solid var(--rule);display:grid;place-items:center;
+    font-size:8px;letter-spacing:.06em;color:var(--dim);text-align:center;padding:3px;line-height:1.3}
+  .carte.eue{color:var(--bone)}
+  #objectif{position:fixed;top:14px;left:14px;padding:8px 11px;font-size:10px;
+    letter-spacing:.1em;background:rgba(7,8,10,.8);border:1px solid var(--rule)}
+  #objectif b{color:var(--signal);font-weight:400}
+  #inv{position:fixed;inset:0;background:rgba(5,6,8,.94);z-index:7;display:none;
+    padding:60px 8vw;overflow:auto}
+  #inv h2{font-size:11px;font-weight:400;letter-spacing:.4em;margin-bottom:18px}
+  #inv .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:9px}
+  #tune h4{font-size:10px;font-weight:500;letter-spacing:.14em;color:var(--dim);margin-bottom:8px}
+  .row{margin:0 0 7px}
+  .row label{display:flex;justify-content:space-between;color:var(--dim);margin-bottom:2px}
+  .row label i{font-style:normal;color:var(--signal)}
+  .row input{-webkit-appearance:none;appearance:none;width:100%;height:2px;background:var(--rule);outline:none}
+  .row input::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:9px;background:var(--bone);cursor:ns-resize}
+  .row input::-moz-range-thumb{width:9px;height:9px;border:0;background:var(--bone)}
+  .grp{border-top:1px solid var(--rule);margin:10px 0 8px;padding-top:8px;color:var(--dim);letter-spacing:.14em}
+
+  /* ═══ JAUGE DE CHALEUR ═══
+     En v2 la chaleur était noyée dans une ligne de texte, ce qui explique en
+     partie pourquoi « le froid ne faisait rien » : on ne le voyait pas. */
+  #chaleur{position:fixed;left:14px;top:46px;width:186px;padding:6px 8px;
+    background:rgba(7,8,10,.8);border:1px solid var(--rule);font-size:9px;letter-spacing:.12em}
+  #chaleurRail{height:3px;background:#15161a;margin-top:5px;overflow:hidden}
+  #chaleurBarre{height:100%;width:100%;background:var(--signal);transition:width .2s linear,background .4s}
+  #chaleurTxt{color:var(--dim)}
+  #chaleur.critique{animation:battre 1.1s ease-in-out infinite}
+  @keyframes battre{0%,100%{border-color:var(--rule)}50%{border-color:var(--alarm)}}
+  @media (prefers-reduced-motion:reduce){#chaleur.critique{animation:none;border-color:var(--alarm)}}
+
+  /* ligne d'alerte : paliers de froid, cachettes, effondrements */
+  #alerte{position:fixed;left:0;right:0;bottom:64px;text-align:center;font-size:11px;
+    letter-spacing:.34em;color:var(--alarm);opacity:0;transition:opacity .45s;pointer-events:none}
+
+  #bar{position:fixed;left:0;right:0;bottom:0;padding:9px 16px;display:flex;
+    justify-content:space-between;align-items:flex-end;pointer-events:none;font-size:10px;letter-spacing:.08em}
+  #keys{color:var(--dim);max-width:64vw}#keys b{color:var(--signal);font-weight:400}
+  #right{text-align:right;color:var(--dim)}
+  #lures{color:var(--bone);letter-spacing:.34em;font-size:13px}
+  #lures u{text-decoration:none;color:var(--rule)}
+  #place{color:var(--signal);letter-spacing:.2em}
+  #nappe{color:var(--dim);font-size:9px}
+
+  #veil{position:fixed;inset:0;display:grid;place-items:center;cursor:pointer;
+    background:radial-gradient(ellipse at 50% 55%,#0d0f12 0%,#050506 70%);z-index:9}
+  #veil .in{text-align:center;max-width:470px;padding:0 24px}
+  #veil h1{font-size:13px;font-weight:400;letter-spacing:.62em;margin-bottom:22px;text-indent:.62em}
+  #veil p{font-size:11px;line-height:1.95;color:var(--dim);letter-spacing:.05em;margin-bottom:9px}
+  #veil em{font-style:normal;color:var(--signal)}
+  #veil .go{margin-top:24px;font-size:10px;letter-spacing:.3em;opacity:.45;animation:pulse 2.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.2}50%{opacity:.7}}
+  @media (prefers-reduced-motion:reduce){#veil .go{animation:none;opacity:.5}}
+
+  #caught{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;
+    display:grid;place-items:center;transition:opacity .15s;z-index:8}
+  #caught span{font-size:11px;letter-spacing:.42em;color:var(--alarm)}
+
+  /* ═══ CHARGEMENT ═══
+     La grille est passée de 544² à 1088². Mesurée à ~1,4 s grâce à la
+     relaxation en file d'attente et à l'image intégrale, mais une machine
+     lente peut mettre plusieurs secondes : sans barre, l'onglet a l'air
+     planté. */
+  #charge{position:fixed;inset:0;background:#050506;z-index:11;display:none;place-items:center}
+  #charge .in{width:min(420px,70vw);text-align:center}
+  #charge h2{font-size:11px;font-weight:400;letter-spacing:.5em;margin-bottom:22px;color:var(--bone)}
+  #chargeTxt{font-size:10px;letter-spacing:.16em;color:var(--dim);margin-bottom:10px;min-height:14px}
+  #chargeRail{height:2px;background:var(--rule)}
+  #chargeBarre{height:100%;width:0;background:var(--signal);transition:width .25s}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="panel" id="scope">
+  <div id="scopeHead"><b>SISMOGRAPHE</b><span id="stateLbl">—</span></div>
+  <canvas id="dbg" width="284" height="284"></canvas>
+  <div id="readout">
+    <div>distance<span id="rDist">—</span></div>
+    <div>certitude<span id="rConf">—</span></div>
+    <div>piste<span id="rTrail">—</span></div>
+    <div>pression<span id="rPress">—</span></div>
+    <div>jeunes<span id="rJeunes">—</span></div>
+    <div>trajet<span id="rPath">—</span></div>
+  </div>
+</div>
+
+<!-- le contenu est généré par ui/reglages.js à partir de src/setup.js -->
+<div id="tune"></div>
+
+<div id="bar">
+  <div id="keys"><b>ZQSD</b> avancer · <b>MAJ</b> courir · <b>F</b> torche &middot;
+    <b>C</b> ramper <b>(MAJ.VERR</b> bascule<b>)</b> · <b>E</b> cachette / échelle ·
+    <b>CLIC</b>/<b>ESPACE</b> lancer · <b>R</b> nouveau monde ·
+    <b>TAB</b> sismographe · <b>I</b> collection · <b>P</b> réglages</div>
+  <div id="right">
+    <div id="lures">—</div>
+    <div id="place">—</div>
+    <div id="nappe">—</div>
+  </div>
+</div>
+
+<div id="chaleur">
+  CHALEUR <span id="chaleurTxt">100%</span>
+  <div id="chaleurRail"><div id="chaleurBarre"></div></div>
+</div>
+<div id="alerte"></div>
+
+<div id="caught"><span>ELLE T'A TROUVÉ</span></div>
+<div id="objectif">SORTIE <b id="oDist">—</b> · CARTES <b id="oCartes">0</b> · <b id="oProf">0 m</b></div>
+<div id="inv"><h2>COLLECTION</h2><div class="g" id="invG"></div></div>
+
+<div id="charge"><div class="in">
+  <h2>DESCENTE</h2>
+  <div id="chargeTxt">…</div>
+  <div id="chargeRail"><div id="chargeBarre"></div></div>
+</div></div>
+
+<div id="veil"><div class="in" id="menuIn">
+  <h1>SCOLÉOPANDRE</h1>
+  <p id="mBrief">Elle est aveugle. Elle ne connaît que le <em>sol qui tremble</em> et
+     l'<em>odeur que tu laisses</em>. <em>Ramper n'imprime aucune trace.</em><br>
+     Ses <em>yeux rouges</em> percent le fog : s'ils grossissent et virent à l'orange,
+     elle t'a.<br>
+     Le <em>froid</em> te tue en surface — <em>descendre réchauffe</em>.
+     Cherche les <em>trous</em> pour disparaître.<br>
+     Trouve la <em>sortie</em>. Ramasse les <em>cartes</em> : les plus rares sont au fond.</p>
+  <div id="menuOnglets">
+    <button class="mo" data-vue="jouer" aria-pressed="true">Descendre</button>
+    <button class="mo" data-vue="reglages">Réglages</button>
+    <button class="mo" data-vue="collection">Collection</button>
+  </div>
+  <div id="mJouer" class="mvue"><div class="go">CLIQUER ICI POUR DESCENDRE</div>
+    <p style="margin-top:14px">ÉCHAP à tout moment pour revenir ici — la souris redevient utilisable.</p></div>
+  <div id="mReglages" class="mvue" hidden></div>
+  <div id="mCollection" class="mvue" hidden><div id="grille"></div></div>
+</div></div>
+
+<script type="module" src="src/jeu.js"></script>
+</body>
+</html>
