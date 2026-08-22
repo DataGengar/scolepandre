@@ -62,7 +62,8 @@ import * as Audio from './audio/index.js';
 import {proj, view, cam, majTremblement, construireVue} from './rendu/camera.js';
 import {rendre, resize, visuel, tampon} from './rendu/pipeline.js';
 import {dessinerScope, basculer as basculerScope} from './rendu/sismographe.js';
-import {construireMenu, ouvrirChargement, majChargement, fermerChargement, afficherVoile} from './ui/menu.js';
+import {construireMenu, ouvrirChargement, majChargement, fermerChargement,
+        afficherVoile, messageMenu} from './ui/menu.js';
 import {majHUD, majFlash, flash} from './ui/hud.js';
 
 /* ─────────────── état global de la partie ─────────────── */
@@ -77,6 +78,9 @@ const jeu = {
   meshCarte:null,
   pret:false,
 };
+
+/** L'invite du menu. Rappelée au retour depuis le jeu. */
+const INVITE = "CLIQUER N'IMPORTE OÙ POUR DESCENDRE";
 
 const vent = {angle:0, freq:0.5};
 let dernierT = performance.now();
@@ -140,6 +144,7 @@ function brancherEntrees(){
   document.addEventListener('pointerlockchange', () => {
     jeu.enCours = document.pointerLockElement === cv;
     afficherVoile(!jeu.enCours);
+    if(!jeu.enCours) messageMenu(INVITE);
   });
 
   addEventListener('mousemove', e => {
@@ -164,23 +169,33 @@ function brancherEntrees(){
       if(!ouvert){ majAffichage(); document.exitPointerLock(); }
       return;
     }
+    if(e.code === 'KeyR'){        // un nouveau monde, y compris depuis le menu
+      if(jeu.pret){ cacherEcranFin(); genererMonde(undefined); }
+      return;
+    }
     if(e.code === 'Tab'){ e.preventDefault(); basculerScope(); }
     if(e.code === 'KeyP'){
       const t = document.getElementById('tune');
       t.style.display = t.style.display === 'block' ? 'none' : 'block';
     }
+
+    /* Les gestes de JEU ne valent qu'en jeu. Sans cette garde, appuyer sur
+       Espace depuis le menu lançait un leurre dans un monde qu'on ne regarde
+       pas — et Espace sert justement à démarrer la partie depuis le menu. */
+    if(!jeu.enCours) return;
+
     if(e.code === 'Space'){ e.preventDefault(); lancerLeurre(); }
     if(e.code === 'KeyE'){ e.preventDefault(); actionContextuelle(); }
     if(e.code === 'CapsLock') basculerRampe();
     if(e.code === 'KeyF') basculerTorche();
-    if(e.code === 'KeyR'){
-      cacherEcranFin();
-      genererMonde(undefined);
-    }
     // Ctrl+W et Ctrl+D sont réservés par le navigateur : on neutralise la
     // touche plutôt que de tenter un preventDefault qui ne marchera pas.
     if(e.code === 'ControlLeft' || e.code === 'ControlRight') touches[e.code] = false;
   });
+
+  /* Le clic droit sert à lancer la partie depuis le menu et n'a aucun usage en
+     jeu : on supprime le menu système dans les deux cas. */
+  addEventListener('contextmenu', e => e.preventDefault());
 
   addEventListener('keyup', e => { touches[e.code] = false; });
   addEventListener('blur', () => { for(const k in touches) touches[k] = false; });
@@ -509,7 +524,21 @@ async function demarrer(){
   brancherStridulation(() => Audio.stridulation());
 
   construireMenu(() => {
-    cv.requestPointerLock();
+    // pendant la génération il n'y a rien à verrouiller
+    if(!jeu.pret){ messageMenu('LE MONDE SE CREUSE ENCORE…'); return; }
+
+    /* requestPointerLock peut ÉCHOUER sans que ce soit une erreur : le
+       navigateur impose un délai après un exitPointerLock, et rejette la
+       demande pendant ce temps. Non traité, ça produit une promesse rejetée
+       dans la console et un menu qui a l'air cassé. On le dit à l'écran. */
+    try {
+      const p = cv.requestPointerLock();
+      if(p && typeof p.catch === 'function')
+        p.catch(() => messageMenu('ENCORE UN CLIC — LE NAVIGATEUR A REFUSÉ'));
+    } catch(e){
+      messageMenu('ENCORE UN CLIC — LE NAVIGATEUR A REFUSÉ');
+    }
+
     Audio.demarrer(NAPPE_DE_BIOME[jeu.biome]);
     Audio.reprendre();
   });
