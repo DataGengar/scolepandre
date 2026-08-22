@@ -1,0 +1,1091 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SCOLÉOPANDRE — prototype moteur</title>
+<style>
+  :root{
+    --void:#07080a;
+    --bone:#cfc7b4;
+    --signal:#8fa88c;
+    --alarm:#b4553f;
+    --dim:#4a4a46;
+    --rule:#1c1e21;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--void);overflow:hidden;
+    font-family:"SF Mono","Roboto Mono",Menlo,Consolas,monospace;
+    color:var(--bone);-webkit-font-smoothing:antialiased}
+  #gl{display:block;width:100vw;height:100vh;image-rendering:pixelated}
+  canvas{touch-action:none}
+
+  .panel{position:fixed;background:rgba(7,8,10,.82);border:1px solid var(--rule);
+    backdrop-filter:blur(2px);font-size:10px;letter-spacing:.06em;line-height:1.5}
+
+  /* ---- sismographe (signature) ---- */
+  #scope{top:14px;right:14px;width:284px;padding:0}
+  #scopeHead{display:flex;justify-content:space-between;align-items:baseline;
+    padding:7px 9px;border-bottom:1px solid var(--rule);color:var(--dim)}
+  #scopeHead b{color:var(--bone);font-weight:500;letter-spacing:.14em}
+  #dbg{display:block;width:284px;height:284px}
+  #readout{padding:7px 9px;border-top:1px solid var(--rule);color:var(--dim)}
+  #readout div{display:flex;justify-content:space-between}
+  #readout span{color:var(--signal)}
+  #readout span.hot{color:var(--alarm)}
+
+  /* ---- réglages ---- */
+  #tune{top:14px;left:14px;width:250px;padding:9px 10px;display:none}
+  #tune h4{font-size:10px;font-weight:500;letter-spacing:.14em;color:var(--dim);
+    margin-bottom:8px;text-transform:uppercase}
+  .row{margin:0 0 7px}
+  .row label{display:flex;justify-content:space-between;color:var(--dim);margin-bottom:2px}
+  .row label i{font-style:normal;color:var(--signal)}
+  .row input{-webkit-appearance:none;appearance:none;width:100%;height:2px;
+    background:var(--rule);outline:none}
+  .row input::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:9px;
+    background:var(--bone);cursor:ns-resize}
+  .row input::-moz-range-thumb{width:9px;height:9px;border:0;background:var(--bone)}
+  .grp{border-top:1px solid var(--rule);margin:10px 0 8px;padding-top:8px}
+
+  #keys{position:fixed;left:14px;bottom:12px;font-size:10px;color:var(--dim);
+    letter-spacing:.08em}
+  #keys b{color:var(--signal);font-weight:400}
+
+  #veil{position:fixed;inset:0;display:grid;place-items:center;cursor:pointer;
+    background:radial-gradient(ellipse at 50% 55%,#0d0f12 0%,#050506 70%);z-index:9}
+  #veil .in{text-align:center;max-width:430px;padding:0 24px}
+  #veil h1{font-size:13px;font-weight:400;letter-spacing:.62em;margin-bottom:22px;
+    color:var(--bone);text-indent:.62em}
+  #veil p{font-size:11px;line-height:1.9;color:var(--dim);letter-spacing:.05em}
+  #veil p em{font-style:normal;color:var(--signal)}
+  #veil .go{margin-top:26px;font-size:10px;letter-spacing:.3em;color:var(--bone);
+    opacity:.45;animation:pulse 2.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.2}50%{opacity:.7}}
+  @media (prefers-reduced-motion:reduce){#veil .go{animation:none;opacity:.5}}
+
+  #caught{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;
+    display:grid;place-items:center;transition:opacity .18s;z-index:8}
+  #caught span{font-size:11px;letter-spacing:.42em;color:var(--alarm)}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="panel" id="scope">
+  <div id="scopeHead"><b>SISMOGRAPHE</b><span id="stateLbl">—</span></div>
+  <canvas id="dbg" width="284" height="284"></canvas>
+  <div id="readout">
+    <div>distance<span id="rDist">—</span></div>
+    <div>certitude<span id="rConf">—</span></div>
+    <div>pression<span id="rPress">—</span></div>
+    <div>trajet<span id="rPath">—</span></div>
+  </div>
+</div>
+
+<div class="panel" id="tune">
+  <h4>Réglages</h4>
+  <div class="row"><label>Densité du fog<i id="vFog"></i></label><input id="sFog" type="range" min="1" max="9" step="0.1" value="4.2"></div>
+  <div class="row"><label>Grain<i id="vGrain"></i></label><input id="sGrain" type="range" min="0" max="0.3" step="0.005" value="0.11"></div>
+  <div class="grp"></div>
+  <div class="row"><label>Vitesse de traque<i id="vSpd"></i></label><input id="sSpd" type="range" min="2" max="9" step="0.1" value="5.4"></div>
+  <div class="row"><label>Portée des vibrations<i id="vHear"></i></label><input id="sHear" type="range" min="0.3" max="2.5" step="0.05" value="1"></div>
+  <div class="row"><label>Persistance de l'odeur<i id="vScent"></i></label><input id="sScent" type="range" min="5" max="90" step="1" value="40"></div>
+  <div class="row"><label>Aversion aux espaces ouverts<i id="vOpen"></i></label><input id="sOpen" type="range" min="0" max="3" step="0.05" value="1.1"></div>
+  <div class="row"><label>Montée de la pression<i id="vPress"></i></label><input id="sPress" type="range" min="0.01" max="0.2" step="0.005" value="0.045"></div>
+</div>
+
+<div id="keys"><b>ZQSD/WASD</b> avancer &nbsp;·&nbsp; <b>MAJ</b> courir &nbsp;·&nbsp; <b>CTRL</b> ramper &nbsp;·&nbsp; <b>TAB</b> sismographe &nbsp;·&nbsp; <b>P</b> réglages</div>
+
+<div id="caught"><span>ELLE T'A TROUVÉ</span></div>
+
+<div id="veil"><div class="in">
+  <h1>SCOLÉOPANDRE</h1>
+  <p>Elle est aveugle. Elle ne connaît que le <em>sol qui tremble</em> et la <em>trace que tu laisses</em>.
+     Marche et elle t'ignore. Cours et elle sait.</p>
+  <div class="go">CLIQUER POUR DESCENDRE</div>
+</div></div>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════
+   SCOLÉOPANDRE — moteur maison, WebGL2 brut, zéro dépendance
+   Sections : 1 math · 2 GL · 3 monde · 4 maillage · 5 nav (A*)
+               6 joueur · 7 IA · 8 rendu · 9 boucle
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─────────── 1. MATH ─────────── */
+const M = {
+  mk: () => new Float32Array(16),
+  ident(o){o.set([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);return o},
+  mul(o,a,b){
+    const a00=a[0],a01=a[1],a02=a[2],a03=a[3],a10=a[4],a11=a[5],a12=a[6],a13=a[7],
+          a20=a[8],a21=a[9],a22=a[10],a23=a[11],a30=a[12],a31=a[13],a32=a[14],a33=a[15];
+    for(let i=0;i<4;i++){
+      const b0=b[i*4],b1=b[i*4+1],b2=b[i*4+2],b3=b[i*4+3];
+      o[i*4]  =b0*a00+b1*a10+b2*a20+b3*a30;
+      o[i*4+1]=b0*a01+b1*a11+b2*a21+b3*a31;
+      o[i*4+2]=b0*a02+b1*a12+b2*a22+b3*a32;
+      o[i*4+3]=b0*a03+b1*a13+b2*a23+b3*a33;
+    } return o;
+  },
+  persp(o,fovy,asp,n,f){
+    const t=1/Math.tan(fovy/2); o.fill(0);
+    o[0]=t/asp; o[5]=t; o[11]=-1; o[10]=(f+n)/(n-f); o[14]=2*f*n/(n-f); return o;
+  },
+  trans(o,x,y,z){M.ident(o);o[12]=x;o[13]=y;o[14]=z;return o},
+  rotY(o,a){const c=Math.cos(a),s=Math.sin(a);M.ident(o);o[0]=c;o[2]=-s;o[8]=s;o[10]=c;return o},
+  rotX(o,a){const c=Math.cos(a),s=Math.sin(a);M.ident(o);o[5]=c;o[6]=s;o[9]=-s;o[10]=c;return o},
+  rotZ(o,a){const c=Math.cos(a),s=Math.sin(a);M.ident(o);o[0]=c;o[1]=s;o[4]=-s;o[5]=c;return o},
+  scale(o,x,y,z){M.ident(o);o[0]=x;o[5]=y;o[10]=z;return o}
+};
+
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const lerp=(a,b,t)=>a+(b-a)*t;
+const hash2=(x,y)=>{const s=Math.sin(x*127.1+y*311.7)*43758.5453;return s-Math.floor(s)};
+
+// scratch
+const _a=M.mk(),_b=M.mk(),_c=M.mk(),_d=M.mk(),_e=M.mk();
+function composeTRS(out,x,y,z,yaw,pitch,roll,sx,sy,sz){
+  M.trans(_a,x,y,z); M.rotY(_b,yaw); M.mul(out,_a,_b);
+  M.rotX(_b,pitch);  M.mul(out,out,_b);
+  M.rotZ(_b,roll);   M.mul(out,out,_b);
+  M.scale(_b,sx,sy,sz); M.mul(out,out,_b);
+  return out;
+}
+
+/* ─────────── 2. GL ─────────── */
+const cv = document.getElementById('gl');
+const gl = cv.getContext('webgl2',{antialias:false,alpha:false,depth:true});
+if(!gl){ document.body.innerHTML='<p style="padding:40px;color:#cfc7b4;font:12px monospace">WebGL2 indisponible sur ce navigateur.</p>'; throw new Error('no webgl2'); }
+
+function shader(type,src){
+  const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)+"\n"+src);
+  return s;
+}
+function program(vs,fs){
+  const p=gl.createProgram();
+  gl.attachShader(p,shader(gl.VERTEX_SHADER,vs));
+  gl.attachShader(p,shader(gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+function uniforms(p,names){const o={};for(const n of names)o[n]=gl.getUniformLocation(p,n);return o}
+
+const VS_SCENE = `#version 300 es
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNrm;
+layout(location=2) in vec3 aCol;
+uniform mat4 uProj,uView,uModel;
+out vec3 vN; out vec3 vC; out vec3 vW;
+void main(){
+  vec4 w = uModel*vec4(aPos,1.0);
+  vW=w.xyz; vN=mat3(uModel)*aNrm; vC=aCol;
+  gl_Position = uProj*uView*w;
+}`;
+
+const FS_SCENE = `#version 300 es
+precision highp float;
+in vec3 vN; in vec3 vC; in vec3 vW;
+uniform vec3 uCam,uFwd,uFog,uTint;
+uniform float uFogD,uEmit;
+out vec4 frag;
+void main(){
+  vec3 toCam = uCam - vW;
+  float d = length(toCam);
+  vec3 L = toCam/max(d,1e-4);
+  vec3 N = normalize(vN);
+  float ndl = max(dot(N,L),0.0);
+  // lampe frontale : point + cône doux
+  float cone = pow(max(dot(-L,uFwd),0.0),3.0);
+  float att  = exp(-d*0.085);
+  float lit  = 0.045 + ndl*att*(0.30 + 1.25*cone);
+  vec3 col = vC*uTint*lit + vC*uEmit;
+  float f = exp(-pow(max(d-0.6,0.0)*uFogD*0.01,2.0));
+  frag = vec4(mix(uFog,col,clamp(f,0.0,1.0)),1.0);
+}`;
+
+const VS_POST = `#version 300 es
+out vec2 vUv;
+void main(){
+  vec2 p = vec2((gl_VertexID<<1)&2, gl_VertexID&2);
+  vUv=p; gl_Position=vec4(p*2.0-1.0,0.0,1.0);
+}`;
+
+const FS_POST = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 frag;
+uniform sampler2D uTex;
+uniform vec2 uRes;
+uniform float uTime,uGrain,uDread;
+const float BAY[16]=float[16](0.,8.,2.,10.,12.,4.,14.,6.,3.,11.,1.,9.,15.,7.,13.,5.);
+float rnd(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+void main(){
+  vec2 px = vUv*uRes;
+  vec3 c = texture(uTex,vUv).rgb;
+
+  // tramage ordonné puis quantification -> aplats francs
+  int bi = int(mod(px.y,4.0))*4 + int(mod(px.x,4.0));
+  float b = (BAY[bi]+0.5)/16.0 - 0.5;
+  float lv = 22.0;
+  c = floor(c*lv + b*1.1)/lv;
+
+  // grain animé
+  float n = rnd(px + vec2(fract(uTime*37.0)*91.0, fract(uTime*23.0)*57.0)) - 0.5;
+  c += n*uGrain*(0.55 + 0.9*(1.0-length(c)));
+
+  // vignettage
+  float v = 1.0 - 0.92*pow(clamp(length(vUv-0.5)*1.42,0.0,1.0),2.3);
+  c *= v;
+
+  // proximité : la lumière vire, le grain s'affole
+  c = mix(c, c*vec3(1.35,0.72,0.66) + rnd(px+uTime)*0.05*uDread, uDread);
+  frag = vec4(max(c,0.0),1.0);
+}`;
+
+const progScene = program(VS_SCENE,FS_SCENE);
+const uS = uniforms(progScene,['uProj','uView','uModel','uCam','uFwd','uFog','uFogD','uTint','uEmit']);
+const progPost = program(VS_POST,FS_POST);
+const uP = uniforms(progPost,['uTex','uRes','uTime','uGrain','uDread']);
+
+function makeMesh(pos,nrm,col){
+  const vao=gl.createVertexArray(); gl.bindVertexArray(vao);
+  const mk=(data,loc)=>{
+    const b=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,b);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,3,gl.FLOAT,false,0,0);
+  };
+  mk(pos,0); mk(nrm,1); mk(col,2);
+  gl.bindVertexArray(null);
+  return {vao,count:pos.length/3};
+}
+
+/* ─────────── 3. MONDE ─────────── */
+const GW=72, GH=72, CELL=3.0;
+const WALL=1, FLOOR=0;
+const grid   = new Uint8Array(GW*GH).fill(WALL);
+const openN  = new Float32Array(GW*GH); // ouverture 0..1
+const ceilH  = new Float32Array(GW*GH);
+const navCost= new Float32Array(GW*GH);
+const idx=(x,z)=>z*GW+x;
+const inB=(x,z)=>x>0&&z>0&&x<GW-1&&z<GH-1;
+const isFloor=(x,z)=>inB(x,z)&&grid[idx(x,z)]===FLOOR;
+const w2c=v=>Math.floor(v/CELL);
+const c2w=c=>(c+0.5)*CELL;
+
+let rngS=1337;
+const rnd=()=>{rngS=(rngS*1664525+1013904223)&0xffffffff;return ((rngS>>>8)&0xffffff)/0xffffff};
+const ri=(a,b)=>a+Math.floor(rnd()*(b-a+1));
+
+const rooms=[];
+function carveRect(x0,z0,w,h){
+  for(let z=z0;z<z0+h;z++) for(let x=x0;x<x0+w;x++) if(inB(x,z)) grid[idx(x,z)]=FLOOR;
+}
+function carveBlob(cx,cz,steps){ // marche ivre → cave organique
+  let x=cx,z=cz;
+  for(let i=0;i<steps;i++){
+    for(let dz=-1;dz<=1;dz++) for(let dx=-1;dx<=1;dx++)
+      if(inB(x+dx,z+dz)) grid[idx(x+dx,z+dz)]=FLOOR;
+    const d=ri(0,3);
+    x+= d===0?1:d===1?-1:0; z+= d===2?1:d===3?-1:0;
+    x=clamp(x,3,GW-4); z=clamp(z,3,GH-4);
+  }
+}
+function corridor(ax,az,bx,bz,wdt){
+  const put=(x,z)=>{for(let i=0;i<wdt;i++)for(let j=0;j<wdt;j++) if(inB(x+i,z+j)) grid[idx(x+i,z+j)]=FLOOR;};
+  let x=ax,z=az;
+  while(x!==bx){ put(x,z); x+=Math.sign(bx-x); }
+  while(z!==bz){ put(x,z); z+=Math.sign(bz-z); }
+  put(bx,bz);
+}
+function buildWorld(){
+  // salles rectangulaires (donjon)
+  for(let i=0;i<16;i++){
+    const w=ri(5,12),h=ri(5,12),x=ri(2,GW-w-3),z=ri(2,GH-h-3);
+    carveRect(x,z,w,h); rooms.push({x:x+(w>>1),z:z+(h>>1)});
+  }
+  // cavernes (organique)
+  for(let i=0;i<4;i++){
+    const cx=ri(8,GW-9),cz=ri(8,GH-9);
+    carveBlob(cx,cz,ri(300,620)); rooms.push({x:cx,z:cz});
+  }
+  // liaisons : chaîne + quelques raccourcis
+  for(let i=1;i<rooms.length;i++) corridor(rooms[i-1].x,rooms[i-1].z,rooms[i].x,rooms[i].z,rnd()<0.35?2:1);
+  for(let i=0;i<6;i++){
+    const a=rooms[ri(0,rooms.length-1)],b=rooms[ri(0,rooms.length-1)];
+    corridor(a.x,a.z,b.x,b.z,1);
+  }
+  // bordure étanche
+  for(let x=0;x<GW;x++){grid[idx(x,0)]=WALL;grid[idx(x,GH-1)]=WALL;}
+  for(let z=0;z<GH;z++){grid[idx(0,z)]=WALL;grid[idx(GW-1,z)]=WALL;}
+
+  // ouverture (aire dégagée autour de chaque cellule) → hauteur de plafond + coût nav
+  for(let z=0;z<GH;z++) for(let x=0;x<GW;x++){
+    if(grid[idx(x,z)]!==FLOOR) continue;
+    let n=0,t=0;
+    for(let dz=-3;dz<=3;dz++) for(let dx=-3;dx<=3;dx++){
+      t++; if(isFloor(x+dx,z+dz)) n++;
+    }
+    openN[idx(x,z)]=n/t;
+  }
+  for(let i=0;i<GW*GH;i++) ceilH[i]= grid[i]===FLOOR ? 2.9 + openN[i]*3.4 : 0;
+  rebuildNavCost();
+}
+function rebuildNavCost(){
+  const wOpen = TUNE.openAversion;
+  for(let z=0;z<GH;z++) for(let x=0;x<GW;x++){
+    const i=idx(x,z);
+    if(grid[i]!==FLOOR){ navCost[i]=0; continue; }
+    // longe les parois, fuit le vide
+    const hug = (!isFloor(x+1,z)||!isFloor(x-1,z)||!isFloor(x,z+1)||!isFloor(x,z-1)) ? 0.4 : 0;
+    navCost[i] = clamp(1 + openN[i]*wOpen - hug, 0.35, 8);
+  }
+}
+function randomFloor(){
+  for(let k=0;k<4000;k++){
+    const x=ri(1,GW-2),z=ri(1,GH-2);
+    if(grid[idx(x,z)]===FLOOR) return {x,z};
+  }
+  return {x:1,z:1};
+}
+
+/* ─────────── 4. MAILLAGE ─────────── */
+function buildLevelMesh(){
+  const P=[],N=[],C=[];
+  const quad=(p0,p1,p2,p3,n,c0,c1,c2,c3)=>{
+    const push=(p,c)=>{P.push(p[0],p[1],p[2]);N.push(n[0],n[1],n[2]);C.push(c[0],c[1],c[2]);};
+    push(p0,c0);push(p1,c1);push(p2,c2);
+    push(p0,c0);push(p2,c2);push(p3,c3);
+  };
+  const h=CELL/2;
+  for(let z=0;z<GH;z++) for(let x=0;x<GW;x++){
+    const i=idx(x,z); if(grid[i]!==FLOOR) continue;
+    const cx=c2w(x), cz=c2w(z), ch=ceilH[i];
+    const v = 0.9 + hash2(x,z)*0.2;
+
+    const cf=[0.34*v,0.325*v,0.30*v];
+    quad([cx-h,0,cz-h],[cx+h,0,cz-h],[cx+h,0,cz+h],[cx-h,0,cz+h],[0,1,0],cf,cf,cf,cf);
+    const cc=[0.20*v,0.205*v,0.225*v];
+    quad([cx-h,ch,cz+h],[cx+h,ch,cz+h],[cx+h,ch,cz-h],[cx-h,ch,cz-h],[0,-1,0],cc,cc,cc,cc);
+
+    const wt=[0.42*v,0.41*v,0.385*v], wb=[0.19*v,0.185*v,0.175*v];
+    const side=(nx,nz,ax,az,bx,bz)=>{
+      const nxc=x-nx, nzc=z-nz; // le voisin est du côté opposé à la normale
+      if(!isFloor(nxc,nzc)){
+        quad([ax,0,az],[bx,0,bz],[bx,ch,bz],[ax,ch,az],[nx,0,nz],wb,wb,wt,wt);
+      } else {
+        const nh=ceilH[idx(nxc,nzc)];
+        if(nh < ch-0.02) quad([ax,nh,az],[bx,nh,bz],[bx,ch,bz],[ax,ch,az],[nx,0,nz],wb,wb,wt,wt);
+      }
+    };
+    side(0,1,  cx-h,cz-h, cx+h,cz-h);   // paroi -Z, normale +Z
+    side(0,-1, cx+h,cz+h, cx-h,cz+h);   // paroi +Z, normale -Z
+    side(1,0,  cx-h,cz+h, cx-h,cz-h);   // paroi -X, normale +X
+    side(-1,0, cx+h,cz-h, cx+h,cz+h);   // paroi +X, normale -X
+  }
+  return makeMesh(P,N,C);
+}
+
+function boxMesh(minY,maxY){
+  const P=[],N=[],C=[];
+  const q=(p,n)=>{ // p = 4 sommets
+    const push=(v)=>{P.push(v[0],v[1],v[2]);N.push(n[0],n[1],n[2]);C.push(1,1,1)};
+    push(p[0]);push(p[1]);push(p[2]);push(p[0]);push(p[2]);push(p[3]);
+  };
+  const a=-0.5,b=0.5,y0=minY,y1=maxY;
+  q([[a,y0,b],[b,y0,b],[b,y1,b],[a,y1,b]],[0,0,1]);
+  q([[b,y0,a],[a,y0,a],[a,y1,a],[b,y1,a]],[0,0,-1]);
+  q([[b,y0,b],[b,y0,a],[b,y1,a],[b,y1,b]],[1,0,0]);
+  q([[a,y0,a],[a,y0,b],[a,y1,b],[a,y1,a]],[-1,0,0]);
+  q([[a,y1,b],[b,y1,b],[b,y1,a],[a,y1,a]],[0,1,0]);
+  q([[a,y0,a],[b,y0,a],[b,y0,b],[a,y0,b]],[0,-1,0]);
+  return makeMesh(P,N,C);
+}
+
+/* ─────────── 5. NAVIGATION (A* pondéré) ─────────── */
+const gScore=new Float32Array(GW*GH), came=new Int32Array(GW*GH),
+      stamp=new Int32Array(GW*GH), closed=new Uint8Array(GW*GH);
+let epoch=0;
+
+class Heap{
+  constructor(){this.k=[];this.v=[]}
+  get size(){return this.k.length}
+  clear(){this.k.length=0;this.v.length=0}
+  push(key,val){
+    const k=this.k,v=this.v; k.push(key); v.push(val);
+    let i=k.length-1;
+    while(i>0){const p=(i-1)>>1; if(k[p]<=k[i])break;
+      [k[p],k[i]]=[k[i],k[p]];[v[p],v[i]]=[v[i],v[p]];i=p;}
+  }
+  pop(){
+    const k=this.k,v=this.v,top=v[0],lk=k.pop(),lv=v.pop();
+    if(k.length){k[0]=lk;v[0]=lv;let i=0;
+      for(;;){const l=i*2+1,r=l+1;let m=i;
+        if(l<k.length&&k[l]<k[m])m=l;
+        if(r<k.length&&k[r]<k[m])m=r;
+        if(m===i)break;
+        [k[m],k[i]]=[k[i],k[m]];[v[m],v[i]]=[v[i],v[m]];i=m;}}
+    return top;
+  }
+}
+const heap=new Heap();
+const DIRS=[[1,0,1],[-1,0,1],[0,1,1],[0,-1,1],[1,1,1.4142],[1,-1,1.4142],[-1,1,1.4142],[-1,-1,1.4142]];
+
+function nearestFloorCell(x,z){
+  if(isFloor(x,z)) return idx(x,z);
+  for(let r=1;r<8;r++) for(let dz=-r;dz<=r;dz++) for(let dx=-r;dx<=r;dx++)
+    if(Math.abs(dx)===r||Math.abs(dz)===r) if(isFloor(x+dx,z+dz)) return idx(x+dx,z+dz);
+  return -1;
+}
+let lastExpanded=0, lastPartial=false;
+/* A* pondéré, budget borné. Si le budget est épuisé (ou la cible est
+   inatteignable), on renvoie le trajet vers le meilleur nœud atteint
+   plutôt que null : la créature avance toujours dans la bonne direction
+   et le calcul suivant affinera. Aucune frame sans trajet, aucun pic. */
+function aStar(sx,sz,tx,tz,budget=3000){
+  const s=nearestFloorCell(sx,sz), t=nearestFloorCell(tx,tz);
+  if(s<0||t<0) return null;
+  if(s===t) return [s];
+  const tX=t%GW, tZ=(t/GW)|0;
+  const hOf=(n)=>{const dx=Math.abs(n%GW-tX), dz=Math.abs(((n/GW)|0)-tZ);
+    return (Math.max(dx,dz)+0.4142*Math.min(dx,dz))*0.7;};
+  const trace=(n)=>{const out=[]; while(n!==-1){out.push(n); n=came[n];} return out.reverse();};
+
+  epoch++; heap.clear(); lastExpanded=0; lastPartial=false;
+  gScore[s]=0; came[s]=-1; stamp[s]=epoch; closed[s]=0;
+  let bestNode=s, bestH=hOf(s);
+  heap.push(0,s);
+  while(heap.size){
+    const cur=heap.pop();
+    if(closed[cur]===1&&stamp[cur]===epoch) continue;
+    closed[cur]=1;
+    if(cur===t) return trace(t);
+    const hc=hOf(cur);
+    if(hc<bestH){ bestH=hc; bestNode=cur; }
+    if(++lastExpanded>budget){ lastPartial=true; return trace(bestNode); }
+    const cx=cur%GW, cz=(cur/GW)|0;
+    for(const [dx,dz,mul] of DIRS){
+      const nx=cx+dx, nz=cz+dz;
+      if(!isFloor(nx,nz)) continue;
+      if(dx&&dz&&(!isFloor(cx+dx,cz)||!isFloor(cx,cz+dz))) continue; // pas de coupe d'angle
+      const n=idx(nx,nz);
+      if(stamp[n]===epoch&&closed[n]===1) continue;
+      const g = gScore[cur] + navCost[n]*mul;
+      if(stamp[n]===epoch && g>=gScore[n]) continue;
+      stamp[n]=epoch; closed[n]=0; gScore[n]=g; came[n]=cur;
+      const ddx=Math.abs(nx-tX), ddz=Math.abs(nz-tZ);
+      const hEst=(Math.max(ddx,ddz)+0.4142*Math.min(ddx,ddz))*0.7;
+      heap.push(g+hEst,n);
+    }
+  }
+  lastPartial=true;
+  return bestNode===s ? null : trace(bestNode);
+}
+
+// visibilité de navigation : segment libre pour un corps de rayon r
+function clearLine(x0,z0,x1,z1,r=0.85){
+  const dx=x1-x0, dz=z1-z0, L=Math.hypot(dx,dz);
+  if(L<1e-4) return true;
+  const ux=dx/L, uz=dz/L, px=-uz*r, pz=ux*r;
+  const steps=Math.ceil(L/0.4);
+  for(let i=0;i<=steps;i++){
+    const t=i/steps, x=x0+dx*t, z=z0+dz*t;
+    for(const [ox,oz] of [[0,0],[px,pz],[-px,-pz]])
+      if(!isFloor(w2c(x+ox),w2c(z+oz))) return false;
+  }
+  return true;
+}
+// string pulling : supprime l'escalier de la grille
+function smooth(cells){
+  const pts=cells.map(c=>({x:c2w(c%GW), z:c2w((c/GW)|0)}));
+  if(pts.length<3) return pts;
+  const out=[pts[0]]; let i=0;
+  while(i<pts.length-1){
+    let j=pts.length-1;
+    for(;j>i+1;j--) if(clearLine(pts[i].x,pts[i].z,pts[j].x,pts[j].z)) break;
+    out.push(pts[j]); i=j;
+  }
+  return out;
+}
+
+/* ─────────── 6. JOUEUR ─────────── */
+const TUNE={fogD:4.2,grain:0.11,chaseSpeed:5.4,hearMul:1,scentLife:40,openAversion:1.1,pressRate:0.045};
+
+const player={x:0,z:0,y:1.6,yaw:0,pitch:0,vx:0,vz:0,stepAcc:0,bob:0,mode:'walk'};
+const keys=Object.create(null);
+const sounds=[];  // {x,z,r,t}
+const scent =[];  // {x,z,t}
+let scentAcc=0, time=0, dread=0;
+
+function spawnPlayer(){
+  const c=randomFloor(); player.x=c2w(c.x); player.z=c2w(c.z);
+  player.yaw=rnd()*6.28; player.pitch=0; scent.length=0; sounds.length=0;
+}
+function collide(nx,nz){
+  const r=0.42;
+  for(const [ox,oz] of [[r,0],[-r,0],[0,r],[0,-r],[r*0.7,r*0.7],[-r*0.7,r*0.7],[r*0.7,-r*0.7],[-r*0.7,-r*0.7]])
+    if(!isFloor(w2c(nx+ox),w2c(nz+oz))) return true;
+  return false;
+}
+function updatePlayer(dt){
+  const run = keys['ShiftLeft']||keys['ShiftRight'];
+  const crouch = keys['ControlLeft']||keys['ControlRight']||keys['KeyC'];
+  player.mode = crouch?'crouch':run?'run':'walk';
+  const spd = crouch?1.5:run?5.6:3.2;
+
+  let f=0,s=0;
+  if(keys['KeyW']||keys['KeyZ']||keys['ArrowUp'])f+=1;
+  if(keys['KeyS']||keys['ArrowDown'])f-=1;
+  if(keys['KeyD']||keys['ArrowRight'])s+=1;
+  if(keys['KeyA']||keys['KeyQ']||keys['ArrowLeft'])s-=1;
+  const L=Math.hypot(f,s)||1; f/=L; s/=L;
+
+  const fx=-Math.sin(player.yaw), fz=-Math.cos(player.yaw);
+  const rx= Math.cos(player.yaw), rz=-Math.sin(player.yaw);
+  const tvx=(fx*f+rx*s)*spd, tvz=(fz*f+rz*s)*spd;
+  player.vx=lerp(player.vx,tvx,1-Math.exp(-14*dt));
+  player.vz=lerp(player.vz,tvz,1-Math.exp(-14*dt));
+
+  const nx=player.x+player.vx*dt, nz=player.z+player.vz*dt;
+  if(!collide(nx,player.z)) player.x=nx; else player.vx=0;
+  if(!collide(player.x,nz)) player.z=nz; else player.vz=0;
+
+  const moving=Math.hypot(player.vx,player.vz);
+  player.bob += moving*dt*(crouch?4:run?9:6.5);
+  player.y = (crouch?1.05:1.62) + Math.sin(player.bob)*0.035*(moving>0.4?1:0);
+
+  // ── émission de vibrations (le sens principal de la créature)
+  if(moving>0.35){
+    player.stepAcc += moving*dt;
+    const stride = crouch?1.1:run?1.5:1.25;
+    if(player.stepAcc>stride){
+      player.stepAcc=0;
+      const base = crouch?2.5:run?19:8.5;
+      sounds.push({x:player.x,z:player.z,r:base*TUNE.hearMul,t:0});
+    }
+    // ── trace odorante
+    scentAcc+=dt;
+    if(scentAcc>0.4){ scentAcc=0; scent.push({x:player.x,z:player.z,t:time}); }
+  } else player.stepAcc=Math.max(0,player.stepAcc-dt);
+
+  for(let i=sounds.length-1;i>=0;i--){ sounds[i].t+=dt; if(sounds[i].t>0.8) sounds.splice(i,1); }
+  while(scent.length && time-scent[0].t > TUNE.scentLife) scent.shift();
+}
+
+/* ─────────── 7. IA : DIRECTEUR + CRÉATURE ─────────── */
+
+/* Le Directeur est omniscient mais ne pilote pas la créature.
+   Il déplace seulement une ZONE DE RECHERCHE. La créature fouille
+   cette zone sans savoir pourquoi — elle te trouve « par hasard ». */
+const director={
+  pressure:0, cooldown:0, zone:{x:0,z:0,r:9}, zoneTimer:0,
+  reset(){this.pressure=0;this.cooldown=4;this.pickZone(40);},
+  pickZone(want){
+    let best=null,bd=1e9;
+    for(let k=0;k<90;k++){
+      const c=randomFloor(), wx=c2w(c.x), wz=c2w(c.z);
+      const d=Math.hypot(wx-player.x,wz-player.z);
+      const score=Math.abs(d-want);
+      if(score<bd){bd=score;best={x:wx,z:wz};}
+    }
+    this.zone.x=best.x; this.zone.z=best.z;
+    this.zone.r=lerp(16,7,this.pressure);
+    this.zoneTimer=0;
+  },
+  update(dt){
+    if(this.cooldown>0){ this.cooldown-=dt; this.pressure=Math.max(0,this.pressure-dt*0.1); }
+    else this.pressure=Math.min(1,this.pressure+dt*TUNE.pressRate);
+    this.zoneTimer+=dt;
+    // Jamais moins de 16 m : le Directeur amène la créature dans ton secteur,
+    // il ne te la met pas dans le dos. La rencontre reste le fait des sens.
+    const want=lerp(50,16,this.pressure);
+    const dz=Math.hypot(creature.x-this.zone.x, creature.z-this.zone.z);
+    if(this.zoneTimer>14 || dz<5) this.pickZone(want);
+  },
+  onLost(){ this.cooldown=7; this.pressure=0.2; this.pickZone(40); }
+};
+
+const ST={PATROL:'traque',INVESTIGATE:'approche',SEARCH:'fouille',CHASE:'poursuite',RETREAT:'retrait'};
+const creature={
+  x:0,z:0,y:0.55,heading:0,
+  state:ST.PATROL, stateT:0,
+  belief:{x:0,z:0,conf:0},
+  path:null, pathIdx:0, repathT:0, target:{x:0,z:0},
+  searchPts:[], chaseT:0, lostT:0,
+  hist:[], cum:0,
+  SEGMENTS:15, SPACING:0.62
+};
+
+function spawnCreature(minDist=45){
+  for(let k=0;k<300;k++){
+    const c=randomFloor(), wx=c2w(c.x), wz=c2w(c.z);
+    if(Math.hypot(wx-player.x,wz-player.z)>minDist){
+      creature.x=wx; creature.z=wz; break;
+    }
+  }
+  creature.state=ST.PATROL; creature.stateT=0; creature.path=null;
+  creature.belief.conf=0; creature.hist.length=0; creature.cum=0;
+  creature.chaseT=0; creature.lostT=0;
+}
+
+function setState(s){ if(creature.state!==s){creature.state=s; creature.stateT=0; creature.path=null;} }
+
+function sense(dt){
+  const b=creature.belief;
+  b.conf=Math.max(0,b.conf-dt*0.11);
+  const dP=Math.hypot(player.x-creature.x, player.z-creature.z);
+
+  // 1. contact : elle te touche presque. Seul cas où l'immobilité ne sauve plus.
+  if(dP<2.2){ b.x=player.x; b.z=player.z; b.conf=1; setState(ST.CHASE); return dP; }
+
+  // 2. vibrations du sol — son sens principal
+  for(const s of sounds){
+    if(s.t>0.05) continue;
+    const d=Math.hypot(s.x-creature.x, s.z-creature.z);
+    if(d>s.r) continue;
+    const conf=clamp(1-d/s.r,0,1);
+    if(conf>b.conf){ b.x=s.x; b.z=s.z; b.conf=conf; }
+    if(creature.state!==ST.RETREAT){
+      if(conf>0.55 && d<20) setState(ST.CHASE); else setState(ST.INVESTIGATE);
+    }
+  }
+
+  // 3. piste odorante — remontée dans le sens de la marche, seulement à froid
+  if((creature.state===ST.PATROL||creature.state===ST.SEARCH) && b.conf<0.4){
+    let bi=-1,bt=-1;
+    for(let i=0;i<scent.length;i++){
+      const s=scent[i];
+      if(Math.hypot(s.x-creature.x,s.z-creature.z)<3.2 && s.t>bt){bt=s.t;bi=i;}
+    }
+    if(bi>=0){
+      const j=Math.min(bi+6,scent.length-1);
+      b.x=scent[j].x; b.z=scent[j].z; b.conf=0.42;
+      // bout de piste atteint : la trace s'arrête ici, elle fouille
+      setState(j>=scent.length-1 ? ST.SEARCH : ST.INVESTIGATE);
+    }
+  }
+  return dP;
+}
+
+function requestPath(tx,tz){
+  const cells=aStar(w2c(creature.x),w2c(creature.z),w2c(tx),w2c(tz));
+  creature.path = cells ? smooth(cells) : null;
+  creature.pathIdx = 1;
+  creature.target={x:tx,z:tz};
+}
+
+function follow(dt,speed,turnRate){
+  const p=creature.path;
+  let dx,dz;
+
+  // Approche directe : sous 7 m et en ligne de mire, elle ignore le trajet.
+  // Sans ça, une cible dans la même cellule de nav produit un trajet d'un
+  // seul nœud et la créature se fige à un pas de sa proie.
+  const tdx=creature.target.x-creature.x, tdz=creature.target.z-creature.z;
+  const td=Math.hypot(tdx,tdz);
+  if(td<7 && clearLine(creature.x,creature.z,creature.target.x,creature.target.z,0.5)){
+    if(td<0.35) return false;
+    dx=tdx; dz=tdz;
+  } else {
+    if(!p||creature.pathIdx>=p.length) return false;
+    let n=p[creature.pathIdx];
+    dx=n.x-creature.x; dz=n.z-creature.z;
+    if(Math.hypot(dx,dz)<0.55){
+      creature.pathIdx++;
+      if(creature.pathIdx>=p.length) return false;
+      n=p[creature.pathIdx]; dx=n.x-creature.x; dz=n.z-creature.z;
+    }
+  }
+
+  const want=Math.atan2(-dx,-dz);
+  let diff=want-creature.heading;
+  while(diff>Math.PI)diff-=6.283185; while(diff<-Math.PI)diff+=6.283185;
+  creature.heading += clamp(diff,-turnRate*dt,turnRate*dt);
+
+  const align=Math.max(0.25,Math.cos(clamp(diff,-1.6,1.6)));
+  const fx=-Math.sin(creature.heading), fz=-Math.cos(creature.heading);
+  const nx=creature.x+fx*speed*align*dt, nz=creature.z+fz*speed*align*dt;
+  if(isFloor(w2c(nx),w2c(nz))){ creature.x=nx; creature.z=nz; }
+  return true;
+}
+
+function updateCreature(dt){
+  const c=creature; c.stateT+=dt; c.repathT-=dt;
+  const dP=sense(dt);
+  const b=c.belief;
+  let speed=2.4, turn=2.2, dest=null, repathEvery=0.9;
+
+  switch(c.state){
+    case ST.PATROL: {
+      speed=2.4; turn=2.0;
+      if(!c.path || c.pathIdx>=c.path.length || c.stateT>9){
+        const a=rnd()*6.283, r=rnd()*director.zone.r;
+        dest={x:director.zone.x+Math.cos(a)*r, z:director.zone.z+Math.sin(a)*r};
+        c.stateT=0;
+      }
+      break;
+    }
+    case ST.INVESTIGATE: {
+      speed=3.4; turn=2.6; repathEvery=0.6;
+      dest={x:b.x,z:b.z};
+      if(Math.hypot(b.x-c.x,b.z-c.z)<2.0 || (b.conf<0.12 && c.stateT>4)){
+        c.searchPts=[];
+        for(let i=0;i<5;i++){
+          const a=rnd()*6.283, r=4+rnd()*9;
+          c.searchPts.push({x:b.x+Math.cos(a)*r, z:b.z+Math.sin(a)*r});
+        }
+        setState(ST.SEARCH);
+      }
+      break;
+    }
+    case ST.SEARCH: {
+      speed=2.9; turn=2.4; repathEvery=0.7;
+      if(c.searchPts.length===0 || c.stateT>16){ setState(ST.PATROL); break; }
+      const p=c.searchPts[0];
+      if(Math.hypot(p.x-c.x,p.z-c.z)<2.2){ c.searchPts.shift(); c.path=null; }
+      else dest=p;
+      break;
+    }
+    case ST.CHASE: {
+      speed=TUNE.chaseSpeed; turn=4.4; repathEvery=0.28;
+      c.chaseT+=dt;
+      // Elle est aveugle : sans vibration fraîche ni contact, elle perd le fil
+      // même à quelques mètres. C'est ce qui rend l'immobilité jouable.
+      if(b.conf>0.25 || dP<2.5){ b.x=player.x; b.z=player.z; c.lostT=0; dest={x:player.x,z:player.z}; }
+      else { c.lostT+=dt; dest={x:b.x,z:b.z};
+        if(c.lostT>3.5){ director.onLost(); setState(ST.SEARCH);
+          c.searchPts=[]; for(let i=0;i<6;i++){const a=rnd()*6.283,r=5+rnd()*10;
+            c.searchPts.push({x:b.x+Math.cos(a)*r,z:b.z+Math.sin(a)*r});} } }
+      // politesse : elle finit par relâcher
+      if(c.chaseT>26){ setState(ST.RETREAT); c.chaseT=0; director.onLost(); }
+      break;
+    }
+    case ST.RETREAT: {
+      speed=3.2; turn=2.0; repathEvery=1.2;
+      if(!c.path||c.pathIdx>=c.path.length) dest={x:director.zone.x,z:director.zone.z};
+      if(c.stateT>7) setState(ST.PATROL);
+      break;
+    }
+  }
+  if(c.state!==ST.CHASE) c.chaseT=Math.max(0,c.chaseT-dt);
+
+  if(dest && (c.repathT<=0 || !c.path ||
+      Math.hypot(dest.x-c.target.x,dest.z-c.target.z)>1.6)){
+    requestPath(dest.x,dest.z); c.repathT=repathEvery;
+  }
+  const moved = follow(dt,speed,turn);
+  if(!moved && c.state===ST.PATROL) c.path=null;
+
+  // corps segmenté : historique paramétré par la distance parcourue
+  const last=c.hist[c.hist.length-1];
+  const step = last?Math.hypot(c.x-last.x,c.z-last.z):999;
+  if(step>0.07){
+    c.cum+=step;
+    c.hist.push({x:c.x,y:c.y,z:c.z,cum:c.cum});
+    const maxBack=c.SEGMENTS*c.SPACING+2;
+    while(c.hist.length>2 && c.cum-c.hist[0].cum>maxBack) c.hist.shift();
+  }
+  c.y = 0.5 + Math.sin(time*7)*0.04;
+  return dP;
+}
+
+function sampleBody(back){
+  const h=creature.hist;
+  if(h.length<2) return {x:creature.x,y:creature.y,z:creature.z};
+  const target=creature.cum-back;
+  if(target<=h[0].cum) return h[0];
+  for(let i=h.length-1;i>0;i--){
+    if(h[i-1].cum<=target && target<=h[i].cum){
+      const t=(target-h[i-1].cum)/Math.max(1e-4,h[i].cum-h[i-1].cum);
+      return {x:lerp(h[i-1].x,h[i].x,t), y:lerp(h[i-1].y,h[i].y,t), z:lerp(h[i-1].z,h[i].z,t)};
+    }
+  }
+  return h[h.length-1];
+}
+
+/* ─────────── 8. RENDU ─────────── */
+let fbo,fboTex,fboDepth,LW=0,LH=0;
+function makeFBO(w,h){
+  if(fbo){gl.deleteFramebuffer(fbo);gl.deleteTexture(fboTex);gl.deleteRenderbuffer(fboDepth);}
+  LW=w;LH=h;
+  fboTex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,fboTex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  for(const [k,v] of [[gl.TEXTURE_MIN_FILTER,gl.NEAREST],[gl.TEXTURE_MAG_FILTER,gl.NEAREST],
+      [gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE],[gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE]])
+    gl.texParameteri(gl.TEXTURE_2D,k,v);
+  fboDepth=gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER,fboDepth);
+  gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,w,h);
+  fbo=gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,fboTex,0);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,fboDepth);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+}
+function resize(){
+  const dpr=1;
+  cv.width=Math.floor(innerWidth*dpr); cv.height=Math.floor(innerHeight*dpr);
+  const h=200, w=Math.max(2,Math.round(h*(cv.width/cv.height)));
+  makeFBO(w,h);
+}
+addEventListener('resize',resize);
+
+const proj=M.mk(), view=M.mk(), model=M.mk();
+const FOG=[0.028,0.030,0.036];
+let level, segMesh, legMesh;
+
+function drawMesh(m,tint,emit){
+  gl.uniform3fv(uS.uTint,tint); gl.uniform1f(uS.uEmit,emit||0);
+  gl.uniformMatrix4fv(uS.uModel,false,model);
+  gl.bindVertexArray(m.vao); gl.drawArrays(gl.TRIANGLES,0,m.count);
+}
+
+function render(){
+  const cp=Math.cos(player.pitch), sp=Math.sin(player.pitch);
+  const fwd=[-Math.sin(player.yaw)*cp, sp, -Math.cos(player.yaw)*cp];
+
+  M.persp(proj,1.30,LW/LH,0.05,260);
+  M.trans(_c,-player.x,-player.y,-player.z);
+  M.rotY(_d,-player.yaw); M.mul(_e,_d,_c);
+  M.rotX(_d,-player.pitch); M.mul(view,_d,_e);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);
+  gl.viewport(0,0,LW,LH);
+  gl.clearColor(FOG[0],FOG[1],FOG[2],1);
+  gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+
+  gl.useProgram(progScene);
+  gl.uniformMatrix4fv(uS.uProj,false,proj);
+  gl.uniformMatrix4fv(uS.uView,false,view);
+  gl.uniform3f(uS.uCam,player.x,player.y,player.z);
+  gl.uniform3fv(uS.uFwd,fwd);
+  gl.uniform3fv(uS.uFog,FOG);
+  gl.uniform1f(uS.uFogD,TUNE.fogD);
+
+  M.ident(model); drawMesh(level,[1,1,1],0);
+
+  // — le scoléopandre
+  const c=creature;
+  let prev={x:c.x,y:c.y,z:c.z};
+  for(let i=0;i<c.SEGMENTS;i++){
+    const p = i===0 ? {x:c.x,y:c.y,z:c.z} : sampleBody(i*c.SPACING);
+    let dx=prev.x-p.x, dy=prev.y-p.y, dz=prev.z-p.z;
+    const L=Math.hypot(dx,dz)||1;
+    const yaw = i===0 ? c.heading : Math.atan2(-dx/L,-dz/L);
+    const pitch = Math.atan2(dy, L);
+    const taper = i===0 ? 1.25 : 1.0 - (i/c.SEGMENTS)*0.55;
+    const tone = i===0 ? [0.55,0.50,0.44] : [0.34+0.10*(1-i/c.SEGMENTS),0.31,0.28];
+
+    composeTRS(model,p.x,p.y,p.z,yaw,pitch,0, 0.62*taper,0.50*taper,0.72*taper);
+    drawMesh(segMesh,tone, i===0?0.05:0.012);
+
+    // pattes
+    const sw=Math.sin(time*11 + i*0.85);
+    const rx=Math.cos(yaw), rz=-Math.sin(yaw);
+    for(const side of [1,-1]){
+      const lx=p.x+rx*0.24*side, lz=p.z+rz*0.24*side;
+      composeTRS(model,lx,p.y+0.10,lz,yaw,0,side*(0.95+sw*0.30*side), 0.075,0.85*taper,0.075);
+      drawMesh(legMesh,[0.26,0.24,0.22],0);
+    }
+    prev=p;
+  }
+
+  // — post
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,cv.width,cv.height);
+  gl.disable(gl.DEPTH_TEST);
+  gl.useProgram(progPost);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,fboTex);
+  gl.uniform1i(uP.uTex,0);
+  gl.uniform2f(uP.uRes,LW,LH);
+  gl.uniform1f(uP.uTime,time);
+  gl.uniform1f(uP.uGrain,TUNE.grain);
+  gl.uniform1f(uP.uDread,dread);
+  gl.bindVertexArray(null);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+}
+
+/* ── sismographe (vue de dessus, debug de navigation) ── */
+const dbg=document.getElementById('dbg'), dctx=dbg.getContext('2d');
+let showScope=true;
+const SPAN=46; // demi-largeur en unités monde
+function drawScope(dP){
+  if(!showScope) return;
+  const S=dbg.width, k=S/(SPAN*2);
+  const ox=player.x-SPAN, oz=player.z-SPAN;
+  const X=v=>(v-ox)*k, Z=v=>(v-oz)*k;
+
+  dctx.fillStyle='#07080a'; dctx.fillRect(0,0,S,S);
+
+  // géométrie
+  const x0=Math.max(0,w2c(ox)), x1=Math.min(GW-1,w2c(ox+SPAN*2));
+  const z0=Math.max(0,w2c(oz)), z1=Math.min(GH-1,w2c(oz+SPAN*2));
+  for(let z=z0;z<=z1;z++) for(let x=x0;x<=x1;x++){
+    if(grid[idx(x,z)]!==FLOOR) continue;
+    const cost=navCost[idx(x,z)];
+    const g=Math.round(clamp(38-(cost-1)*11,10,52));
+    dctx.fillStyle=`rgb(${g},${g+1},${g-2})`;
+    dctx.fillRect(X(x*CELL),Z(z*CELL),CELL*k+0.6,CELL*k+0.6);
+  }
+
+  // trace odorante
+  dctx.strokeStyle='rgba(143,168,140,.30)'; dctx.lineWidth=1; dctx.beginPath();
+  for(let i=0;i<scent.length;i++){
+    const p=scent[i]; i?dctx.lineTo(X(p.x),Z(p.z)):dctx.moveTo(X(p.x),Z(p.z));
+  }
+  dctx.stroke();
+
+  // zone de recherche du directeur
+  dctx.strokeStyle='rgba(207,199,180,.16)'; dctx.setLineDash([2,4]);
+  dctx.beginPath(); dctx.arc(X(director.zone.x),Z(director.zone.z),director.zone.r*k,0,6.283); dctx.stroke();
+  dctx.setLineDash([]);
+
+  // trajet calculé
+  const p=creature.path;
+  if(p&&p.length>1){
+    dctx.strokeStyle='rgba(180,85,63,.85)'; dctx.lineWidth=1.2; dctx.beginPath();
+    dctx.moveTo(X(creature.x),Z(creature.z));
+    for(let i=creature.pathIdx;i<p.length;i++) dctx.lineTo(X(p[i].x),Z(p[i].z));
+    dctx.stroke();
+    dctx.fillStyle='rgba(180,85,63,.75)';
+    for(let i=creature.pathIdx;i<p.length;i++) dctx.fillRect(X(p[i].x)-1.5,Z(p[i].z)-1.5,3,3);
+  }
+
+  // ondes de vibration
+  for(const s of sounds){
+    const a=1-s.t/0.8;
+    dctx.strokeStyle=`rgba(207,199,180,${a*0.5})`; dctx.lineWidth=1;
+    dctx.beginPath(); dctx.arc(X(s.x),Z(s.z),s.r*k*(0.35+s.t*0.9),0,6.283); dctx.stroke();
+  }
+
+  // croyance
+  const b=creature.belief;
+  if(b.conf>0.02){
+    dctx.strokeStyle=`rgba(180,85,63,${0.25+b.conf*0.5})`;
+    dctx.beginPath(); dctx.arc(X(b.x),Z(b.z),4+(1-b.conf)*16,0,6.283); dctx.stroke();
+  }
+
+  // créature
+  dctx.fillStyle='#b4553f';
+  dctx.beginPath(); dctx.arc(X(creature.x),Z(creature.z),3,0,6.283); dctx.fill();
+  dctx.strokeStyle='rgba(180,85,63,.55)'; dctx.beginPath();
+  for(let i=0;i<creature.SEGMENTS;i++){const q=sampleBody(i*creature.SPACING);
+    i?dctx.lineTo(X(q.x),Z(q.z)):dctx.moveTo(X(q.x),Z(q.z));}
+  dctx.stroke();
+
+  // joueur + cône de vue
+  dctx.fillStyle='#cfc7b4';
+  dctx.beginPath(); dctx.arc(S/2,S/2,2.5,0,6.283); dctx.fill();
+  dctx.strokeStyle='rgba(207,199,180,.45)'; dctx.beginPath(); dctx.moveTo(S/2,S/2);
+  dctx.lineTo(S/2-Math.sin(player.yaw)*13, S/2-Math.cos(player.yaw)*13); dctx.stroke();
+
+  // lecture chiffrée
+  const set=(id,v,hot)=>{const e=document.getElementById(id);e.textContent=v;e.className=hot?'hot':''};
+  document.getElementById('stateLbl').textContent=creature.state.toUpperCase();
+  set('rDist', dP.toFixed(1)+' m', dP<12);
+  set('rConf', (creature.belief.conf*100).toFixed(0)+' %', creature.belief.conf>0.5);
+  set('rPress',(director.pressure*100).toFixed(0)+' %', director.pressure>0.7);
+  set('rPath', (creature.path?creature.path.length:0)+' nœuds · '+lastExpanded+' exp.'
+       +(lastPartial?' · partiel':''), lastPartial);
+}
+
+/* ── son (proximité diégétique) ── */
+let actx=null, noiseGain=null, noiseFilt=null, drone=null, droneGain=null;
+function initAudio(){
+  try{
+    actx=new (window.AudioContext||window.webkitAudioContext)();
+    const len=actx.sampleRate*2, buf=actx.createBuffer(1,len,actx.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*0.6;
+    const src=actx.createBufferSource(); src.buffer=buf; src.loop=true;
+    noiseFilt=actx.createBiquadFilter(); noiseFilt.type='bandpass'; noiseFilt.frequency.value=300; noiseFilt.Q.value=1.4;
+    noiseGain=actx.createGain(); noiseGain.gain.value=0;
+    src.connect(noiseFilt).connect(noiseGain).connect(actx.destination); src.start();
+
+    drone=actx.createOscillator(); drone.type='sine'; drone.frequency.value=44;
+    droneGain=actx.createGain(); droneGain.gain.value=0;
+    drone.connect(droneGain).connect(actx.destination); drone.start();
+  }catch(e){ /* audio indisponible : le jeu reste jouable */ }
+}
+function updateAudio(dP){
+  if(!actx) return;
+  const near=clamp(1-(dP-2)/26,0,1);
+  noiseGain.gain.value = near*near*0.22;
+  noiseFilt.frequency.value = lerp(180,1500,near);
+  droneGain.gain.value = 0.02 + director.pressure*0.05;
+}
+
+/* ─────────── 9. BOUCLE & ENTRÉES ─────────── */
+const veil=document.getElementById('veil'), caught=document.getElementById('caught');
+let running=false, caughtT=0;
+
+veil.addEventListener('click',()=>{ cv.requestPointerLock(); if(!actx) initAudio(); if(actx&&actx.state==='suspended')actx.resume(); });
+document.addEventListener('pointerlockchange',()=>{
+  running = document.pointerLockElement===cv;
+  veil.style.display = running?'none':'grid';
+});
+addEventListener('mousemove',e=>{
+  if(!running) return;
+  player.yaw   -= e.movementX*0.0022;
+  player.pitch  = clamp(player.pitch - e.movementY*0.0022, -1.4, 1.4);
+});
+addEventListener('keydown',e=>{
+  keys[e.code]=true;
+  if(e.code==='Tab'){ e.preventDefault(); showScope=!showScope;
+    document.getElementById('scope').style.display=showScope?'block':'none'; }
+  if(e.code==='KeyP'){ const t=document.getElementById('tune');
+    t.style.display = t.style.display==='block'?'none':'block'; }
+});
+addEventListener('keyup',e=>{keys[e.code]=false});
+addEventListener('blur',()=>{for(const k in keys)keys[k]=false});
+
+// réglages
+const bind=(sid,vid,key,fmt,after)=>{
+  const s=document.getElementById(sid), v=document.getElementById(vid);
+  const apply=()=>{TUNE[key]=parseFloat(s.value); v.textContent=fmt(TUNE[key]); if(after)after();};
+  s.addEventListener('input',apply); apply();
+};
+bind('sFog','vFog','fogD',v=>v.toFixed(1));
+bind('sGrain','vGrain','grain',v=>v.toFixed(3));
+bind('sSpd','vSpd','chaseSpeed',v=>v.toFixed(1)+' m/s');
+bind('sHear','vHear','hearMul',v=>'×'+v.toFixed(2));
+bind('sScent','vScent','scentLife',v=>v.toFixed(0)+' s');
+bind('sOpen','vOpen','openAversion',v=>v.toFixed(2),()=>rebuildNavCost());
+bind('sPress','vPress','pressRate',v=>v.toFixed(3));
+
+buildWorld();
+level=buildLevelMesh();
+segMesh=boxMesh(-0.5,0.5);
+legMesh=boxMesh(-1.0,0.0);   // patte « pendante » : origine en haut
+spawnPlayer();
+spawnCreature();
+director.reset();
+resize();
+
+let prevT=performance.now();
+function frame(now){
+  const dt=Math.min(0.05,(now-prevT)/1000); prevT=now;
+  time+=dt;
+
+  let dP=Math.hypot(player.x-creature.x,player.z-creature.z);
+  if(running && caughtT<=0){
+    updatePlayer(dt);
+    director.update(dt);
+    dP=updateCreature(dt);
+    if(dP<1.15){ caughtT=1.2; }
+  } else if(caughtT>0){
+    caughtT-=dt;
+    caught.style.opacity=String(clamp(caughtT/0.4,0,1));
+    if(caughtT<=0){ caught.style.opacity='0'; spawnPlayer(); spawnCreature(); director.reset(); }
+  }
+
+  dread = lerp(dread, clamp(1-(dP-2.5)/16,0,1) * (creature.state===ST.CHASE?1:0.6), 1-Math.exp(-4*dt));
+  updateAudio(dP);
+  render();
+  drawScope(dP);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

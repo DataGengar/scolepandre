@@ -1,0 +1,2846 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SCOLÉOPANDRE — v2</title>
+<style>
+  :root{--void:#07080a;--bone:#cfc7b4;--signal:#8fa88c;--alarm:#b4553f;--dim:#4a4a46;--rule:#1c1e21}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--void);overflow:hidden;color:var(--bone);
+    font-family:"SF Mono","Roboto Mono",Menlo,Consolas,monospace;-webkit-font-smoothing:antialiased}
+  #gl{display:block;width:100vw;height:100vh}
+  canvas{touch-action:none}
+  .panel{position:fixed;background:rgba(7,8,10,.84);border:1px solid var(--rule);
+    backdrop-filter:blur(2px);font-size:10px;letter-spacing:.06em;line-height:1.5}
+  #scope{top:14px;right:14px;width:284px}
+  #scopeHead{display:flex;justify-content:space-between;align-items:baseline;
+    padding:7px 9px;border-bottom:1px solid var(--rule);color:var(--dim)}
+  #scopeHead b{color:var(--bone);font-weight:500;letter-spacing:.14em}
+  #dbg{display:block;width:284px;height:284px}
+  #readout{padding:7px 9px;border-top:1px solid var(--rule);color:var(--dim)}
+  #readout div{display:flex;justify-content:space-between}
+  #readout span{color:var(--signal)}#readout span.hot{color:var(--alarm)}
+  #tune{width:100%;padding:0;max-height:46vh;overflow:auto;text-align:left}
+  #menuOnglets{display:flex;gap:6px;justify-content:center;margin:20px 0 16px}
+  .mo{padding:7px 16px;background:none;border:1px solid var(--rule);color:var(--dim);
+    font:inherit;font-size:10px;letter-spacing:.16em;cursor:pointer}
+  .mo:hover{color:var(--bone);border-color:var(--signal)}
+  .mo[aria-pressed="true"]{color:var(--bone);border-color:var(--signal);background:#11161b}
+  .mvue{min-height:210px}
+  #veil .in{max-width:560px}
+  #grille{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;max-height:44vh;overflow:auto}
+  .carte{aspect-ratio:2/3;border:1px solid var(--rule);display:grid;place-items:center;
+    font-size:8px;letter-spacing:.06em;color:var(--dim);text-align:center;padding:3px;line-height:1.3}
+  .carte.eue{color:var(--bone)}
+  #objectif{position:fixed;top:14px;left:14px;padding:8px 11px;font-size:10px;
+    letter-spacing:.1em;background:rgba(7,8,10,.8);border:1px solid var(--rule)}
+  #objectif b{color:var(--signal);font-weight:400}
+  #inv{position:fixed;inset:0;background:rgba(5,6,8,.94);z-index:7;display:none;
+    padding:60px 8vw;overflow:auto}
+  #inv h2{font-size:11px;font-weight:400;letter-spacing:.4em;margin-bottom:18px}
+  #inv .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:9px}
+  #tune h4{font-size:10px;font-weight:500;letter-spacing:.14em;color:var(--dim);margin-bottom:8px}
+  .row{margin:0 0 7px}
+  .row label{display:flex;justify-content:space-between;color:var(--dim);margin-bottom:2px}
+  .row label i{font-style:normal;color:var(--signal)}
+  .row input{-webkit-appearance:none;appearance:none;width:100%;height:2px;background:var(--rule);outline:none}
+  .row input::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:9px;background:var(--bone);cursor:ns-resize}
+  .row input::-moz-range-thumb{width:9px;height:9px;border:0;background:var(--bone)}
+  .grp{border-top:1px solid var(--rule);margin:10px 0 8px;padding-top:8px;color:var(--dim);letter-spacing:.14em}
+
+  /* bandeau du bas : leurres + biome + nappe en cours */
+  #bar{position:fixed;left:0;right:0;bottom:0;padding:9px 16px;display:flex;
+    justify-content:space-between;align-items:flex-end;pointer-events:none;font-size:10px;letter-spacing:.08em}
+  #keys{color:var(--dim)}#keys b{color:var(--signal);font-weight:400}
+  #right{text-align:right;color:var(--dim)}
+  #lures{color:var(--bone);letter-spacing:.34em;font-size:13px}
+  #lures u{text-decoration:none;color:var(--rule)}
+  #place{color:var(--signal);letter-spacing:.2em}
+  #nappe{color:var(--dim);font-size:9px}
+
+  #veil{position:fixed;inset:0;display:grid;place-items:center;cursor:pointer;
+    background:radial-gradient(ellipse at 50% 55%,#0d0f12 0%,#050506 70%);z-index:9}
+  #veil .in{text-align:center;max-width:470px;padding:0 24px}
+  #veil h1{font-size:13px;font-weight:400;letter-spacing:.62em;margin-bottom:22px;text-indent:.62em}
+  #veil p{font-size:11px;line-height:1.95;color:var(--dim);letter-spacing:.05em;margin-bottom:9px}
+  #veil em{font-style:normal;color:var(--signal)}
+  #veil .go{margin-top:24px;font-size:10px;letter-spacing:.3em;opacity:.45;animation:pulse 2.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.2}50%{opacity:.7}}
+  @media (prefers-reduced-motion:reduce){#veil .go{animation:none;opacity:.5}}
+  #caught{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;
+    display:grid;place-items:center;transition:opacity .15s;z-index:8}
+  #caught span{font-size:11px;letter-spacing:.42em;color:var(--alarm)}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="panel" id="scope">
+  <div id="scopeHead"><b>SISMOGRAPHE</b><span id="stateLbl">—</span></div>
+  <canvas id="dbg" width="284" height="284"></canvas>
+  <div id="readout">
+    <div>distance<span id="rDist">—</span></div>
+    <div>certitude<span id="rConf">—</span></div>
+    <div>piste<span id="rTrail">—</span></div>
+    <div>pression<span id="rPress">—</span></div>
+    <div>jeunes<span id="rJeunes">—</span></div>
+    <div>trajet<span id="rPath">—</span></div>
+  </div>
+</div>
+
+<div id="tune">
+  <h4>RÉGLAGES</h4>
+  <div class="grp">IMAGE</div>
+  <div class="row"><label>Densité du fog<i id="vFog"></i></label><input id="sFog" type="range" min="0.4" max="3.5" step="0.05" value="1.55"></div>
+  <div class="row"><label>Godrays<i id="vRays"></i></label><input id="sRays" type="range" min="0" max="3" step="0.05" value="1.15"></div>
+  <div class="row"><label>Grain<i id="vGrain"></i></label><input id="sGrain" type="range" min="0" max="0.3" step="0.005" value="0.115"></div>
+  <div class="row"><label>Résolution interne<i id="vRes"></i></label><input id="sRes" type="range" min="140" max="900" step="10" value="360"></div>
+  <div class="grp">TRACES</div>
+  <div class="row"><label>Persistance de l'odeur<i id="vScent"></i></label><input id="sScent" type="range" min="4" max="60" step="1" value="22"></div>
+  <div class="row"><label>Endurance sur la piste<i id="vFat"></i></label><input id="sFat" type="range" min="2" max="30" step="0.5" value="10"></div>
+  <div class="row"><label>Portée des vibrations<i id="vHear"></i></label><input id="sHear" type="range" min="0.3" max="2.5" step="0.05" value="1"></div>
+  <div class="grp">CRÉATURE</div>
+  <div class="row"><label>Vitesse de traque<i id="vSpd"></i></label><input id="sSpd" type="range" min="2" max="9" step="0.1" value="5.3"></div>
+  <div class="row"><label>Aversion aux espaces ouverts<i id="vOpen"></i></label><input id="sOpen" type="range" min="0" max="3" step="0.05" value="1.1"></div>
+  <div class="row"><label>Montée de la pression<i id="vPress"></i></label><input id="sPress" type="range" min="0.01" max="0.2" step="0.005" value="0.04"></div>
+  <div class="grp">NAPPE</div>
+  <div class="row"><label>Volume<i id="vVol"></i></label><input id="sVol" type="range" min="0" max="100" step="1" value="82"></div>
+</div>
+
+<div id="bar">
+  <div id="keys"><b>ZQSD</b> avancer · <b>MAJ</b> courir · <b>F</b> torche &middot; <b>C</b> ramper <b>(MAJ.VERR</b> bascule<b>)</b> &middot; <b>R</b> nouvelle carte · <b>CLIC</b> lancer · <b>TAB</b> sismographe · <b>P</b> réglages</div>
+  <div id="right">
+    <div id="lures">—</div>
+    <div id="place">—</div>
+    <div id="nappe">—</div>
+  </div>
+</div>
+
+<div id="caught"><span>ELLE T'A TROUVÉ</span></div>
+<div id="objectif">SORTIE <b id="oDist">—</b> · CARTES <b id="oCartes">0</b> · <b id="oProf">0 m</b></div>
+<div id="inv"><h2>COLLECTION</h2><div class="g" id="invG"></div></div>
+
+<div id="veil"><div class="in" id="menuIn">
+  <h1>SCOLÉOPANDRE</h1>
+  <p id="mBrief">Elle est aveugle. Elle ne connaît que le <em>sol qui tremble</em> et l'<em>odeur que tu laisses</em>.
+     <em>Ramper n'imprime aucune trace.</em><br>
+     Trouve la <em>sortie</em>. Ramasse les <em>cartes</em> : les plus rares sont au fond.</p>
+  <div id="menuOnglets">
+    <button class="mo" data-vue="jouer" aria-pressed="true">Descendre</button>
+    <button class="mo" data-vue="reglages">Réglages</button>
+    <button class="mo" data-vue="collection">Collection</button>
+  </div>
+  <div id="mJouer" class="mvue"><div class="go">CLIQUER ICI POUR DESCENDRE</div>
+    <p style="margin-top:14px">ÉCHAP à tout moment pour revenir ici — la souris redevient utilisable.</p></div>
+  <div id="mReglages" class="mvue" hidden></div>
+  <div id="mCollection" class="mvue" hidden><div id="grille"></div></div>
+</div></div>
+
+<script>
+"use strict";
+/* ══════════════════════════════════════════════════════════════════════════
+   SCOLÉOPANDRE v2 — moteur maison, WebGL2 brut, zéro dépendance
+   1 math · 2 GL · 3 monde (relief + biomes) · 4 maillage · 5 nav
+   6 joueur + leurres · 7 IA · 8 nappes ambient · 9 rendu · 10 boucle
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ───────────────────────── 1. MATH ───────────────────────── */
+const M={
+  mk:()=>new Float32Array(16),
+  ident(o){o.set([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);return o},
+  mul(o,a,b){
+    const a00=a[0],a01=a[1],a02=a[2],a03=a[3],a10=a[4],a11=a[5],a12=a[6],a13=a[7],
+          a20=a[8],a21=a[9],a22=a[10],a23=a[11],a30=a[12],a31=a[13],a32=a[14],a33=a[15];
+    for(let i=0;i<4;i++){const b0=b[i*4],b1=b[i*4+1],b2=b[i*4+2],b3=b[i*4+3];
+      o[i*4]=b0*a00+b1*a10+b2*a20+b3*a30; o[i*4+1]=b0*a01+b1*a11+b2*a21+b3*a31;
+      o[i*4+2]=b0*a02+b1*a12+b2*a22+b3*a32; o[i*4+3]=b0*a03+b1*a13+b2*a23+b3*a33;}
+    return o},
+  persp(o,f,a,n,fa){const t=1/Math.tan(f/2);o.fill(0);o[0]=t/a;o[5]=t;o[11]=-1;
+    o[10]=(fa+n)/(n-fa);o[14]=2*fa*n/(n-fa);return o},
+  trans(o,x,y,z){M.ident(o);o[12]=x;o[13]=y;o[14]=z;return o},
+  rotY(o,a){const c=Math.cos(a),s=Math.sin(a);M.ident(o);o[0]=c;o[2]=-s;o[8]=s;o[10]=c;return o},
+  rotX(o,a){const c=Math.cos(a),s=Math.sin(a);M.ident(o);o[5]=c;o[6]=s;o[9]=-s;o[10]=c;return o},
+  rotZ(o,a){const c=Math.cos(a),s=Math.sin(a);M.ident(o);o[0]=c;o[1]=s;o[4]=-s;o[5]=c;return o},
+  scale(o,x,y,z){M.ident(o);o[0]=x;o[5]=y;o[10]=z;return o}
+};
+const clamp=(v,a,b)=>v<a?a:v>b?b:v, lerp=(a,b,t)=>a+(b-a)*t;
+const hash2=(x,y)=>{const s=Math.sin(x*127.1+y*311.7)*43758.5453;return s-Math.floor(s)};
+const _a=M.mk(),_b=M.mk(),_c=M.mk(),_d=M.mk(),_e=M.mk();
+function trs(o,x,y,z,yaw,pit,rol,sx,sy,sz){
+  M.trans(_a,x,y,z);M.rotY(_b,yaw);M.mul(o,_a,_b);
+  M.rotX(_b,pit);M.mul(o,o,_b); M.rotZ(_b,rol);M.mul(o,o,_b);
+  M.scale(_b,sx,sy,sz);M.mul(o,o,_b);return o;
+}
+
+/* ───────────────────────── 2. GL ───────────────────────── */
+const cv=document.getElementById('gl');
+const gl=cv.getContext('webgl2',{antialias:false,alpha:false,depth:true});
+if(!gl){document.body.innerHTML='<p style="padding:40px;font:12px monospace;color:#cfc7b4">WebGL2 indisponible.</p>';throw new Error('no webgl2');}
+const sh=(t,s)=>{const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);
+  if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(o));return o};
+const prog=(v,f)=>{const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,v));
+  gl.attachShader(p,sh(gl.FRAGMENT_SHADER,f));gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));return p};
+const unis=(p,n)=>{const o={};for(const k of n)o[k]=gl.getUniformLocation(p,k);return o};
+
+const NLIGHT=6;
+const VS=`#version 300 es
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec3 aCol;
+uniform mat4 uProj,uView,uModel;
+out vec3 vN,vC,vW;
+void main(){vec4 w=uModel*vec4(aPos,1.0);vW=w.xyz;vN=mat3(uModel)*aNrm;vC=aCol;
+  gl_Position=uProj*uView*w;}`;
+
+const FS=`#version 300 es
+precision highp float;
+in vec3 vN,vC,vW;
+uniform vec3 uCam,uFwd,uFog,uTint;
+uniform float uFogD,uEmit,uLampGain,uAmb;
+uniform vec3 uLP[${NLIGHT}],uLC[${NLIGHT}];
+uniform int uLN;
+out vec4 frag;
+void main(){
+  vec3 toCam=uCam-vW; float d=length(toCam);
+  vec3 L=toCam/max(d,1e-4), N=normalize(vN);
+  // lampe frontale
+  float cone=pow(max(dot(-L,uFwd),0.0),3.0);
+  float lamp=max(dot(N,L),0.0)*exp(-d*0.085)*(0.28+1.30*cone)*uLampGain;
+  // sources fixes du décor : les seuls repères dans le fog
+  vec3 pt=vec3(0.0);
+  for(int i=0;i<${NLIGHT};i++){
+    if(i>=uLN) break;
+    vec3 dl=uLP[i]-vW; float dd=length(dl);
+    pt += uLC[i]*max(dot(N,dl/max(dd,1e-4)),0.0)/(1.0+0.22*dd+0.16*dd*dd);
+  }
+  vec3 col=vC*uTint*(uAmb+lamp)+vC*uTint*pt+vC*uEmit;
+  float f=exp(-pow(max(d-0.6,0.0)*uFogD*0.01,2.0));
+  frag=vec4(mix(uFog,col,clamp(f,0.0,1.0)),1.0);
+}`;
+
+const VSP=`#version 300 es
+out vec2 vUv;
+void main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);vUv=p;gl_Position=vec4(p*2.0-1.0,0.0,1.0);}`;
+
+const FSP=`#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 frag;
+uniform sampler2D uTex; uniform vec2 uRes; uniform float uTime,uGrain,uDread,uSnow,uRays,uWind;
+uniform vec2 uSun[3];
+uniform vec3 uSunC[3];
+uniform int uSunN;
+const float BAY[16]=float[16](0.,8.,2.,10.,12.,4.,14.,6.,3.,11.,1.,9.,15.,7.,13.,5.);
+float rnd(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+void main(){
+  vec2 px=vUv*uRes; vec3 c=texture(uTex,vUv).rgb;
+
+  /* GODRAYS — diffusion volumétrique en espace écran. On marche depuis le
+     pixel vers la source lumineuse en accumulant ce qui brille sur le
+     trajet : là où le décor coupe le rayon, l'accumulation s'arrête, et les
+     colonnes de lumière se découpent dans le fog. */
+  if(uRays>0.01){
+    for(int L=0;L<3;L++){
+      if(L>=uSunN) break;
+      vec2 dir=(uSun[L]-vUv);
+      float dl=length(dir);
+      if(dl>0.95) continue;
+      dir/= 26.0;
+      vec2 uv2=vUv; float poids=1.0, acc=0.0;
+      for(int i=0;i<26;i++){
+        uv2+=dir;
+        vec3 t=texture(uTex,clamp(uv2,0.0,1.0)).rgb;
+        acc+=max(0.0,dot(t,vec3(0.32,0.36,0.28))-0.055)*poids;
+        poids*=0.955;
+      }
+      c+=uSunC[L]*acc*uRays*(1.0-dl*0.85)*0.055;
+    }
+  }
+  int bi=int(mod(px.y,4.0))*4+int(mod(px.x,4.0));
+  float b=(BAY[bi]+0.5)/16.0-0.5; float lv=22.0;
+  c=floor(c*lv+b*1.1)/lv;
+  float n=rnd(px+vec2(fract(uTime*37.0)*91.0,fract(uTime*23.0)*57.0))-0.5;
+  c+=n*uGrain*(0.55+0.9*(1.0-length(c)));
+  c*=1.0-0.92*pow(clamp(length(vUv-0.5)*1.42,0.0,1.0),2.3);
+  c=mix(c,c*vec3(1.35,0.70,0.64)+rnd(px+uTime)*0.055*uDread,uDread);
+  // neige : trois nappes de profondeurs différentes, tombant à des vitesses
+  // différentes. Presque gratuit à 210 px de haut, et ça fait le dehors.
+  if(uSnow>0.01){
+    float n2=0.0;
+    for(int L=0;L<3;L++){
+      float fl=float(L)+1.0;
+      vec2 q=px/(2.2*fl);
+      q.y+=uTime*(11.0*fl); q.x+=uTime*uWind*(9.0*fl)+sin(uTime*0.5+fl*2.0)*3.0;
+      vec2 ip=floor(q), fp=fract(q);
+      if(rnd(ip+fl*37.0)>0.955) n2+=smoothstep(0.46,0.0,length(fp-0.5))/fl;
+    }
+    c+=vec3(0.50,0.54,0.60)*n2*uSnow;
+  }
+  frag=vec4(max(c,0.0),1.0);
+}`;
+
+const pS=prog(VS,FS);
+const uS=unis(pS,['uProj','uView','uModel','uCam','uFwd','uFog','uFogD','uTint','uEmit','uLampGain','uAmb','uLP','uLC','uLN']);
+const pP=prog(VSP,FSP);
+const uP=unis(pP,['uTex','uRes','uTime','uGrain','uDread','uSnow','uRays','uWind','uSun','uSunC','uSunN']);
+
+function mesh(P,N,C){
+  const vao=gl.createVertexArray();gl.bindVertexArray(vao);
+  const bufs=[];
+  [[P,0],[N,1],[C,2]].forEach(([d,l])=>{const b=gl.createBuffer();bufs.push(b);
+    gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(d),gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(l);gl.vertexAttribPointer(l,3,gl.FLOAT,false,0,0);});
+  gl.bindVertexArray(null);return {vao,bufs,count:P.length/3};
+}
+
+/* ─────────────────── 3. MONDE : relief + biomes ─────────────────── */
+const GW=544,GH=544,CELL=3.0,WALL=1,FLOOR=0,LEDGE=1.1;  // 1632 × 1632 m
+const CH=16, CHW=Math.ceil(GW/CH), CHH=Math.ceil(GH/CH);  // pavés de maillage
+const grid  =new Uint8Array(GW*GH).fill(WALL);
+const blocked=new Uint8Array(GW*GH);   // occupé par un élément de décor
+const floorH=new Float32Array(GW*GH);
+const ceilH =new Float32Array(GW*GH);
+const openN =new Float32Array(GW*GH);
+const biome =new Uint8Array(GW*GH);
+const platform=new Uint8Array(GW*GH);  // surélévations volontaires
+const sky=new Uint8Array(GW*GH);       // à ciel ouvert : aucun plafond
+/* ═══ SECOND NIVEAU ═══
+   Le champ de hauteur ne connaît qu'une altitude par colonne. On lui ajoute
+   une couche : `pont[i]` marque une passerelle, `pontH[i]` sa cote. On passe
+   DESSOUS comme avant, et DESSUS en montant une échelle. Ce n'est pas de la
+   3D complète — c'est deux étages, ce qui suffit pour des ponts traversants,
+   des galeries et des gouffres qu'on enjambe. */
+const pont =new Uint8Array(GW*GH);
+const pontH=new Float32Array(GW*GH);
+const echelle=new Uint8Array(GW*GH);   // relie les deux étages
+const vide=new Uint8Array(GW*GH);      // pas de sol du tout : on y tombe
+const DECK_JOUR=3.6;                   // tirant d'air sous la passerelle
+const navCost=new Float32Array(GW*GH);
+const idx=(x,z)=>z*GW+x, inB=(x,z)=>x>0&&z>0&&x<GW-1&&z<GH-1;
+const isFloor=(x,z)=>inB(x,z)&&grid[idx(x,z)]===FLOOR;
+const isFree =(x,z)=>isFloor(x,z)&&!blocked[idx(x,z)];
+const w2c=v=>Math.floor(v/CELL), c2w=c=>(c+0.5)*CELL;
+const estVide=(x,z)=>(x<0||z<0||x>=GW||z>=GH)||vide[idx(x,z)]===1;
+
+/* Chaque biome porte sa palette, son fog, sa hauteur sous plafond,
+   son jeu d'éléments et sa nappe. On reste majoritairement souterrain. */
+const BIOMES=[
+ {n:'SOUTERRAIN',fog:[.011,.012,.015],fogD:5.4,h:1.00,amb:.016,snow:0,sky:0,
+  floor:[.21,.19,.17],wall:[.27,.25,.23],ceil:[.09,.09,.10],
+  lum:[0.58,0.24,0.06],props:['pilier','gravats','stalag','arche','os','cotes','crane','cristal','monolithe','cristal']},
+ {n:'GLACIÈRE',  fog:[.021,.027,.037],fogD:7.8,h:1.35,amb:.026,snow:.3,sky:0,
+  floor:[.31,.36,.43],wall:[.27,.33,.41],ceil:[.15,.20,.28],
+  lum:[0.09,0.30,0.58],props:['glace','gravats','stalag','os','cotes','cristal','cristal','monolithe']},
+ {n:'BARRAGE',   fog:[.013,.014,.016],fogD:3.6,h:2.60,amb:.018,snow:0,sky:0,
+  floor:[.25,.25,.24],wall:[.30,.30,.29],ceil:[.11,.11,.12],
+  lum:[0.62,0.46,0.16],props:['poutre','conduit','gravats','os','crane','monolithe','monolithe','cristal']},
+ {n:'SURFACE GELÉE',fog:[.062,.068,.079],fogD:7.2,h:1.00,amb:.115,snow:1,sky:1,
+  floor:[.44,.47,.53],wall:[.17,.18,.21],ceil:[.05,.06,.08],
+  lum:[0.16,0.26,0.42],props:['tronc','tronc','tronc','tronc','souche','souche','os','cotes','monolithe','cristal']},
+ /* VILLE ROUGE — d'après tes deux images : noir profond viré rouge, meneaux
+    verticaux au premier plan, grilles de fenêtres lointaines dans le fog.
+    Presque aucune ambiante : tout vient des fenêtres. */
+ {n:'VILLE ROUGE',fog:[.048,.007,.006],fogD:5.6,h:3.4,amb:.010,snow:0,sky:0,
+  floor:[.14,.055,.05],wall:[.20,.07,.062],ceil:[.06,.02,.02],
+  lum:[0.95,0.30,0.16],props:['tourFenetres','meneau','tourFenetres','meneau','gravats','os','cotes','monolithe']},
+];
+
+let rngS=(Date.now()>>>0)^0x9e3779b9;
+let graine=rngS;
+const rnd=()=>{rngS=(rngS*1664525+1013904223)&0xffffffff;return((rngS>>>8)&0xffffff)/0xffffff};
+const ri=(a,b)=>a+Math.floor(rnd()*(b-a+1));
+const rooms=[], props=[], lights=[], lures=[], colliders=[];
+let collParCell=new Map();
+
+function carveRect(x0,z0,w,h,e,b){
+  for(let z=z0;z<z0+h;z++)for(let x=x0;x<x0+w;x++)if(inB(x,z)){
+    grid[idx(x,z)]=FLOOR;floorH[idx(x,z)]=e;biome[idx(x,z)]=b;}
+}
+function carveBlob(cx,cz,steps,e,b){
+  let x=cx,z=cz;
+  for(let i=0;i<steps;i++){
+    for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++)if(inB(x+dx,z+dz)){
+      const k=idx(x+dx,z+dz);grid[k]=FLOOR;
+      // relief doux dans les cavernes : jamais de falaise en travers du passage
+      floorH[k]=e+Math.sin(x*0.31)*0.28+Math.cos(z*0.27)*0.28;
+      biome[k]=b;}
+    const d=ri(0,3);
+    x+=d===0?1:d===1?-1:0; z+=d===2?1:d===3?-1:0;
+    x=clamp(x,3,GW-4); z=clamp(z,3,GH-4);
+  }
+}
+/* Le couloir interpole l'altitude cellule par cellule : la marche reste
+   toujours sous le seuil franchissable par le joueur. C'est ce qui garantit
+   que la verticalité ne crée jamais de cul-de-sac. */
+function corridor(a,b,wdt){
+  const pts=[];
+  let x=a.x,z=a.z;
+  while(x!==b.x){pts.push([x,z]);x+=Math.sign(b.x-x);}
+  while(z!==b.z){pts.push([x,z]);z+=Math.sign(b.z-z);}
+  pts.push([b.x,b.z]);
+  pts.forEach(([x,z],i)=>{
+    const t=i/Math.max(1,pts.length-1);
+    const e=lerp(a.e,b.e,t), bi=t<0.5?a.b:b.b;
+    for(let i2=0;i2<wdt;i2++)for(let j=0;j<wdt;j++)if(inB(x+i2,z+j)){
+      const k=idx(x+i2,z+j);grid[k]=FLOOR;floorH[k]=e;biome[k]=bi;}
+  });
+}
+
+/* Un couloir en L direct est souvent trop court pour absorber un écart
+   d'altitude sans que la relaxation ne l'aplatisse. On insère donc un point
+   de passage qui rallonge le trajet : la rampe devient longue et douce, et
+   le dénivelé survit. */
+function corridorLong(a,b,wdt){
+  const dE=Math.abs(a.e-b.e);
+  const dist=Math.abs(a.x-b.x)+Math.abs(a.z-b.z);
+  const besoin=dE/0.40;                       // cellules nécessaires
+  if(dist>=besoin){ corridor(a,b,wdt); return; }
+  const manque=besoin-dist;
+  const dir=rnd()<0.5?1:-1;
+  const wp={
+    x:clamp(Math.round((a.x+b.x)/2 + dir*manque*0.5),2,GW-3),
+    z:clamp(Math.round((a.z+b.z)/2 - dir*manque*0.5),2,GH-3),
+    e:(a.e+b.e)/2, b:a.b
+  };
+  corridor(a,wp,wdt); corridor(wp,b,wdt);
+}
+
+/* ═══ CARTES DESSINÉES ═══
+   PNG de 160 × 80 : biome à gauche (code couleur), cote en gris à droite.
+   Quand la carte vient de toi, on NE RELAXE PAS le relief : la falaise que
+   tu as tracée est voulue. C'est la relaxation qui rendait mes cartes
+   plates. L'éditeur t'a déjà signalé les culs-de-sac ; ici on se contente
+   de les recompter et de te le dire. */
+let carteImportee=null;   // {biome:Uint8Array, alt:Float32Array}
+const CODE_BIOME=[[0,0,0],[138,74,34],[47,127,168],[154,139,74],[207,216,221]];
+
+function chargerCartePNG(img){
+  // La planche du RELEVÉ peut être plus grossière que la grille du jeu :
+  // on la rééchantillonne. Tu dessines un plan, pas 74 000 cases.
+  const MW=img.width>>1, MH=img.height;
+  if(MW<8||MH<8||img.width!==MW*2)
+    return `format inattendu : largeur paire attendue (biome | cote), reçu ${img.width} × ${img.height}`;
+  const c=document.createElement('canvas');
+  c.width=img.width;c.height=img.height;
+  const g=c.getContext('2d');g.drawImage(img,0,0);
+  const d=g.getImageData(0,0,img.width,img.height).data;
+  const B=new Uint8Array(GW*GH), A=new Float32Array(GW*GH);
+  for(let z=0;z<GH;z++)for(let x=0;x<GW;x++){
+    const mx=Math.min(MW-1,(x*MW/GW)|0), mz=Math.min(MH-1,(z*MH/GH)|0);
+    let p=(mz*MW*2+mx)*4;
+    let best=0,bd=1e9;
+    CODE_BIOME.forEach((c2,k)=>{
+      const dd=(d[p]-c2[0])**2+(d[p+1]-c2[1])**2+(d[p+2]-c2[2])**2;
+      if(dd<bd){bd=dd;best=k;}
+    });
+    const i=idx(x,z);
+    B[i]=best;
+    p=(mz*MW*2+MW+mx)*4;
+    A[i]= best===0 ? 0 : (d[p]-128)/127*40;
+  }
+  carteImportee={biome:B,alt:A};
+  regenerer();
+  return null;
+}
+
+function batirDepuisCarte(){
+  const C=carteImportee;
+  for(let i=0;i<GW*GH;i++){
+    if(C.biome[i]===0){grid[i]=WALL;continue;}
+    grid[i]=FLOOR;
+    floorH[i]=C.alt[i];
+    biome[i]=C.biome[i]-1;          // 0 = roche dans l'éditeur
+  }
+  for(let x=0;x<GW;x++){grid[idx(x,0)]=WALL;grid[idx(x,GH-1)]=WALL;}
+  for(let z=0;z<GH;z++){grid[idx(0,z)]=WALL;grid[idx(GW-1,z)]=WALL;}
+}
+
+function buildWorld(){
+  if(carteImportee){
+    batirDepuisCarte();
+    for(let z=0;z<GH;z++)for(let x=0;x<GW;x++){
+      const i=idx(x,z); if(grid[i]!==FLOOR)continue;
+      let n=0,t=0;
+      for(let dz=-3;dz<=3;dz++)for(let dx=-3;dx<=3;dx++){t++;if(isFloor(x+dx,z+dz))n++;}
+      openN[i]=n/t;
+    }
+    // pas de relaxHeights ni de placePlatforms : ton relief reste le tien
+    for(let i=0;i<GW*GH;i++){
+      if(grid[i]!==FLOOR){ceilH[i]=0;continue;}
+      if(BIOMES[biome[i]].sky){sky[i]=1;ceilH[i]=floorH[i]+26;}
+      else ceilH[i]=floorH[i]+(2.8+openN[i]*3.2)*BIOMES[biome[i]].h;
+    }
+    solMin=1e9;for(let i=0;i<GW*GH;i++)if(grid[i]===FLOOR)solMin=Math.min(solMin,floorH[i]);
+    placePonts();placeProps();placeRefuges();placeCombustible();placeLures();placeSortie();placeCartes();rebuildNavCost();
+    return;
+  }
+  return buildWorldProcedural();
+}
+
+function buildWorldProcedural(){
+  // biomes : souterrain dominant, poches de glace / barrage / forêt
+  /* PLAN VERTICAL — 30 m du fond au ciel.
+     Le monde est ordonné en altitude : le barrage tout au fond, la surface
+     tout en haut. Les salles sont posées le long d'une diagonale de la carte
+     pour que la remontée soit longue : c'est la longueur du chemin, et non
+     l'altitude visée, qui décide du dénivelé qui survivra à la relaxation. */
+  /* 88 salles réparties du barrage (−42 m) à la surface (+44 m). Sur 272
+     cellules de côté, la relaxation laisse passer bien plus d'amplitude que
+     sur 80 : le dénivelé n'est plus bridé par la taille de la planche. */
+  const PLAN=[];
+  for(let k=0;k<300;k++){
+    const t=k/299;
+    const e=lerp(-42,44,t)+ri(-3,3);
+    const b = t<0.14?2 : t<0.30?1 : t<0.80?0 : 3;
+    PLAN.push({b:(t>0.34&&t<0.68)?4:b, e});
+  }
+  PLAN.forEach((P,i)=>{
+    const t=i/(PLAN.length-1);
+    // diagonale + dispersion : les extrêmes se retrouvent aux deux bouts
+    const cx=Math.round(lerp(9,GW-10,t)+ri(-7,7));
+    const cz=Math.round(lerp(GH-10,9,t)+ri(-7,7));
+    const grand=P.b===3||P.b===2;
+    const w=grand?ri(13,20):ri(7,13), h=grand?ri(13,20):ri(7,13);
+    const x=clamp(cx-(w>>1),2,GW-w-3), z=clamp(cz-(h>>1),2,GH-h-3);
+    carveRect(x,z,w,h,P.e,P.b);
+    rooms.push({x:x+(w>>1),z:z+(h>>1),e:P.e,b:P.b});
+  });
+  // cavernes : une profonde, une haute, deux médianes
+  const CAVES=[];
+  for(let k=0;k<90;k++){
+    const t=k/89, e=lerp(-38,40,t)+ri(-4,4);
+    CAVES.push([t<0.2?1:t>0.82?3:(t>0.36&&t<0.66?4:0), e]);
+  }
+  for(const [b,e] of CAVES){
+    const t=(e+42)/86;
+    const cx=clamp(Math.round(lerp(10,GW-11,t)+ri(-6,6)),9,GW-10);
+    const cz=clamp(Math.round(lerp(GH-11,10,t)+ri(-6,6)),9,GH-10);
+    carveBlob(cx,cz,ri(700,1500),e,b);
+    rooms.push({x:cx,z:cz,e,b});
+  }
+  // la chaîne suit l'ordre du plan : on ne saute jamais 20 m d'un coup
+  for(let i=1;i<rooms.length;i++) corridorLong(rooms[i-1],rooms[i],rnd()<0.35?2:1);
+  // raccourcis, mais seulement entre paliers voisins
+  for(let i=0;i<140;i++){
+    const a=ri(0,rooms.length-2);
+    corridorLong(rooms[a],rooms[a+1],1);
+  }
+  /* Plus de mur d'enceinte. Au bord, le sol s'arrête et c'est le vide :
+     un monde clos par une paroi invisible n'a pas d'horizon. */
+  for(let z=0;z<GH;z++)for(let x=0;x<GW;x++){
+    if(x<14||z<14||x>=GW-14||z>=GH-14){
+      const i=idx(x,z); if(grid[i]!==FLOOR) vide[i]=1;
+    }
+  }
+  for(let z=0;z<GH;z++)for(let x=0;x<GW;x++){
+    const i=idx(x,z); if(grid[i]!==FLOOR)continue;
+    let n=0,t=0;
+    for(let dz=-3;dz<=3;dz++)for(let dx=-3;dx<=3;dx++){t++;if(isFloor(x+dx,z+dz))n++;}
+    openN[i]=n/t;
+  }
+  relaxHeights();     // d'abord : plus aucune marche infranchissable nulle part
+  placePlatforms();   // ensuite : les seules corniches sont celles qu'on choisit
+  for(let i=0;i<GW*GH;i++){
+    if(grid[i]!==FLOOR){ceilH[i]=0;continue;}
+    if(BIOMES[biome[i]].sky){
+      // Dehors : pas de plafond, et des parois de 26 m tout autour. On est
+      // au fond d'une vallée, pas dans une salle repeinte en gris.
+      sky[i]=1; ceilH[i]=floorH[i]+26;
+    } else ceilH[i]=floorH[i]+(2.8+openN[i]*3.2)*BIOMES[biome[i]].h;
+  }
+
+  solMin=1e9;for(let i=0;i<GW*GH;i++)if(grid[i]===FLOOR)solMin=Math.min(solMin,floorH[i]);
+  placePonts();
+  placeProps();
+  placeRefuges();
+  placeCombustible();
+  placeLures();
+  placeSortie();
+  placeCartes();
+  rebuildNavCost();
+}
+
+/* Le relief brut (salles à altitudes libres, cavernes bruitées, salles qui se
+   recouvrent) fabrique des falaises au hasard — donc des trous dont on ne
+   ressort pas. On rend d'abord le champ Lipschitz : aucune marche entre deux
+   cellules voisines ne dépasse ce que le joueur franchit. On ne fait que
+   BAISSER, donc le procédé converge. Il reste 5 m d'amplitude : il suffit de
+   huit cellules de course pour les gravir. */
+function relaxHeights(){
+  const MAX=STEPUP-0.03;
+  const NB=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+  for(let pass=0;pass<120;pass++){
+    let changed=0;
+    for(let z=1;z<GH-1;z++)for(let x=1;x<GW-1;x++){
+      const i=idx(x,z); if(grid[i]!==FLOOR)continue;
+      for(const [dx,dz] of NB){
+        if(!isFloor(x+dx,z+dz))continue;
+        const n=idx(x+dx,z+dz);
+        if(floorH[i]-floorH[n]>MAX){floorH[i]=floorH[n]+MAX;changed++;}
+      }
+    }
+    if(!changed)break;
+  }
+}
+
+/* La verticalité intéressante n'est pas le dénivelé : c'est ce qu'elle
+   franchit et pas toi. Ces blocs montent de 1,7 à 2,3 m — au-dessus de ta
+   marche (0,62 m), sous sa limite d'escalade (2,40 m). Ils ne sont jamais sur
+   un passage : uniquement au milieu de salles assez dégagées pour qu'on en
+   fasse le tour. Elle t'arrive dessus par le haut. */
+function placePlatforms(){
+  for(const r of rooms){
+    if(rnd()>0.5)continue;
+    const w=ri(2,3),h=ri(2,3),ox=r.x+ri(-3,2),oz=r.z+ri(-3,2);
+    let ok=true;
+    for(let z=oz-1;z<=oz+h&&ok;z++)for(let x=ox-1;x<=ox+w&&ok;x++)
+      if(!isFloor(x,z)||openN[idx(x,z)]<0.78||platform[idx(x,z)])ok=false;
+    if(!ok)continue;
+    const base=floorH[idx(ox,oz)],up=1.7+rnd()*0.6;
+    for(let z=oz;z<oz+h;z++)for(let x=ox;x<ox+w;x++){
+      const i=idx(x,z);floorH[i]=base+up;platform[i]=1;
+    }
+    // un repère lumineux : dans le fog, une plateforme invisible n'existe pas
+    lights.push({x:c2w(ox),y:base+up+0.6,z:c2w(oz),c:BIOMES[r.b].lum,ph:rnd()*6.28});
+  }
+}
+
+/* ── éléments de décor ──
+   Les colonnades et les plateformes ne sont pas du remplissage : elles
+   cassent les lignes droites, donnent des repères dans le fog, et les
+   plateformes créent l'asymétrie verticale (elle grimpe, pas toi). */
+function addProp(kind,x,z,i){
+  const b=BIOMES[biome[i]], wx=c2w(x), wz=c2w(z), h=floorH[i];
+  const R=(a,bb)=>a+rnd()*(bb-a);
+  let solid=true, parts=[];
+  switch(kind){
+    case 'pilier': {
+      const th=ceilH[i]-h, br=R(.45,.62);
+      parts.push({x:wx,y:h+th/2,z:wz,sx:br,sy:th,sz:br,c:b.wall,r:0});
+      parts.push({x:wx,y:h+0.15,z:wz,sx:br*1.5,sy:0.3,sz:br*1.5,c:b.wall,r:0});
+      parts.push({x:wx,y:h+th-0.2,z:wz,sx:br*1.4,sy:0.4,sz:br*1.4,c:b.wall,r:0});
+      break;}
+    case 'arche': {
+      const th=ceilH[i]-h;
+      parts.push({x:wx-1.05,y:h+th*0.5,z:wz,sx:.35,sy:th,sz:.5,c:b.wall,r:0});
+      parts.push({x:wx+1.05,y:h+th*0.5,z:wz,sx:.35,sy:th,sz:.5,c:b.wall,r:0});
+      parts.push({x:wx,y:h+th-0.3,z:wz,sx:2.5,sy:.45,sz:.5,c:b.wall,r:0});
+      solid=false; break;}
+    case 'gravats': {
+      for(let k=0;k<4;k++){const s=R(.3,.85);
+        parts.push({x:wx+R(-1,1),y:h+s/2,z:wz+R(-1,1),sx:s,sy:s*R(.5,1),sz:s,c:b.wall,r:R(0,3)});}
+      solid=false; break;}
+    case 'stalag': {
+      for(let k=0;k<3;k++){const ht=R(1.0,2.6),s=R(.22,.45);
+        parts.push({x:wx+R(-1,1),y:h+ht/2,z:wz+R(-1,1),sx:s,sy:ht,sz:s,c:b.floor,r:R(-.15,.15)});}
+      solid=false; break;}
+    case 'glace': {
+      const ht=R(1.8,ceilH[i]-h);
+      parts.push({x:wx,y:h+ht/2,z:wz,sx:R(.5,.9),sy:ht,sz:R(.5,.9),c:[.62,.74,.88],r:R(-.12,.12)});
+      break;}
+    case 'poutre': {
+      parts.push({x:wx,y:h+R(2.2,4.5),z:wz,sx:R(2.5,5),sy:.30,sz:.42,c:b.wall,r:0});
+      parts.push({x:wx,y:h+1.1,z:wz,sx:.5,sy:2.2,sz:.5,c:b.wall,r:0});
+      break;}
+    case 'conduit': {
+      parts.push({x:wx,y:h+R(1.5,3.5),z:wz,sx:.7,sy:.7,sz:R(3,6),c:[.33,.34,.32],r:0});
+      solid=false; break;}
+    case 'tronc': {
+      const ht=sky[i]?R(7,16):ceilH[i]-h-R(0,1.5);
+      parts.push({x:wx,y:h+ht/2,z:wz,sx:R(.4,.7),sy:ht,sz:R(.4,.7),c:[.17,.15,.13],r:R(-.06,.06)});
+      break;}
+    /* MONOLITHE — la roche pleine ne raconte rien. Une tour aveugle percée
+       de fenêtres allumées dit qu'il y a eu quelqu'un. C'est la même boîte,
+       mais habitée. */
+    case 'monolithe': {
+      const ht=R(9,22), br=R(1.1,2.2), c1=[.14,.13,.13];
+      parts.push({x:wx,y:h+ht/2,z:wz,sx:br,sy:ht,sz:br*R(.7,1.1),c:c1,r:R(-.04,.04)});
+      parts.push({x:wx,y:h+.35,z:wz,sx:br*1.5,sy:.7,sz:br*1.5,c:c1,r:0});
+      const teinte=BIOMES[biome[i]].lum;
+      for(let e=0;e<Math.floor(ht/2.6);e++){
+        const y=h+2.2+e*2.6;
+        if(rnd()<0.42) continue;                 // toutes ne sont pas allumées
+        const f=rnd()<0.5?0:1;
+        parts.push({x:wx+(f?br*0.52:0),y:y,z:wz+(f?0:br*0.52),
+                    sx:f?.10:.42,sy:.34,sz:f?.42:.10,
+                    c:[teinte[0]*2.4,teinte[1]*2.4,teinte[2]*2.4],r:0,emis:1});
+        if(lights.length<1400)
+          lights.push({x:wx+(f?br*0.8:0),y:y,z:wz+(f?0:br*0.8),
+                       c:[teinte[0]*.7,teinte[1]*.7,teinte[2]*.7],ph:rnd()*6.28});
+      }
+      break;}
+    case 'tourFenetres': {
+      const ht=R(16,44), br=R(2.0,4.2), pf=R(1.6,3.6);
+      parts.push({x:wx,y:h+ht/2,z:wz,sx:br,sy:ht,sz:pf,c:[.055,.02,.018],r:0});
+      const nx2=Math.max(2,Math.round(br*1.5)), ny2=Math.floor(ht/1.5);
+      for(let a=0;a<nx2;a++)for(let b2=0;b2<ny2;b2++){
+        if(rnd()<0.30)continue;
+        const c2=rnd()<0.72?[2.6,2.3,1.7]:[2.4,1.1,0.55];
+        const px2=wx+(a/Math.max(1,nx2-1)-0.5)*br*0.86, py2=h+1.4+b2*1.5;
+        parts.push({x:px2,y:py2,z:wz+pf*0.52,sx:br/nx2*0.62,sy:.34,sz:.06,c:c2,r:0,emis:1});
+        parts.push({x:px2,y:py2,z:wz-pf*0.52,sx:br/nx2*0.62,sy:.34,sz:.06,c:c2,r:0,emis:1});
+      }
+      if(lights.length<3200) lights.push({x:wx,y:h+ht*0.4,z:wz,c:[0.55,0.20,0.11],ph:rnd()*6.28});
+      break;}
+    case 'meneau': {
+      const ht=Math.min(ceilH[i]-h,R(8,26));
+      parts.push({x:wx,y:h+ht/2,z:wz,sx:.30,sy:ht,sz:.30,c:[.10,.03,.028],r:0});
+      parts.push({x:wx+0.17,y:h+ht/2,z:wz,sx:.06,sy:ht*.94,sz:.22,c:[2.2,.34,.20],r:0,emis:1});
+      if(lights.length<3200) lights.push({x:wx+0.4,y:h+ht*0.55,z:wz,c:[0.85,0.14,0.08],ph:rnd()*6.28});
+      break;}
+    /* CRISTAUX — la seule chose qui éclaire vraiment le fog par en bas. */
+    case 'cristal': {
+      const teinte=BIOMES[biome[i]].sky?[0.3,0.55,0.9]:[0.35,0.75,0.95];
+      const n=ri(3,6);
+      for(let k=0;k<n;k++){
+        const ht=R(0.8,3.4), br=R(.12,.34);
+        parts.push({x:wx+R(-1,1),y:h+ht/2,z:wz+R(-1,1),sx:br,sy:ht,sz:br,
+                    c:[teinte[0]*1.9,teinte[1]*1.9,teinte[2]*1.9],r:R(-.4,.4),emis:1});
+      }
+      if(lights.length<1400)
+        lights.push({x:wx,y:h+1.5,z:wz,c:[teinte[0]*1.5,teinte[1]*1.5,teinte[2]*1.5],ph:rnd()*6.28});
+      solid=false; break;}
+    case 'souche': {
+      parts.push({x:wx,y:h+.4,z:wz,sx:R(.8,1.2),sy:.8,sz:R(.8,1.2),c:[.19,.17,.14],r:0});
+      solid=false; break;}
+    // ── ossements : le seul décor qui raconte quelque chose
+    case 'os': {
+      const co=[.72,.70,.62];
+      for(let k=0;k<5;k++)
+        parts.push({x:wx+R(-1.2,1.2),y:h+.10,z:wz+R(-1.2,1.2),
+                    sx:R(.5,1.3),sy:.10,sz:.10,c:co,r:R(-3,3)});
+      solid=false; break;}
+    /* Une côte n'est pas un barreau vertical : elle part de l'échine, s'ouvre
+       vers l'extérieur et se referme. Chaque arceau est donc fait de trois
+       segments inclinés par paire gauche/droite. Sept barreaux droits, c'est
+       un peigne — d'où la version précédente. */
+    case 'cotes': {
+      const co=[.66,.64,.56], yw=R(0,3), cy=Math.cos(yw), sy2=Math.sin(yw);
+      const echine=2.8, pench=R(-.25,.25);
+      for(let k=0;k<6;k++){
+        const t=k/5;
+        const lx=wx+cy*(t-.5)*echine, lz=wz+sy2*(t-.5)*echine;
+        const ouv=0.30+Math.sin(t*3.14)*0.62;      // la cage s'ouvre au milieu
+        const haut=0.28+Math.sin(t*3.14)*0.34;
+        for(const s of [1,-1]){
+          // segment bas : sort de l'échine vers l'extérieur
+          parts.push({x:lx-sy2*ouv*0.42*s,y:h+haut*0.30,z:lz+cy*ouv*0.42*s,
+                      sx:.075,sy:ouv*0.80,sz:.075,c:co,r:pench+s*1.05});
+          // segment haut : se referme vers le sommet
+          parts.push({x:lx-sy2*ouv*0.86*s,y:h+haut*0.92,z:lz+cy*ouv*0.86*s,
+                      sx:.07,sy:haut*1.25,sz:.07,c:co,r:pench+s*0.34});
+        }
+      }
+      // l'échine, couchée, avec quelques vertèbres saillantes
+      parts.push({x:wx,y:h+.09,z:wz,sx:Math.abs(cy)*echine+.16,sy:.13,
+                  sz:Math.abs(sy2)*echine+.16,c:co,r:0});
+      for(let k=0;k<5;k++){
+        const t=(k+.5)/5;
+        parts.push({x:wx+cy*(t-.5)*echine,y:h+.20,z:wz+sy2*(t-.5)*echine,
+                    sx:.16,sy:.18,sz:.16,c:co,r:pench});
+      }
+      solid=false; break;}
+    case 'crane': {
+      const co=[.76,.73,.64];
+      parts.push({x:wx,y:h+.28,z:wz,sx:.55,sy:.5,sz:.62,c:co,r:R(-.3,.3)});
+      parts.push({x:wx+R(-.1,.1),y:h+.12,z:wz+.42,sx:.34,sy:.22,sz:.3,c:co,r:0});
+      solid=false; break;}
+  }
+  /* Avant, tout élément « solide » bloquait sa cellule entière — 3 m de
+     côté. Un tronc de 60 cm t'arrêtait donc à près de deux mètres, et deux
+     troncs voisins fermaient six mètres de passage. On mémorise maintenant
+     un rayon réel par élément, et la cellule n'est condamnée que si
+     l'élément la remplit vraiment. */
+  let ray=0;
+  for(const q of parts) ray=Math.max(ray, Math.max(q.sx,q.sz)*0.5);
+  props.push({parts,cell:i,r:ray,solide:solid});
+  if(solid){
+    colliders.push({x:wx,z:wz,r:Math.min(ray,1.4)});
+    if(ray>=1.15) blocked[i]=1;      // seuls les vrais massifs coupent la nav
+  }
+}
+
+function placeProps(){
+  // colonnades : une trame régulière dans les grandes salles. C'est ce qui
+  // fait lire une architecture plutôt qu'un tas d'objets.
+  for(const r of rooms){
+    if(rnd()>0.42) continue;
+    const set=BIOMES[r.b].props;
+    for(let dz=-4;dz<=4;dz+=3)for(let dx=-4;dx<=4;dx+=3){
+      const x=r.x+dx,z=r.z+dz,i=idx(x,z);
+      if(!isFloor(x,z)||openN[i]<0.72||blocked[i])continue;
+      addProp(set[0],x,z,i);
+    }
+  }
+  // semis d'éléments non bloquants + sources lumineuses
+  for(let k=0;k<26000;k++){
+    const x=ri(2,GW-3),z=ri(2,GH-3),i=idx(x,z);
+    if(!isFloor(x,z)||blocked[i])continue;
+    const set=BIOMES[biome[i]].props;
+    const kind=set[ri(0,set.length-1)];
+    // rien de bloquant dans les passages étroits : la carte doit rester ouverte
+    if(openN[i]<0.55 && (kind==='pilier'||kind==='glace'||kind==='tronc')) continue;
+    addProp(kind,x,z,i);
+  }
+  // ossuaires : quelques amas denses valent mieux qu'un semis régulier
+  for(let n=0;n<260;n++){
+    const c=randomFree(), bi2=idx(c.x,c.z);
+    for(let k=0;k<ri(5,11);k++){
+      const x=c.x+ri(-3,3), z=c.z+ri(-3,3), i=idx(x,z);
+      if(!isFloor(x,z)||blocked[i])continue;
+      addProp(['os','cotes','crane'][ri(0,2)],x,z,i);
+    }
+  }
+  for(let k=0;k<16000 && lights.length<3200;k++){
+    const x=ri(2,GW-3),z=ri(2,GH-3),i=idx(x,z);
+    if(!isFloor(x,z))continue;
+    const b=BIOMES[biome[i]];
+    lights.push({x:c2w(x),y:floorH[i]+0.5+rnd()*1.6,z:c2w(z),c:b.lum,ph:rnd()*6.28});
+  }
+}
+/* ═══ OBJECTIF ═══
+   Sans sortie il n'y a pas de jeu, seulement une promenade. Elle est posée
+   au point le plus BAS de la carte : pour sortir il faut descendre, et
+   c'est en profondeur qu'on trouve les cartes rares. Les deux objectifs
+   tirent dans le même sens. */
+let sortie=null, gagne=0;
+/* Passerelles : on enjambe les gouffres, on longe les grandes salles.
+   Chaque tronçon reçoit une échelle à chaque bout — sans quoi on aurait des
+   étages qu'on ne peut pas atteindre, c'est-à-dire du décor. */
+function placePonts(){
+  let poses=0;
+  for(let essai=0;essai<9000 && poses<170;essai++){
+    const c=randomFree();
+    const horiz=rnd()<0.5;
+    const lon=ri(9,26);
+    const x0=c.x, z0=c.z;
+    // le tronçon doit rester au-dessus de cases praticables
+    let ok=true, hmax=-1e9;
+    for(let k=0;k<lon&&ok;k++){
+      const x=horiz?x0+k:x0, z=horiz?z0:z0+k;
+      if(!isFloor(x,z)||pont[idx(x,z)]||openN[idx(x,z)]<0.42) ok=false;
+      else hmax=Math.max(hmax,floorH[idx(x,z)]);
+    }
+    if(!ok)continue;
+    const H=hmax+DECK_JOUR+rnd()*2.2;
+    // le plafond doit laisser la place au tablier ET à toi dessus
+    for(let k=0;k<lon&&ok;k++){
+      const x=horiz?x0+k:x0, z=horiz?z0:z0+k;
+      if(ceilH[idx(x,z)] < H+2.3) ok=false;
+    }
+    if(!ok)continue;
+    /* Un pont suspendu, pas une dalle : le tablier fléchit en son milieu,
+       deux câbles portent depuis les pylônes des extrémités, et des suspentes
+       verticales descendent du câble au tablier. */
+    const fleche=1.4+rnd()*1.6;
+    const cell0=idx(x0,z0);
+    const parts=[];
+    const PX=k=>horiz?c2w(x0+k):c2w(x0), PZ=k=>horiz?c2w(z0):c2w(z0+k);
+    const yTab=k=>{const t=k/(lon-1);return H-Math.sin(t*Math.PI)*fleche;};
+    const yCab=k=>{const t=k/(lon-1);return H+3.2-Math.sin(t*Math.PI)*(fleche*0.35);};
+    for(let k=0;k<lon;k++){
+      const x=horiz?x0+k:x0, z=horiz?z0:z0+k, i2=idx(x,z);
+      pont[i2]=1; pontH[i2]=yTab(k);
+      if(k===0||k===lon-1) echelle[i2]=1;
+      // planches du tablier
+      parts.push({x:PX(k),y:yTab(k),z:PZ(k),
+                  sx:horiz?CELL*1.02:2.4,sy:.16,sz:horiz?2.4:CELL*1.02,c:[.19,.16,.13]});
+      // suspentes
+      if(k%2===0)
+        for(const sd of [1,-1])
+          parts.push({x:PX(k)+(horiz?0:sd*1.15),y:(yTab(k)+yCab(k))/2,z:PZ(k)+(horiz?sd*1.15:0),
+                      sx:.05,sy:yCab(k)-yTab(k),sz:.05,c:[.26,.24,.21]});
+      // câble porteur, en petits tronçons
+      if(k<lon-1)
+        for(const sd of [1,-1])
+          parts.push({x:(PX(k)+PX(k+1))/2+(horiz?0:sd*1.15),
+                      y:(yCab(k)+yCab(k+1))/2,
+                      z:(PZ(k)+PZ(k+1))/2+(horiz?sd*1.15:0),
+                      sx:horiz?CELL:.09,sy:.09,sz:horiz?.09:CELL,c:[.30,.27,.23]});
+    }
+    // pylônes
+    for(const k of [0,lon-1])
+      for(const sd of [1,-1])
+        parts.push({x:PX(k)+(horiz?0:sd*1.15),y:yTab(k)+2.1,z:PZ(k)+(horiz?sd*1.15:0),
+                    sx:.20,sy:4.2,sz:.20,c:[.24,.21,.18]});
+    props.push({parts,cell:cell0});
+    poses++;
+  }
+  return poses;
+}
+
+/* ═══ REFUGES ═══
+   Deux braseros dans le monde. La chaleur se vide en marchant, plus vite
+   dehors et dans la glace ; en dessous d'un tiers la vue se réduit et le pas
+   ralentit. Un refuge la refait, et c'est le seul endroit où elle ne
+   descend pas. Ça donne une raison de mémoriser le terrain. */
+let refuges=[], chaleur=1;
+/* ═══ TORCHE ═══
+   Éteinte, il ne reste que la lune, les cristaux et les fenêtres — très peu.
+   Allumée, elle consomme du combustible ramassé au sol. F pour l'allumer. */
+const torche={on:true, jus:1};
+let combustibles=[];
+function placeCombustible(){
+  combustibles=[];
+  for(let k=0;k<20000 && combustibles.length<260;k++){
+    const c=randomFree(), i=idx(c.x,c.z);
+    if(blocked[i])continue;
+    combustibles.push({x:c2w(c.x),y:floorH[i]+0.35,z:c2w(c.z),pris:false});
+  }
+}
+function placeRefuges(){
+  refuges=[];
+  for(let k=0;k<9000 && refuges.length<3;k++){
+    const c=randomFree(), i=idx(c.x,c.z);
+    if(openN[i]<0.55)continue;
+    const wx=c2w(c.x), wz=c2w(c.z);
+    if(refuges.some(r=>Math.hypot(r.x-wx,r.z-wz)<GW*CELL*0.25))continue;
+    const y=floorH[i];
+    refuges.push({x:wx,z:wz,y,cell:i});
+    const parts=[
+      {x:wx,y:y+0.35,z:wz,sx:1.5,sy:.7,sz:1.5,c:[.20,.17,.15]},
+      {x:wx,y:y+0.85,z:wz,sx:1.05,sy:.5,sz:1.05,c:[2.6,1.25,0.35],emis:1}];
+    for(const [ox,oz] of [[1.5,1.5],[-1.5,1.5],[1.5,-1.5],[-1.5,-1.5]])
+      parts.push({x:wx+ox,y:y+1.3,z:wz+oz,sx:.22,sy:2.6,sz:.22,c:[.24,.20,.17]});
+    props.push({parts,cell:i});
+    for(let q=0;q<4;q++)
+      lights.push({x:wx,y:y+0.9+q*0.8,z:wz,c:[1.9,0.85,0.28],ph:q*1.3});
+  }
+}
+
+function placeSortie(){
+  /* Posée au fond, elle se trouvait en descendant bêtement. Elle est
+     maintenant tirée AU HASARD, seulement contrainte d'être loin du départ.
+     Descendre reste utile pour les cartes rares, plus pour la sortie. */
+  let best=null;
+  for(let k=0;k<20000;k++){
+    const c=randomFree(), i=idx(c.x,c.z);
+    if(openN[i]<0.45)continue;
+    if(Math.hypot(c2w(c.x)-player.x,c2w(c.z)-player.z)<GW*CELL*0.26)continue;
+    best={x:c2w(c.x),z:c2w(c.z),y:floorH[i],cell:i}; break;
+  }
+  if(!best){const c=randomFree();best={x:c2w(c.x),z:c2w(c.z),y:floorH[idx(c.x,c.z)],cell:idx(c.x,c.z)};}
+  sortie=best;
+  // une colonne de lumière visible de loin à travers le fog
+  for(let k=0;k<10;k++)
+    lights.push({x:sortie.x,y:sortie.y+1+k*2.2,z:sortie.z,c:[1.5,1.25,0.6],ph:k*0.6});
+  const parts=[];
+  for(const sd of [1,-1])
+    parts.push({x:sortie.x+sd*1.5,y:sortie.y+2.6,z:sortie.z,sx:.5,sy:5.2,sz:.5,c:[.5,.45,.34]});
+  parts.push({x:sortie.x,y:sortie.y+5.0,z:sortie.z,sx:3.6,sy:.6,sz:.6,c:[.5,.45,.34]});
+  parts.push({x:sortie.x,y:sortie.y+2.4,z:sortie.z,sx:2.6,sy:4.6,sz:.18,c:[2.2,1.8,0.9],emis:1});
+  props.push({parts,cell:sortie.cell});
+}
+
+/* ═══ CARTES À COLLECTIONNER ═══
+   Placeholders procéduraux en attendant ton dossier de GIF : chaque carte
+   tourne sur elle-même et porte sa rareté. La rareté suit la PROFONDEUR —
+   les cartes de tête ne se trouvent qu'au fond. */
+/* ╔══════════════════════════════════════════════════════════════════════╗
+   ║  TES DOSSIERS DE CARTES — remplace uniquement les trois chemins.     ║
+   ║                                                                      ║
+   ║  Le jeu SONDE chaque dossier : il tente 1.gif, 2.gif, 3.gif… jusqu'à ║
+   ║  trois échecs d'affilée. Le total collectionnable est donc la SOMME  ║
+   ║  des cartes réellement présentes — tu n'as aucune liste à tenir.     ║
+   ║                                                                      ║
+   ║  Nomme les fichiers 1.gif, 2.gif, … dans chaque dossier.            ║
+   ║  Le jeu doit être servi par un serveur (file:// bloque la lecture).  ║
+   ║  Depuis le dossier du jeu :  python -m http.server 8000              ║
+   ╚══════════════════════════════════════════════════════════════════════╝ */
+const STACKS = [
+  { rang:'commune',   chemin:'cartes/communes/',   ext:'gif' },
+  { rang:'rare',      chemin:'cartes/rares/',      ext:'gif' },
+  { rang:'legendaire',chemin:'cartes/legendaires/',ext:'gif' },
+];
+let CATALOGUE=[];          // rempli par le sondage : {stack, n, img, tex}
+let catalogueSonde=false;
+
+function sonderStacks(){
+  let restants=STACKS.length;
+  STACKS.forEach((st,si)=>{
+    let n=1, echecs=0;
+    const suivant=()=>{
+      if(echecs>=3){ if(--restants===0){catalogueSonde=true;majCollection();} return; }
+      const img=new Image();
+      img.onload=()=>{ CATALOGUE.push({stack:si,n,img,tex:null,maj:0}); echecs=0; n++; suivant(); };
+      img.onerror=()=>{ echecs++; n++; suivant(); };
+      img.src=st.chemin+n+'.'+st.ext;
+    };
+    suivant();
+  });
+}
+
+const RARETES=[
+  {n:'commune',   c:[.55,.53,.48], part:.50},
+  {n:'rare',      c:[.35,.62,.75], part:.28},
+  {n:'précieuse', c:[.72,.52,.85], part:.15},
+  {n:'unique',    c:[1.0,.72,.28], part:.07},
+];
+const NOMS=['ÉCHINE','MUE','MANDIBULE','GÉSIER','OEUF','NID','GRIFFE','ANTENNE',
+  'CARAPACE','PONTE','LARVE','CHITINE','VENIN','SILLON','TERRIER','ESSAIM',
+  'MÈRE','ROI','ABYSSE','PREMIÈRE'];
+let cartes=[], collec=null;
+/* La rareté d'une carte vient de son DOSSIER, pas d'un tirage : une carte
+   du stack « légendaire » est légendaire. C'est la profondeur qui décide
+   quel stack peut apparaître à un endroit donné. */
+function placeCartes(){
+  let mn=1e9,mx=-1e9;
+  for(let i=0;i<GW*GH;i++){if(grid[i]!==FLOOR)continue;
+    mn=Math.min(mn,floorH[i]);mx=Math.max(mx,floorH[i]);}
+  cartes=[];
+  for(let k=0;k<48000 && cartes.length<420;k++){
+    const c=randomFree(), i=idx(c.x,c.z);
+    if(blocked[i])continue;
+    // 0 en surface, 1 au plus profond
+    const prof=1-(floorH[i]-mn)/Math.max(1,mx-mn);
+    // le tirage se déplace vers les hautes raretés à mesure qu'on descend
+    const r=Math.random()*Math.random();
+    let niv=Math.min(3,Math.floor((r*0.45+prof*prof*0.85)*4));
+    if(niv>=2 && prof<0.45) continue;          // rien de précieux près du jour
+    if(niv>=3 && prof<0.78) continue;          // l'unique est tout au fond
+    // si tes dossiers sont chargés, l'identité vient du catalogue réel
+    let ident;
+    if(CATALOGUE.length){
+      const st=Math.min(STACKS.length-1,Math.floor(niv*STACKS.length/4));
+      const pool=CATALOGUE.filter(e=>e.stack===st);
+      ident=pool.length?CATALOGUE.indexOf(pool[ri(0,pool.length-1)]):0;
+    } else ident=niv*NOMS.length+ri(0,NOMS.length-1);
+    cartes.push({x:c2w(c.x),y:floorH[i]+1.1,z:c2w(c.z),niv,id:ident,prise:false});
+  }
+}
+
+function placeLures(){
+  for(let k=0;k<12000 && lures.length<600;k++){
+    const x=ri(2,GW-3),z=ri(2,GH-3),i=idx(x,z);
+    if(!isFree(x,z))continue;
+    lures.push({x:c2w(x),y:floorH[i]+0.22,z:c2w(z),held:false,fly:null});
+  }
+}
+function rebuildNavCost(){
+  const w=TUNE.openAversion;
+  for(let z=0;z<GH;z++)for(let x=0;x<GW;x++){
+    const i=idx(x,z);
+    if(grid[i]!==FLOOR||blocked[i]){navCost[i]=0;continue;}
+    const hug=(!isFree(x+1,z)||!isFree(x-1,z)||!isFree(x,z+1)||!isFree(x,z-1))?0.4:0;
+    navCost[i]=clamp(1+openN[i]*w-hug,0.35,8);
+  }
+}
+function randomFree(){
+  for(let k=0;k<5000;k++){const x=ri(1,GW-2),z=ri(1,GH-2);if(isFree(x,z))return{x,z};}
+  return {x:1,z:1};
+}
+// hauteur du sol interpolée : évite l'effet escalier sous les pieds
+function groundAt(wx,wz){
+  const x=w2c(wx),z=w2c(wz);
+  if(!isFloor(x,z))return 0;
+  return floorH[idx(x,z)];
+}
+
+/* ───────────────────────── 4. MAILLAGE ───────────────────────── */
+/* Hauteur d'un coin : moyenne des cellules voisines dont l'altitude est
+   proche. Au-delà du seuil LEDGE l'arête reste franche — c'est ainsi qu'on
+   obtient à la fois des pentes lisses et de vraies corniches. */
+function cornerH(x,z,ox,oz,base,arr){
+  let s=base,n=1;
+  for(const [dx,dz] of [[ox,0],[0,oz],[ox,oz]]){
+    if(!isFloor(x+dx,z+dz))continue;
+    const v=arr[idx(x+dx,z+dz)];
+    if(Math.abs(v-base)>LEDGE)continue;
+    s+=v;n++;
+  }
+  return s/n;
+}
+const chOf=(x,z)=>((z/CH)|0)*CHW+((x/CH)|0);
+/* Un monde de 1,6 km fait ~3,5 M de sommets. Tout construire au chargement
+   coûterait 130 Mo de tampons et plusieurs secondes de gel. On ne construit
+   donc que les pavés à portée de vue, et on libère les autres : la taille du
+   monde ne coûte plus rien en mémoire, seulement en disque de génération. */
+let propsParPave=null, lampesParPave=new Map();
+function indexerProps(){
+  propsParPave=new Map();
+  for(const pr of props){
+    const k=chOf(pr.cell%GW,(pr.cell/GW)|0);
+    if(!propsParPave.has(k))propsParPave.set(k,[]);
+    propsParPave.get(k).push(pr);
+  }
+  lampesParPave=new Map();
+  for(const L of lights){
+    const k=chOf(clamp(w2c(L.x),0,GW-1),clamp(w2c(L.z),0,GH-1));
+    if(!propsParPave.has(k))propsParPave.set(k,[]);
+    propsParPave.get(k).push({lampe:L});
+    if(!lampesParPave.has(k))lampesParPave.set(k,[]);
+    lampesParPave.get(k).push(L);
+  }
+  indexerColliders();
+}
+const paves=new Map();     // k -> {m, x, z}
+function paveCentre(k){return {x:((k%CHW)+0.5)*CH*CELL, z:(((k/CHW)|0)+0.5)*CH*CELL};}
+function libererPave(k){
+  const p=paves.get(k); if(!p){return;}
+  // Un pavé entièrement rocheux est mémorisé avec m:null pour ne pas être
+  // rebâti sans cesse. On le déréférençait quand même : la boucle de rendu
+  // mourait, et le jeu se figeait définitivement. C'était CE bug.
+  if(p.m){ gl.deleteVertexArray(p.m.vao); p.m.bufs.forEach(b=>gl.deleteBuffer(b)); }
+  paves.delete(k);
+}
+function majPaves(){
+  const PORTEE=(2.4/(fogD*0.01))+CH*CELL*1.6, P2=PORTEE*PORTEE;
+  const px=w2c(player.x), pz=w2c(player.z);
+  const r=Math.ceil(PORTEE/(CH*CELL));
+  let budget=3;                                  // au plus 3 pavés bâtis par image
+  const cx=(px/CH)|0, cz=(pz/CH)|0;
+  for(let dz=-r;dz<=r;dz++)for(let dx=-r;dx<=r;dx++){
+    const a=cx+dx, b=cz+dz;
+    if(a<0||b<0||a>=CHW||b>=CHH)continue;
+    const k=b*CHW+a;
+    if(paves.has(k))continue;
+    const c=paveCentre(k);
+    if((c.x-player.x)**2+(c.z-player.z)**2>P2)continue;
+    if(budget--<=0)continue;
+    const m=batirPave(k);
+    if(m)paves.set(k,{m,x:c.x,z:c.z}); else paves.set(k,{m:null,x:c.x,z:c.z});
+  }
+  for(const [k,p] of paves){
+    if((p.x-player.x)**2+(p.z-player.z)**2>P2*2.4) libererPave(k);
+  }
+}
+function batirPave(k){
+  const P=[],N=[],C=[];
+  const viser=()=>{};
+  const kx0=(k%CHW)*CH, kz0=((k/CHW)|0)*CH;
+  const quad=(p,n,c)=>{const push=(v,cc)=>{P.push(v[0],v[1],v[2]);N.push(n[0],n[1],n[2]);C.push(cc[0],cc[1],cc[2])};
+    push(p[0],c[0]);push(p[1],c[1]);push(p[2],c[2]);
+    push(p[0],c[0]);push(p[2],c[2]);push(p[3],c[3]);};
+  const h=CELL/2;
+  for(let z=kz0;z<Math.min(GH,kz0+CH);z++)for(let x=kx0;x<Math.min(GW,kx0+CH);x++){
+    const i=idx(x,z); if(grid[i]!==FLOOR)continue;
+    const B=BIOMES[biome[i]], cx=c2w(x),cz=c2w(z), f=floorH[i], ce=ceilH[i];
+    const v=0.88+hash2(x,z)*0.24;
+    const tint=(a)=>[a[0]*v,a[1]*v,a[2]*v];
+
+    const f00=cornerH(x,z,-1,-1,f,floorH), f10=cornerH(x,z,1,-1,f,floorH),
+          f11=cornerH(x,z,1,1,f,floorH),   f01=cornerH(x,z,-1,1,f,floorH);
+    const c00=cornerH(x,z,-1,-1,ce,ceilH), c10=cornerH(x,z,1,-1,ce,ceilH),
+          c11=cornerH(x,z,1,1,ce,ceilH),   c01=cornerH(x,z,-1,1,ce,ceilH);
+    const cf=tint(B.floor), cc=tint(B.ceil), wt=tint(B.wall),
+          wb=[wt[0]*0.42,wt[1]*0.42,wt[2]*0.42];
+
+    quad([[cx-h,f00,cz-h],[cx+h,f10,cz-h],[cx+h,f11,cz+h],[cx-h,f01,cz+h]],[0,1,0],[cf,cf,cf,cf]);
+    if(!sky[i])
+      quad([[cx-h,c01,cz+h],[cx+h,c11,cz+h],[cx+h,c10,cz-h],[cx-h,c00,cz-h]],[0,-1,0],[cc,cc,cc,cc]);
+
+    // parois et corniches
+    const edge=(nx,nz,ax,az,bx,bz,ha,hb,ca,cb)=>{
+      const px=x-nx, pz=z-nz;
+      if(!isFloor(px,pz)){
+        quad([[ax,ha,az],[bx,hb,bz],[bx,cb,bz],[ax,ca,az]],[nx,0,nz],[wb,wb,wt,wt]);
+      }else{
+        const nf=floorH[idx(px,pz)], nc=ceilH[idx(px,pz)];
+        if(nf<Math.min(ha,hb)-0.05)  // corniche : falaise vers le voisin plus bas
+          quad([[ax,nf,az],[bx,nf,bz],[bx,hb,bz],[ax,ha,az]],[nx,0,nz],[wb,wb,wt,wt]);
+        if(nc<Math.max(ca,cb)-0.05)  // décrochement de plafond
+          quad([[ax,nc,az],[bx,nc,bz],[bx,cb,bz],[ax,ca,az]],[nx,0,nz],[wb,wb,wt,wt]);
+      }
+    };
+    edge(0,1,  cx-h,cz-h,cx+h,cz-h, f00,f10,c00,c10);
+    edge(0,-1, cx+h,cz+h,cx-h,cz+h, f11,f01,c11,c01);
+    edge(1,0,  cx-h,cz+h,cx-h,cz-h, f01,f00,c01,c00);
+    edge(-1,0, cx+h,cz-h,cx+h,cz+h, f10,f11,c10,c11);
+  }
+  // éléments de décor cuits dans le même maillage : une seule passe de rendu
+  const locaux=propsParPave.get(k)||[];
+  for(const pr of locaux){
+    if(pr.lampe){
+      const L=pr.lampe, sL=0.16;
+      quad([[L.x-sL,L.y-sL,L.z],[L.x+sL,L.y-sL,L.z],[L.x+sL,L.y+sL,L.z],[L.x-sL,L.y+sL,L.z]],[0,0,1],[L.c,L.c,L.c,L.c]);
+      quad([[L.x,L.y-sL,L.z-sL],[L.x,L.y-sL,L.z+sL],[L.x,L.y+sL,L.z+sL],[L.x,L.y+sL,L.z-sL]],[1,0,0],[L.c,L.c,L.c,L.c]);
+      continue;
+    }
+  for(const q of pr.parts){
+    if(q.emis){ // sommets clairs : le shader les remonte via uEmit global
+      q.c=[Math.min(1.6,q.c[0]),Math.min(1.6,q.c[1]),Math.min(1.6,q.c[2])]; }
+    const co=Math.cos(q.r),si=Math.sin(q.r);
+    const hx=q.sx/2,hy=q.sy/2,hz=q.sz/2;
+    const V=(sx,sy,sz)=>{const X=sx*hx,Y=sy*hy,Z=sz*hz;
+      return [q.x+X*co-Y*si, q.y+X*si+Y*co, q.z+Z];};
+    const F=[[[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1],[0,0,1]],
+             [[1,-1,-1],[-1,-1,-1],[-1,1,-1],[1,1,-1],[0,0,-1]],
+             [[1,-1,1],[1,-1,-1],[1,1,-1],[1,1,1],[co,si,0]],
+             [[-1,-1,-1],[-1,-1,1],[-1,1,1],[-1,1,-1],[-co,-si,0]],
+             [[-1,1,1],[1,1,1],[1,1,-1],[-1,1,-1],[-si,co,0]],
+             [[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,1],[si,-co,0]]];
+    for(const f of F){
+      const n=f[4], c=q.c;
+      quad([V(...f[0]),V(...f[1]),V(...f[2]),V(...f[3])],n,[c,c,c,c]);
+    }
+  }}
+  // pastilles émissives sur les sources lumineuses
+  return P.length ? mesh(P,N,C) : null;
+}
+function box(y0,y1){
+  const P=[],N=[],C=[];
+  const q=(p,n)=>{const u=v=>{P.push(v[0],v[1],v[2]);N.push(n[0],n[1],n[2]);C.push(1,1,1)};
+    u(p[0]);u(p[1]);u(p[2]);u(p[0]);u(p[2]);u(p[3]);};
+  const a=-.5,b=.5;
+  q([[a,y0,b],[b,y0,b],[b,y1,b],[a,y1,b]],[0,0,1]);
+  q([[b,y0,a],[a,y0,a],[a,y1,a],[b,y1,a]],[0,0,-1]);
+  q([[b,y0,b],[b,y0,a],[b,y1,a],[b,y1,b]],[1,0,0]);
+  q([[a,y0,a],[a,y0,b],[a,y1,b],[a,y1,a]],[-1,0,0]);
+  q([[a,y1,b],[b,y1,b],[b,y1,a],[a,y1,a]],[0,1,0]);
+  q([[a,y0,a],[b,y0,a],[b,y0,b],[a,y0,b]],[0,-1,0]);
+  return mesh(P,N,C);
+}
+
+/* ───────────────────────── 5. NAVIGATION ───────────────────────── */
+const gS=new Float32Array(GW*GH),came=new Int32Array(GW*GH),
+      stamp=new Int32Array(GW*GH),closed=new Uint8Array(GW*GH);
+let epoch=0,lastExpanded=0,lastPartial=false;
+const CLIMB=2.9, DROPMAX=14;  // ce qu'elle franchit — bien au-delà de toi
+
+class Heap{
+  constructor(){this.k=[];this.v=[]}
+  get size(){return this.k.length}
+  clear(){this.k.length=0;this.v.length=0}
+  push(key,val){const k=this.k,v=this.v;k.push(key);v.push(val);let i=k.length-1;
+    while(i>0){const p=(i-1)>>1;if(k[p]<=k[i])break;
+      [k[p],k[i]]=[k[i],k[p]];[v[p],v[i]]=[v[i],v[p]];i=p;}}
+  pop(){const k=this.k,v=this.v,top=v[0],lk=k.pop(),lv=v.pop();
+    if(k.length){k[0]=lk;v[0]=lv;let i=0;
+      for(;;){const l=i*2+1,r=l+1;let m=i;
+        if(l<k.length&&k[l]<k[m])m=l; if(r<k.length&&k[r]<k[m])m=r;
+        if(m===i)break;[k[m],k[i]]=[k[i],k[m]];[v[m],v[i]]=[v[i],v[m]];i=m;}}
+    return top;}
+}
+const heap=new Heap();
+const DIRS=[[1,0,1],[-1,0,1],[0,1,1],[0,-1,1],[1,1,1.4142],[1,-1,1.4142],[-1,1,1.4142],[-1,-1,1.4142]];
+
+function nearestFree(x,z){
+  if(isFree(x,z))return idx(x,z);
+  for(let r=1;r<9;r++)for(let dz=-r;dz<=r;dz++)for(let dx=-r;dx<=r;dx++)
+    if(Math.abs(dx)===r||Math.abs(dz)===r) if(isFree(x+dx,z+dz))return idx(x+dx,z+dz);
+  return -1;
+}
+const stepOK=(from,to)=>{const d=floorH[to]-floorH[from];return d<=CLIMB&&-d<=DROPMAX};
+
+function aStar(sx,sz,tx,tz,budget=12000){
+  const s=nearestFree(sx,sz),t=nearestFree(tx,tz);
+  if(s<0||t<0)return null;
+  if(s===t)return [s];
+  const tX=t%GW,tZ=(t/GW)|0;
+  const hOf=n=>{const dx=Math.abs(n%GW-tX),dz=Math.abs(((n/GW)|0)-tZ);
+    return (Math.max(dx,dz)+0.4142*Math.min(dx,dz))*0.7};
+  const trace=n=>{const o=[];while(n!==-1){o.push(n);n=came[n];}return o.reverse()};
+  epoch++;heap.clear();lastExpanded=0;lastPartial=false;
+  gS[s]=0;came[s]=-1;stamp[s]=epoch;closed[s]=0;
+  let best=s,bestH=hOf(s);
+  heap.push(0,s);
+  while(heap.size){
+    const cur=heap.pop();
+    if(closed[cur]===1&&stamp[cur]===epoch)continue;
+    closed[cur]=1;
+    if(cur===t)return trace(t);
+    const hc=hOf(cur); if(hc<bestH){bestH=hc;best=cur;}
+    if(++lastExpanded>budget){lastPartial=true;return trace(best);}
+    const cx=cur%GW,cz=(cur/GW)|0;
+    for(const [dx,dz,mul] of DIRS){
+      const nx=cx+dx,nz=cz+dz;
+      if(!isFree(nx,nz))continue;
+      if(dx&&dz&&(!isFree(cx+dx,cz)||!isFree(cx,cz+dz)))continue;
+      const n=idx(nx,nz);
+      if(!stepOK(cur,n))continue;                       // le relief filtre ici
+      if(stamp[n]===epoch&&closed[n]===1)continue;
+      const climb=Math.max(0,floorH[n]-floorH[cur])*0.55;
+      const g=gS[cur]+(navCost[n]+climb)*mul;
+      if(stamp[n]===epoch&&g>=gS[n])continue;
+      stamp[n]=epoch;closed[n]=0;gS[n]=g;came[n]=cur;
+      heap.push(g+hOf(n),n);
+    }
+  }
+  lastPartial=true;
+  return best===s?null:trace(best);
+}
+function clearLine(x0,z0,x1,z1,r=0.85){
+  const dx=x1-x0,dz=z1-z0,L=Math.hypot(dx,dz);
+  if(L<1e-4)return true;
+  const ux=dx/L,uz=dz/L,px=-uz*r,pz=ux*r,steps=Math.ceil(L/0.4);
+  let ph=groundAt(x0,z0);
+  for(let i=0;i<=steps;i++){
+    const t=i/steps,x=x0+dx*t,z=z0+dz*t;
+    for(const [ox,oz] of [[0,0],[px,pz],[-px,-pz]])
+      if(!isFree(w2c(x+ox),w2c(z+oz)))return false;
+    const nh=groundAt(x,z);
+    if(nh-ph>CLIMB||ph-nh>DROPMAX)return false;
+    ph=nh;
+  }
+  return true;
+}
+function smooth(cells){
+  const pts=cells.map(c=>({x:c2w(c%GW),z:c2w((c/GW)|0)}));
+  if(pts.length<3)return pts;
+  const out=[pts[0]];let i=0;
+  while(i<pts.length-1){
+    let j=pts.length-1;
+    for(;j>i+1;j--)if(clearLine(pts[i].x,pts[i].z,pts[j].x,pts[j].z))break;
+    out.push(pts[j]);i=j;
+  }
+  return out;
+}
+
+/* ─────────────── 6. JOUEUR + LEURRES ─────────────── */
+const TUNE={fogMul:1,grain:0.115,chaseSpeed:4.8,hearMul:1,scentLife:14,
+            trailStamina:6,openAversion:1.1,pressRate:0.04,vol:82,res:360,rays:1.15};
+const STEPUP=1.25;   // toi : tu te hisses. Elle : 2,90 m, et sans les mains.
+
+const player={x:0,z:0,gy:0,vy:0,eye:1.62,yaw:0,pitch:0,vx:0,vz:0,
+              stepAcc:0,bob:0,mode:'walk',held:0,throwCd:0,shake:0};
+const keys=Object.create(null);
+let crouchLock=false;   // bascule sur MAJ.VERR, pour ne pas tenir C
+const sounds=[],scent=[],flying=[];
+let scentAcc=0,time=0,dread=0,solMin=0,chute=false;
+/* Le vent tourne lentement, emporte l'odeur, et pousse la neige. Sous la
+   neige les traces s'effacent bien plus vite : la tempête est un abri. */
+const vent={a:0,f:0.5};
+
+function spawnPlayer(){
+  const c=randomFree();
+  player.x=c2w(c.x);player.z=c2w(c.z);
+  player.gy=floorH[idx(c.x,c.z)];player.vy=0;
+  player.yaw=rnd()*6.28;player.pitch=0;player.held=1;
+  scent.length=0;sounds.length=0;flying.length=0;
+  for(const l of lures) l.held=false;
+}
+/* Collision : un mur, un élément solide, ou une marche trop haute.
+   Descendre est toujours permis — on tombe. C'est la moitié basse de
+   l'asymétrie verticale. */
+function indexerColliders(){
+  collParCell=new Map();
+  for(const co of colliders){
+    const cx=w2c(co.x), cz=w2c(co.z);
+    for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
+      const k=idx(clamp(cx+dx,0,GW-1),clamp(cz+dz,0,GH-1));
+      if(!collParCell.has(k))collParCell.set(k,[]);
+      collParCell.get(k).push(co);
+    }
+  }
+}
+function heurteElement(nx,nz){
+  const k=idx(clamp(w2c(nx),0,GW-1),clamp(w2c(nz),0,GH-1));
+  const lot=collParCell.get(k); if(!lot)return false;
+  for(const co of lot){
+    const dx=nx-co.x, dz=nz-co.z, rr=co.r+0.30;   // 0,30 = rayon du joueur
+    if(dx*dx+dz*dz<rr*rr) return true;
+  }
+  return false;
+}
+function blockedAt(nx,nz,fromH){
+  if(heurteElement(nx,nz)) return true;
+  const r=0.30;
+  for(const [ox,oz] of [[r,0],[-r,0],[0,r],[0,-r],[r*.7,r*.7],[-r*.7,r*.7],[r*.7,-r*.7],[-r*.7,-r*.7]]){
+    const cx=w2c(nx+ox),cz=w2c(nz+oz);
+    if(cx<0||cz<0||cx>=GW||cz>=GH||vide[idx(cx,cz)])continue;  // le vide ne bloque pas
+    if(!isFree(cx,cz))return true;
+    if(floorH[idx(cx,cz)]-fromH>STEPUP)return true;
+  }
+  return false;
+}
+function updatePlayer(dt){
+  const run=keys['ShiftLeft']||keys['ShiftRight'];
+  const crouch=keys['KeyC']||keys['KeyX']||crouchLock;
+  player.mode=crouch?'crouch':run?'run':'walk';
+  const spd=(crouch?1.5:run?5.6:3.2)*(chaleur<0.34?0.55+chaleur:1);
+
+  let f=0,s=0;
+  if(keys['KeyW']||keys['KeyZ']||keys['ArrowUp'])f+=1;
+  if(keys['KeyS']||keys['ArrowDown'])f-=1;
+  if(keys['KeyD']||keys['ArrowRight'])s+=1;
+  if(keys['KeyA']||keys['KeyQ']||keys['ArrowLeft'])s-=1;
+  const L=Math.hypot(f,s)||1;f/=L;s/=L;
+  const fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw);
+  const rx=Math.cos(player.yaw),rz=-Math.sin(player.yaw);
+  player.vx=lerp(player.vx,(fx*f+rx*s)*spd,1-Math.exp(-14*dt));
+  player.vz=lerp(player.vz,(fz*f+rz*s)*spd,1-Math.exp(-14*dt));
+
+  const nx=player.x+player.vx*dt,nz=player.z+player.vz*dt;
+  if(!blockedAt(nx,player.z,player.gy))player.x=nx;else player.vx=0;
+  if(!blockedAt(player.x,nz,player.gy))player.z=nz;else player.vz=0;
+
+  // relief : on monte doucement, on tombe pour de bon
+  const cxp=w2c(player.x), czp=w2c(player.z);
+  const dansVide=(cxp<0||czp<0||cxp>=GW||czp>=GH||vide[idx(cxp,czp)]===1);
+  const gt=dansVide?-99999:groundAt(player.x,player.z);
+  if(dansVide&&player.gy<solMin-40&&caughtT<=0){caughtT=1.4;chute=true;}
+  if(player.gy>gt+0.06){
+    player.vy-=24*dt;player.gy+=player.vy*dt;
+    if(player.gy<gt){player.gy=gt;
+      if(player.vy<-7) sounds.push({x:player.x,z:player.z,r:16*TUNE.hearMul,t:0,lure:false});
+      player.vy=0;}
+  }else{player.gy=lerp(player.gy,gt,1-Math.exp(-16*dt));player.vy=0;}
+
+  const mv=Math.hypot(player.vx,player.vz);
+  player.bob+=mv*dt*(crouch?4:run?9:6.5);
+  player.eye=(crouch?1.02:1.62)+Math.sin(player.bob)*0.035*(mv>0.4?1:0);
+
+  // ── vibrations et traces
+  if(mv>0.35){
+    player.stepAcc+=mv*dt;
+    const stride=crouch?1.15:run?1.5:1.25;
+    if(player.stepAcc>stride){
+      player.stepAcc=0;
+      const base=crouch?1.2:run?11:6;
+      sounds.push({x:player.x,z:player.z,r:base*TUNE.hearMul,t:0,lure:false});
+      if(Nappe) Nappe.pas(crouch?0.15:run?0.65:0.35);
+    }
+    // RAMPER N'IMPRIME AUCUNE TRACE. C'est la contre-mesure du joueur :
+    // en v1 la piste était un phare, ici elle a un interrupteur.
+    if(!crouch){
+      scentAcc+=dt;
+      if(scentAcc>0.4){scentAcc=0;scent.push({x:player.x,z:player.z,t:time});}
+    }
+  }else player.stepAcc=Math.max(0,player.stepAcc-dt);
+
+  for(let i=sounds.length-1;i>=0;i--){sounds[i].t+=dt;if(sounds[i].t>0.8)sounds.splice(i,1);}
+  // le vent déplace la trace : elle n'est plus là où tu es passé
+  vent.a+=dt*0.055; vent.f=0.45+0.55*(0.5+0.5*Math.sin(time*0.031));
+  const vx=Math.cos(vent.a)*vent.f, vz=Math.sin(vent.a)*vent.f;
+  for(const sp of scent){ sp.x+=vx*dt*0.9; sp.z+=vz*dt*0.9; }
+  const effacement=1+snowNow*2.6*vent.f;      // la neige efface
+  while(scent.length&&(time-scent[0].t)*effacement>TUNE.scentLife)scent.shift();
+
+  // ramassage
+  for(const l of lures){
+    if(l.held||l.fly)continue;
+    if(player.held<3&&Math.hypot(l.x-player.x,l.z-player.z)<1.5&&Math.abs(l.y-player.gy)<2.2){
+      l.held=true;player.held++;if(Nappe)Nappe.ramasse();
+    }
+  }
+  // ramassage des cartes
+  for(const k of cartes){
+    if(k.prise)continue;
+    if(Math.hypot(k.x-player.x,k.z-player.z)<1.6&&Math.abs(k.y-player.gy)<2.4){
+      k.prise=true; collec.add(k.id); majCollection();
+      if(Nappe)Nappe.carte(k.niv);
+    }
+  }
+  // chaleur : elle se vide, un refuge la refait
+  // torche : elle brûle, on la recharge au sol ou dans un refuge
+  if(torche.on) torche.jus=Math.max(0,torche.jus-dt*0.0125);
+  if(torche.jus<=0) torche.on=false;
+  for(const f of combustibles){
+    if(f.pris)continue;
+    if(Math.hypot(f.x-player.x,f.z-player.z)<1.6&&Math.abs(f.y-player.gy)<2.4){
+      f.pris=true; torche.jus=Math.min(1,torche.jus+0.34);
+      if(Nappe)Nappe.ramasse();
+    }
+  }
+  {const B=BIOMES[curBiome];
+   // le froid mordait en deux minutes : divisé par quatre, et nul sous terre
+   const froid=(B.sky||B.snow>0.2)?0.0046:(B.n==='GLACIÈRE'?0.0030:0.0008);
+   let pres=false;
+   for(const r of refuges)
+     if(Math.hypot(r.x-player.x,r.z-player.z)<3.4&&Math.abs(r.y-player.gy)<3){pres=true;break;}
+   chaleur=clamp(chaleur+(pres?dt*0.34:-dt*froid),0,1);
+   if(pres){torche.jus=Math.min(1,torche.jus+dt*0.22);torche.on=true;}}
+  if(sortie&&!gagne&&Math.hypot(sortie.x-player.x,sortie.z-player.z)<2.4
+     &&Math.abs(sortie.y-player.gy)<3){ gagne=1; }
+  player.throwCd=Math.max(0,player.throwCd-dt);
+  updateFlying(dt);
+  player.shake=Math.max(0,player.shake-dt*2.5);
+}
+function throwLure(){
+  if(player.held<=0||player.throwCd>0)return;
+  const l=lures.find(o=>o.held);
+  if(!l)return;
+  l.held=false;player.held--;player.throwCd=0.45;
+  const cp=Math.cos(player.pitch),sp=Math.sin(player.pitch);
+  const dx=-Math.sin(player.yaw)*cp,dy=sp,dz=-Math.cos(player.yaw)*cp;
+  const v=17;
+  l.fly={x:player.x,y:player.gy+player.eye,z:player.z,vx:dx*v,vy:dy*v+3,vz:dz*v};
+  flying.push(l);
+  if(Nappe)Nappe.lance();
+}
+function updateFlying(dt){
+  for(let i=flying.length-1;i>=0;i--){
+    const l=flying[i],f=l.fly;
+    f.vy-=26*dt;
+    const nx=f.x+f.vx*dt,nz=f.z+f.vz*dt,ny=f.y+f.vy*dt;
+    const hitWall=!isFree(w2c(nx),w2c(nz));
+    const g=groundAt(hitWall?f.x:nx,hitWall?f.z:nz);
+    if(hitWall){f.vx*=-0.25;f.vz*=-0.25;}
+    else{f.x=nx;f.z=nz;}
+    f.y=ny;
+    if(f.y<=g+0.2){
+      l.x=f.x;l.z=f.z;l.y=g+0.22;l.fly=null;flying.splice(i,1);
+      // le leurre frappe : une vibration franche, loin de toi
+      sounds.push({x:l.x,z:l.z,r:30*TUNE.hearMul,t:0,lure:true});
+      if(Nappe)Nappe.impact(l.x,l.y,l.z);
+    }
+  }
+}
+
+/* ───────────────────────── 7. IA ───────────────────────── */
+const director={
+  pressure:0,cooldown:0,zone:{x:0,z:0,r:9},zoneTimer:0,
+  reset(){this.pressure=0;this.cooldown=4;this.pickZone(42)},
+  pickZone(want){
+    let best=null,bd=1e9;
+    for(let k=0;k<90;k++){
+      const c=randomFree(),wx=c2w(c.x),wz=c2w(c.z);
+      const sc=Math.abs(Math.hypot(wx-player.x,wz-player.z)-want);
+      if(sc<bd){bd=sc;best={x:wx,z:wz};}
+    }
+    this.zone.x=best.x;this.zone.z=best.z;
+    this.zone.r=lerp(16,7,this.pressure);this.zoneTimer=0;
+  },
+  update(dt){
+    if(this.cooldown>0){this.cooldown-=dt;this.pressure=Math.max(0,this.pressure-dt*0.1);}
+    else this.pressure=Math.min(1,this.pressure+dt*TUNE.pressRate);
+    this.zoneTimer+=dt;
+    const want=lerp(60,24,this.pressure);
+    if(this.zoneTimer>14||Math.hypot(creature.x-this.zone.x,creature.z-this.zone.z)<5)
+      this.pickZone(want);
+  },
+  onLost(){this.cooldown=8;this.pressure=0.18;this.pickZone(42)}
+};
+
+const ST={PATROL:'traque',INVEST:'approche',SEARCH:'fouille',
+          LISTEN:'écoute',CHASE:'poursuite',RETREAT:'retrait'};
+const creature={
+  x:0,z:0,y:0,heading:0,state:ST.PATROL,stateT:0,
+  belief:{x:0,z:0,conf:0},
+  path:null,pathIdx:0,repathT:0,target:{x:0,z:0},
+  searchPts:[],chaseT:0,lostT:0,listenT:0,distract:0,
+  trail:0,trailCd:0,scan:0,
+  hist:[],cum:0,SEG:20,SP:0.58
+};
+/* ═══ JEUNES ═══
+   La mère garde son IA complète — testée, je n'y touche pas. Les jeunes ont
+   une conduite simple : ils errent, et ils foncent si tu passes trop près.
+   Leur nombre suit la profondeur : la surface est calme, le fond grouille. */
+const jeunes=[];
+function majJeunes(){
+  let mn=1e9,mx=-1e9;
+  for(let i=0;i<GW*GH;i++){if(grid[i]!==FLOOR)continue;
+    mn=Math.min(mn,floorH[i]);mx=Math.max(mx,floorH[i]);}
+  const prof=1-(player.gy-mn)/Math.max(1,mx-mn);
+  const voulu=Math.round(prof*prof*9);
+  while(jeunes.length>voulu) jeunes.pop();
+  while(jeunes.length<voulu){
+    for(let k=0;k<200;k++){
+      const c=randomFree(), wx=c2w(c.x), wz=c2w(c.z);
+      const d=Math.hypot(wx-player.x,wz-player.z);
+      if(d<26||d>90)continue;
+      jeunes.push({x:wx,z:wz,y:floorH[idx(c.x,c.z)]+0.3,h:rnd()*6.28,
+                   hist:[],cum:0,t:0,ph:rnd()*6.28,ech:0.30+rnd()*0.22});
+      break;
+    }
+    break;
+  }
+}
+function updateJeunes(dt){
+  for(const j of jeunes){
+    j.t+=dt;
+    const d=Math.hypot(player.x-j.x,player.z-j.z);
+    let tx,tz,v;
+    if(d<13){ tx=player.x; tz=player.z; v=4.2; }
+    else { tx=j.x-Math.sin(j.h)*8; tz=j.z-Math.cos(j.h)*8; v=1.7;
+           if(j.t%3<dt) j.h+=(rnd()-0.5)*1.6; }
+    const want=Math.atan2(-(tx-j.x),-(tz-j.z));
+    let df=want-j.h; while(df>Math.PI)df-=6.283;while(df<-Math.PI)df+=6.283;
+    j.h+=clamp(df,-3*dt,3*dt);
+    const nx=j.x-Math.sin(j.h)*v*dt, nz=j.z-Math.cos(j.h)*v*dt;
+    if(isFree(w2c(nx),w2c(nz))){j.x=nx;j.z=nz;}
+    j.y=lerp(j.y,groundAt(j.x,j.z)+0.3,1-Math.exp(-9*dt));
+    const l=j.hist[j.hist.length-1];
+    const st=l?Math.hypot(j.x-l.x,j.z-l.z):9;
+    if(st>0.07){j.cum+=st;j.hist.push({x:j.x,y:j.y,z:j.z,cum:j.cum});
+      while(j.hist.length>2&&j.cum-j.hist[0].cum>7)j.hist.shift();}
+    /* Ils tuaient en silence et sans signal : c'était injuste. Ils font
+       maintenant trembler la caméra de loin, exactement comme la mère. */
+    j.proche=d;
+    if(d<16) player.shake=Math.max(player.shake, (1-d/16)*0.75);
+    if(d<1.0&&caughtT<=0){caughtT=1.2;player.shake=1;chute=false;}
+  }
+}
+
+function spawnCreature(minD=48){
+  for(let k=0;k<400;k++){
+    const c=randomFree(),wx=c2w(c.x),wz=c2w(c.z);
+    if(Math.hypot(wx-player.x,wz-player.z)>minD){creature.x=wx;creature.z=wz;break;}
+  }
+  creature.y=groundAt(creature.x,creature.z)+0.5;
+  creature.state=ST.PATROL;creature.stateT=0;creature.path=null;
+  creature.belief.conf=0;creature.hist.length=0;creature.cum=0;
+  creature.chaseT=0;creature.lostT=0;creature.trail=0;creature.trailCd=0;creature.distract=0;
+}
+function setState(s){
+  if(creature.state===s)return;
+  if(s===ST.CHASE&&creature.state!==ST.CHASE&&Nappe)Nappe.cri();
+  creature.state=s;creature.stateT=0;creature.path=null;
+  if(s===ST.LISTEN)creature.listenT=1.4+rnd()*2.1;
+}
+
+function sense(dt){
+  const c=creature,b=c.belief;
+  b.conf=Math.max(0,b.conf-dt*0.21);
+  c.trailCd=Math.max(0,c.trailCd-dt);
+  c.distract=Math.max(0,c.distract-dt);
+  const dP=Math.hypot(player.x-c.x,player.z-c.z);
+
+  if(dP<1.7){b.x=player.x;b.z=player.z;b.conf=1;c.distract=0;setState(ST.CHASE);return dP;}
+
+  /* LE LEURRE PASSE AVANT TOUT.
+     En poursuite sa certitude sur toi est à 100 % : un impact ne pouvait donc
+     jamais la battre, et l'objet ne servait à rien au seul moment où on en a
+     besoin. Ici l'impact écrase la croyance et ouvre une fenêtre de fixation
+     pendant laquelle tes propres pas ne l'intéressent plus. Seul le contact
+     à moins de 2,2 m la ramène à toi. */
+  for(const s of sounds){
+    if(s.t>0.05||!s.lure)continue;
+    const d=Math.hypot(s.x-c.x,s.z-c.z);
+    if(d>s.r*(c.state===ST.LISTEN?2:1))continue;
+    b.x=s.x;b.z=s.z;b.conf=0.85;c.distract=4.5;c.trail=0;
+    setState(ST.INVEST);
+  }
+
+  // vibrations — à l'arrêt elle entend deux fois mieux
+  const gain=c.state===ST.LISTEN?2:1;
+  if(c.distract<=0) for(const s of sounds){
+    if(s.t>0.05||s.lure)continue;
+    const d=Math.hypot(s.x-c.x,s.z-c.z), r=s.r*gain;
+    if(d>r)continue;
+    const conf=clamp(1-d/r,0,1);
+    if(conf>b.conf){b.x=s.x;b.z=s.z;b.conf=conf;}
+    if(c.state!==ST.RETREAT){
+      if(conf>0.74&&d<12)setState(ST.CHASE);else setState(ST.INVEST);
+    }
+  }
+
+  /* PISTE ODORANTE — refonte complète.
+     v1 : elle sautait de marqueur en marqueur jusqu'à toi, sans limite.
+     v2 : trois freins. La certitude plafonne à 0,38 (jamais de poursuite
+     déclenchée par l'odeur seule), le rayon de lecture tombe à 2,2 m, et
+     surtout elle se fatigue — au bout de `trailStamina` secondes elle perd
+     le fil et ne peut pas en reprendre un avant 12 s. */
+  if((c.state===ST.PATROL||c.state===ST.SEARCH)&&b.conf<0.26&&c.trailCd<=0){
+    let bi=-1,bt=-1;
+    for(let i=0;i<scent.length;i++){
+      const s=scent[i];
+      if(Math.hypot(s.x-c.x,s.z-c.z)<1.8&&s.t>bt){bt=s.t;bi=i;}
+    }
+    if(bi>=0){
+      const j=Math.min(bi+5,scent.length-1);
+      b.x=scent[j].x;b.z=scent[j].z;b.conf=Math.min(0.26,b.conf+0.18);
+      setState(j>=scent.length-1?ST.SEARCH:ST.INVEST);
+    }
+  }
+  if(c.state===ST.INVEST&&b.conf<=0.4){
+    c.trail+=dt;
+    if(c.trail>TUNE.trailStamina){c.trail=0;c.trailCd=18;b.conf=0;setState(ST.LISTEN);}
+  }else c.trail=Math.max(0,c.trail-dt*0.5);
+  return dP;
+}
+
+function requestPath(tx,tz){
+  const cells=aStar(w2c(creature.x),w2c(creature.z),w2c(tx),w2c(tz));
+  creature.path=cells?smooth(cells):null;
+  creature.pathIdx=1;creature.target={x:tx,z:tz};
+}
+function follow(dt,speed,turn){
+  const c=creature,p=c.path;let dx,dz;
+  const tdx=c.target.x-c.x,tdz=c.target.z-c.z,td=Math.hypot(tdx,tdz);
+  if(td<7&&clearLine(c.x,c.z,c.target.x,c.target.z,0.5)){
+    if(td<0.35)return false; dx=tdx;dz=tdz;
+  }else{
+    if(!p||c.pathIdx>=p.length)return false;
+    let n=p[c.pathIdx];dx=n.x-c.x;dz=n.z-c.z;
+    if(Math.hypot(dx,dz)<0.55){
+      c.pathIdx++;if(c.pathIdx>=p.length)return false;
+      n=p[c.pathIdx];dx=n.x-c.x;dz=n.z-c.z;
+    }
+  }
+  const want=Math.atan2(-dx,-dz);
+  let diff=want-c.heading;
+  while(diff>Math.PI)diff-=6.283185;while(diff<-Math.PI)diff+=6.283185;
+  c.heading+=clamp(diff,-turn*dt,turn*dt);
+  const al=Math.max(0.25,Math.cos(clamp(diff,-1.6,1.6)));
+  const fx=-Math.sin(c.heading),fz=-Math.cos(c.heading);
+  const nx=c.x+fx*speed*al*dt,nz=c.z+fz*speed*al*dt;
+  const cx=w2c(nx),cz=w2c(nz);
+  if(isFree(cx,cz)&&Math.abs(floorH[idx(cx,cz)]-groundAt(c.x,c.z))<=CLIMB){c.x=nx;c.z=nz;}
+  return true;
+}
+
+function updateCreature(dt){
+  const c=creature;c.stateT+=dt;c.repathT-=dt;
+  const dP=sense(dt);const b=c.belief;
+  let speed=2.4,turn=2.2,dest=null,every=0.9;
+
+  switch(c.state){
+    case ST.PATROL:
+      speed=2.4;turn=2.0;
+      if(!c.path||c.pathIdx>=c.path.length||c.stateT>9){
+        const a=rnd()*6.283,r=rnd()*director.zone.r;
+        dest={x:director.zone.x+Math.cos(a)*r,z:director.zone.z+Math.sin(a)*r};
+        c.stateT=0;
+        if(rnd()<0.25){setState(ST.LISTEN);break;}
+      }
+      break;
+    case ST.INVEST:
+      speed=3.4;turn=2.6;every=0.6;dest={x:b.x,z:b.z};
+      if(Math.hypot(b.x-c.x,b.z-c.z)<2.0||(b.conf<0.12&&c.stateT>4)){
+        c.searchPts=[];
+        for(let i=0;i<5;i++){const a=rnd()*6.283,r=4+rnd()*9;
+          c.searchPts.push({x:b.x+Math.cos(a)*r,z:b.z+Math.sin(a)*r});}
+        setState(ST.SEARCH);
+      }
+      break;
+    case ST.SEARCH:
+      speed=2.9;turn=2.4;every=0.7;
+      if(c.searchPts.length===0||c.stateT>16){c.searchPts.length=0;setState(ST.LISTEN);break;}
+      {const p=c.searchPts[0];
+       if(Math.hypot(p.x-c.x,p.z-c.z)<2.2){c.searchPts.shift();c.path=null;
+         if(rnd()<0.45)setState(ST.LISTEN);}
+       else dest=p;}
+      break;
+    /* ÉCOUTE — elle s'arrête net et ne bouge plus. Une bête qui s'immobilise
+       lit comme une bête qui réfléchit ; c'est plus inquiétant qu'une bête
+       qui court. Et son ouïe double pendant ce temps : rester figé n'est pas
+       gratuit non plus. */
+    case ST.LISTEN:
+      c.listenT-=dt;c.scan=Math.sin(c.stateT*1.6)*0.9;
+      if(c.listenT<=0) setState(c.searchPts.length?ST.SEARCH:ST.PATROL);
+      break;
+    case ST.CHASE:
+      speed=TUNE.chaseSpeed;turn=4.4;every=0.28;c.chaseT+=dt;
+      if(c.distract<=0&&(b.conf>0.25||dP<2.5)){b.x=player.x;b.z=player.z;c.lostT=0;dest={x:player.x,z:player.z};}
+      else{c.lostT+=dt;dest={x:b.x,z:b.z};
+        if(c.lostT>2.0){director.onLost();c.searchPts=[];
+          for(let i=0;i<6;i++){const a=rnd()*6.283,r=5+rnd()*10;
+            c.searchPts.push({x:b.x+Math.cos(a)*r,z:b.z+Math.sin(a)*r});}
+          setState(ST.LISTEN);}}
+      if(c.chaseT>15){setState(ST.RETREAT);c.chaseT=0;director.onLost();}
+      break;
+    case ST.RETREAT:
+      speed=3.2;turn=2.0;every=1.2;
+      if(!c.path||c.pathIdx>=c.path.length)dest={x:director.zone.x,z:director.zone.z};
+      if(c.stateT>7)setState(ST.PATROL);
+      break;
+  }
+  if(c.state!==ST.CHASE)c.chaseT=Math.max(0,c.chaseT-dt);
+
+  if(dest&&(c.repathT<=0||!c.path||Math.hypot(dest.x-c.target.x,dest.z-c.target.z)>1.6)){
+    requestPath(dest.x,dest.z);c.repathT=every;
+  }
+  if(c.state!==ST.LISTEN){
+    const moved=follow(dt,speed,turn);
+    if(!moved&&c.state===ST.PATROL)c.path=null;
+  }
+
+  const last=c.hist[c.hist.length-1];
+  const step=last?Math.hypot(c.x-last.x,c.z-last.z):999;
+  if(step>0.07){
+    c.cum+=step;c.hist.push({x:c.x,y:c.y,z:c.z,cum:c.cum});
+    const mb=c.SEG*c.SP+2;
+    while(c.hist.length>2&&c.cum-c.hist[0].cum>mb)c.hist.shift();
+  }
+  const gy=groundAt(c.x,c.z)+0.5;
+  c.y=lerp(c.y,gy,1-Math.exp(-10*dt))+Math.sin(time*7)*0.012;
+  return dP;
+}
+function sampleBody(back){
+  const h=creature.hist;
+  if(h.length<2)return{x:creature.x,y:creature.y,z:creature.z};
+  const tg=creature.cum-back;
+  if(tg<=h[0].cum)return h[0];
+  for(let i=h.length-1;i>0;i--){
+    if(h[i-1].cum<=tg&&tg<=h[i].cum){
+      const t=(tg-h[i-1].cum)/Math.max(1e-4,h[i].cum-h[i-1].cum);
+      return{x:lerp(h[i-1].x,h[i].x,t),y:lerp(h[i-1].y,h[i].y,t),z:lerp(h[i-1].z,h[i].z,t)};
+    }
+  }
+  return h[h.length-1];
+}
+
+/* ═══════════════ 8. NAPPES AMBIENT ═══════════════
+   Portage du générateur de SessionMasterTauri. La structure est conservée :
+   pédale tenue + arpège marché sur la gamme (jamais une boucle) + lit de
+   bruit rose filtré + convolution + délai filtré + limiteur en bout.
+   Trois écarts assumés, tous justifiés par le fait qu'on est dans un jeu :
+
+   1. Les fondamentales descendent d'une octave environ (24–37 Hz au lieu de
+      55–220). C'est le « plus grave et ténébreux » demandé.
+   2. Le changement de biome déclenche un fondu sortant/entrant — jamais une
+      morphose de paramètres. C'est ta règle n°1 respectée : un drone ne se
+      transforme pas en un autre. Marcher dans la glacière EST le geste.
+   3. La créature ne passe pas par la nappe. Elle a son propre bus, spatialisé
+      en HRTF sur sa position réelle. Autrement il aurait fallu déformer le
+      drone à chaque poursuite, ce que la règle n°1 interdit — et de toute
+      façon un fondu de 3,5 s ne suit pas une poursuite. */
+const Nappe=(()=>{
+  const DRONES=[
+    {id:'gouffre',nom:'Gouffre',
+     pedale:[[20.6,-6.0],[30.9,-9.0]],
+     gamme:[[41.2,-7.0],[61.7,-11.5],[82.4,-14.0],[123.5,-18.5],[164.8,-22.0]],
+     duree:3.4,ecart:2.3,coupure:38,pente:-13.5,bruit:0.20},
+    {id:'givre',nom:'Givre',
+     pedale:[[27.5,-7.0]],
+     gamme:[[73.4,-9.0],[110.0,-11.5],[146.8,-13.5],[220.0,-17.0],[293.7,-20.0],[440.0,-25.0]],
+     duree:2.9,ecart:1.7,coupure:72,pente:-10.5,bruit:0.38},
+    {id:'beton',nom:'Béton',
+     pedale:[[18.4,-5.0]],
+     gamme:[[49.0,-8.0],[73.5,-13.5],[98.0,-15.5],[146.8,-20.5]],
+     duree:3.8,ecart:2.9,coupure:32,pente:-8.0,bruit:0.54},
+    {id:'ville',nom:'Ville rouge',
+     pedale:[[21.8,-5.0],[32.7,-9.5]],
+     gamme:[[43.7,-7.5],[65.4,-12.0],[87.3,-15.5],[130.8,-20.0],[174.6,-25.0]],
+     duree:3.6,ecart:2.7,coupure:36,pente:-12.0,bruit:0.30},
+    {id:'gelisol',nom:'Gélisol',
+     pedale:[[24.5,-7.5],[36.7,-10.0]],
+     gamme:[[65.4,-8.5],[98.0,-12.5],[130.8,-15.0],[196.0,-19.5],[261.6,-23.5]],
+     duree:3.2,ecart:2.6,coupure:50,pente:-11.5,bruit:0.42},
+  ];
+  const A={ctx:null,master:null,lim:null,bus:null,pan:null,conv:null,wet:null,dry:null,
+    delai:null,retour:null,fb1:null,fb2:null,gb:null,src:null,lfo:null,
+    pedales:[],horloge:null,horlogeEvt:null,retourMaree:null,dernierEvt:null,
+    drone:null,dernier:null,id:null,gen:0,enTransition:false,vol:58,
+    cBus:null,cPan:null,cNoise:null,cFilt:null,cGain:null,nextClick:0,clickRate:0};
+
+  const dbG=db=>Math.pow(10,db/20);
+  const gainMaitre=v=>Math.pow(v/100,1.55)*1.05;
+
+  function irBuffer(ctx,sec){
+    const n=Math.floor(ctx.sampleRate*sec),buf=ctx.createBuffer(2,n,ctx.sampleRate);
+    for(let c=0;c<2;c++){const d=buf.getChannelData(c);let lp=0;
+      for(let i=0;i<n;i++){const env=Math.pow(1-i/n,2.6);
+        lp+=(Math.random()*2-1-lp)*0.05;d[i]=lp*env;}}
+    return buf;
+  }
+  // bruit rose : le blanc siffle bien trop pour un lit de fond
+  function bruitBuffer(ctx,sec){
+    const n=Math.floor(ctx.sampleRate*sec),buf=ctx.createBuffer(1,n,ctx.sampleRate);
+    const d=buf.getChannelData(0);let b0=0,b1=0,b2=0;
+    for(let i=0;i<n;i++){const w=Math.random()*2-1;
+      b0=0.99765*b0+w*0.0990460;b1=0.96300*b1+w*0.2965164;b2=0.57000*b2+w*1.0526913;
+      d[i]=(b0+b1+b2+w*0.1848)*0.16;}
+    return buf;
+  }
+  function jouerNote(freq,db,duree,gmax,opts){
+    opts=opts||{};const ctx=A.ctx,t=ctx.currentTime;
+    const att=opts.attaque||Math.min(duree*0.45,1.4);
+    const rel=opts.relache||duree*0.9;
+    const cible=Math.max(0.0002,dbG(db)*gmax);
+    const g=ctx.createGain();
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(cible,t+att);
+    g.gain.setValueAtTime(cible,t+duree);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+duree+rel);
+    g.connect(A.pan);
+    const oscs=[-3,3].map(cents=>{
+      const o=ctx.createOscillator();o.type='sine';o.frequency.value=freq;
+      o.detune.value=cents;o.connect(g);o.start(t);o.stop(t+duree+rel+0.2);return o;});
+    oscs[1].onended=()=>{try{g.disconnect()}catch(e){}};
+  }
+  // marche sur la gamme : un pas voisin la plupart du temps, un saut parfois
+  function choisirIndex(n){
+    if(n<=1)return 0;
+    if(A.dernier===null){A.dernier=Math.floor(Math.random()*n);return A.dernier;}
+    let i=A.dernier;
+    for(let e=0;e<8&&i===A.dernier;e++){
+      const pas=(Math.random()<0.72?1:2)*(Math.random()<0.5?-1:1);
+      i=A.dernier+pas; if(i<0)i+=n; if(i>=n)i-=n;
+    }
+    A.dernier=i;return i;
+  }
+  function planifier(){
+    if(!A.ctx||!A.drone)return;
+    const d=A.drone,[f,db]=d.gamme[choisirIndex(d.gamme.length)];
+    const duree=d.duree*(0.8+Math.random()*0.5);
+    jouerNote(f,db,duree,0.30);
+    A.horloge=setTimeout(planifier,d.ecart*(0.7+Math.random()*0.8)*1000);
+  }
+  // la cloche : une note de la gamme, deux octaves plus haut, très loin.
+  // 6 s d'attaque — une apparition, jamais une frappe.
+  function evtCloche(){
+    const g=A.drone.gamme,[f,db]=g[Math.floor(Math.random()*g.length)];
+    jouerNote(f*(Math.random()<0.5?2:4),db-18,4,0.30,{attaque:6,relache:12});
+  }
+  function evtMaree(){
+    const gen=A.gen,base=A.drone.coupure;
+    A.fb1.frequency.setTargetAtTime(base*3,A.ctx.currentTime,8);
+    if(A.fb2)A.fb2.frequency.setTargetAtTime(base*3.9,A.ctx.currentTime,8);
+    A.retourMaree=setTimeout(()=>{
+      if(!A.ctx||gen!==A.gen||!A.fb1)return;
+      A.fb1.frequency.setTargetAtTime(base,A.ctx.currentTime,8);
+      if(A.fb2)A.fb2.frequency.setTargetAtTime(base*1.3,A.ctx.currentTime,8);
+    },25000);
+  }
+  function planifierEvt(premier){
+    clearTimeout(A.horlogeEvt);
+    // intervalles resserrés : une partie dure des minutes, pas une heure
+    const min=premier?0.6+Math.random()*1.2:2+Math.random()*4;
+    const gen=A.gen;
+    A.horlogeEvt=setTimeout(()=>{
+      if(gen!==A.gen)return;
+      const lot=[evtCloche]; if(A.drone.bruit>=0.10&&A.fb1)lot.push(evtMaree);
+      try{lot[Math.floor(Math.random()*lot.length)]()}catch(e){}
+      planifierEvt(false);
+    },min*60000);
+  }
+  function monterPedale(d){
+    const ctx=A.ctx,t=ctx.currentTime;
+    A.pedales=d.pedale.map(([f,db],i)=>{
+      const g=ctx.createGain(),cible=dbG(db)*0.26;
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(cible,t+11);
+      g.connect(A.pan);
+      const oscs=[-3,3].map(c=>{const o=ctx.createOscillator();o.type='sine';
+        o.frequency.value=f;o.detune.value=c;o.connect(g);o.start(t);return o;});
+      const lfo=ctx.createOscillator();lfo.frequency.value=0.043+i*0.017;
+      const prof=ctx.createGain();prof.gain.value=cible*0.22;
+      lfo.connect(prof).connect(g.gain);lfo.start(t);
+      return {g,oscs,lfo};
+    });
+  }
+  function construireBruit(d){
+    const ctx=A.ctx,src=ctx.createBufferSource();
+    src.buffer=bruitBuffer(ctx,8);src.loop=true;
+    const f1=ctx.createBiquadFilter();f1.type='lowpass';
+    f1.frequency.value=d.coupure;f1.Q.value=d.pente>-10?0.4:0.7;
+    let out=f1,f2=null;
+    if(d.pente<=-13){f2=ctx.createBiquadFilter();f2.type='lowpass';
+      f2.frequency.value=d.coupure*1.3;f2.Q.value=0.5;f1.connect(f2);out=f2;}
+    const g=ctx.createGain();g.gain.value=d.bruit*0.30;
+    src.connect(f1);out.connect(g);g.connect(A.pan);src.start();
+    A.src=src;A.fb1=f1;A.fb2=f2;A.gb=g;
+  }
+  function monterDrone(d){
+    A.drone=d;A.id=d.id;A.dernier=null;
+    monterPedale(d);construireBruit(d);planifier();planifierEvt(true);
+  }
+  function descendreDrone(apres){
+    const ctx=A.ctx;if(!ctx){if(apres)apres();return;}
+    [A.horloge,A.horlogeEvt,A.retourMaree].forEach(clearTimeout);
+    A.horloge=A.horlogeEvt=A.retourMaree=null;
+    const t=ctx.currentTime,rel=3.5;
+    A.pedales.forEach(v=>{try{
+      v.g.gain.cancelScheduledValues(t);
+      v.g.gain.setValueAtTime(Math.max(0.0001,v.g.gain.value),t);
+      v.g.gain.exponentialRampToValueAtTime(0.0001,t+rel);
+      v.oscs.forEach(o=>o.stop(t+rel+0.3));v.lfo.stop(t+rel+0.3);
+    }catch(e){}});
+    if(A.gb){try{
+      A.gb.gain.cancelScheduledValues(t);
+      A.gb.gain.setValueAtTime(A.gb.gain.value,t);
+      A.gb.gain.linearRampToValueAtTime(0.0001,t+rel);
+      A.src.stop(t+rel+0.3);
+    }catch(e){}}
+    A.pedales=[];A.src=A.gb=A.fb1=A.fb2=null;
+    if(apres)setTimeout(apres,(rel+0.4)*1000);
+  }
+  // ── bus de la créature : séparé de la nappe, spatialisé en HRTF
+  /* ═══ MENACE ═══
+     Un sub sinusoïdal doublé et désaccordé — les deux battent entre eux et
+     produisent une pulsation qu'on sent plus qu'on ne l'entend. La hauteur
+     DESCEND quand elle approche pendant que le gain monte : le son se
+     rapproche et s'enfonce en même temps. Un growl filtré vient au-dessus.
+     Les jeunes ont la même chaîne, une octave plus haut et bien plus bas
+     en niveau — présents, jamais confondus avec la mère. */
+  function construireMenace(dest,base){
+    const ctx=A.ctx;
+    const g=ctx.createGain(); g.gain.value=0;
+    const o1=ctx.createOscillator(), o2=ctx.createOscillator();
+    o1.type='sine'; o2.type='sine';
+    o1.frequency.value=base; o2.frequency.value=base*1.011;
+    const gr=ctx.createBufferSource(); gr.buffer=bruitBuffer(ctx,4); gr.loop=true;
+    const fg=ctx.createBiquadFilter(); fg.type='lowpass'; fg.frequency.value=90; fg.Q.value=6;
+    const gg=ctx.createGain(); gg.gain.value=0;
+    o1.connect(g); o2.connect(g); g.connect(dest);
+    gr.connect(fg).connect(gg).connect(dest);
+    o1.start(); o2.start(); gr.start();
+    return {g,o1,o2,gg,fg,base};
+  }
+  function construireCreature(){
+    const ctx=A.ctx;
+    A.cPan=ctx.createPanner();
+    A.cPan.panningModel='HRTF';A.cPan.distanceModel='inverse';
+    A.cPan.refDistance=2;A.cPan.maxDistance=40;A.cPan.rolloffFactor=1.1;
+    A.cPan.connect(A.bus);
+    const src=ctx.createBufferSource();
+    src.buffer=bruitBuffer(ctx,4);src.loop=true;
+    A.cFilt=ctx.createBiquadFilter();A.cFilt.type='bandpass';
+    A.cFilt.frequency.value=260;A.cFilt.Q.value=1.1;
+    A.cGain=ctx.createGain();A.cGain.gain.value=0;
+    src.connect(A.cFilt).connect(A.cGain).connect(A.cPan);
+    src.start();A.cNoise=src;
+    A.menace=construireMenace(A.cPan,30);
+    // bus des jeunes : leur propre panner, sur le plus proche
+    A.jPan=ctx.createPanner();
+    A.jPan.panningModel='HRTF';A.jPan.distanceModel='inverse';
+    A.jPan.refDistance=2;A.jPan.maxDistance=40;A.jPan.rolloffFactor=1.2;
+    A.jPan.connect(A.bus);
+    A.jMenace=construireMenace(A.jPan,58);
+  }
+  function placer(x,y,z){
+    const p=A.cPan;if(!p)return;
+    if(p.positionX){p.positionX.value=x;p.positionY.value=y;p.positionZ.value=z;}
+    else p.setPosition(x,y,z);
+  }
+  function construire(){
+    const Ctx=window.AudioContext||window.webkitAudioContext;
+    const ctx=new Ctx();A.ctx=ctx;
+    A.lim=ctx.createDynamicsCompressor();
+    A.lim.threshold.value=-12;A.lim.knee.value=8;A.lim.ratio.value=12;
+    A.lim.attack.value=0.05;A.lim.release.value=0.7;
+    A.lim.connect(ctx.destination);
+    A.master=ctx.createGain();A.master.gain.value=0.0001;A.master.connect(A.lim);
+    A.bus=ctx.createGain();
+    A.pan=ctx.createStereoPanner();A.pan.connect(A.bus);
+    A.conv=ctx.createConvolver();A.conv.buffer=irBuffer(ctx,16);
+    A.wet=ctx.createGain();A.wet.gain.value=0.85;
+    A.dry=ctx.createGain();A.dry.gain.value=0.30;
+    A.bus.connect(A.conv).connect(A.wet).connect(A.master);
+    A.bus.connect(A.dry).connect(A.master);
+    A.delai=ctx.createDelay(8);A.delai.delayTime.value=2.2;
+    A.retour=ctx.createGain();A.retour.gain.value=0.42;
+    const bas=ctx.createBiquadFilter();bas.type='lowpass';bas.frequency.value=300;
+    A.bus.connect(A.delai);A.delai.connect(bas);bas.connect(A.retour);
+    A.retour.connect(A.delai);bas.connect(A.conv);bas.connect(A.dry);
+    A.lfo=ctx.createOscillator();A.lfo.frequency.value=0.031;
+    const gP=ctx.createGain();gP.gain.value=0.45;
+    A.lfo.connect(gP).connect(A.pan.pan);A.lfo.start();
+    construireCreature();
+  }
+  // ── impulsions courtes, hors nappe
+  function ping(freq,dur,gain,type,dest){
+    if(!A.ctx)return;
+    const t=A.ctx.currentTime,o=A.ctx.createOscillator(),g=A.ctx.createGain();
+    o.type=type||'sine';o.frequency.setValueAtTime(freq,t);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(gain,t+0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g).connect(dest||A.bus);o.start(t);o.stop(t+dur+0.05);
+    o.onended=()=>{try{g.disconnect()}catch(e){}};
+  }
+  return {
+    demarrer(id){
+      if(A.ctx)return;
+      try{construire()}catch(e){return}
+      monterDrone(DRONES.find(d=>d.id===id)||DRONES[0]);
+      A.master.gain.exponentialRampToValueAtTime(
+        Math.max(0.0001,gainMaitre(A.vol)),A.ctx.currentTime+3);
+    },
+    // Fondu sortant puis entrant. Jamais de morphose : règle n°1.
+    biome(i){
+      const d=DRONES[i]||DRONES[0];
+      if(!A.ctx||A.enTransition||d.id===A.id)return;
+      A.enTransition=true;A.id=d.id;const gen=A.gen;
+      descendreDrone(()=>{if(gen!==A.gen)return;A.enTransition=false;monterDrone(d);});
+    },
+    nom(){return A.drone?A.drone.nom:'—'},
+    volume(v){A.vol=v;if(A.ctx)
+      A.master.gain.setTargetAtTime(Math.max(0.0001,gainMaitre(v)),A.ctx.currentTime,0.6)},
+    reprendre(){if(A.ctx&&A.ctx.state==='suspended')A.ctx.resume()},
+    pas(g){ping(58+Math.random()*22,0.09,g*0.06,'triangle')},
+    ramasse(){ping(700,0.13,0.14,'sine');setTimeout(()=>ping(1050,0.10,0.09,'sine'),55)},
+    carte(niv){ping(520+niv*220,0.30,0.22,'triangle');
+      setTimeout(()=>ping(780+niv*300,0.40,0.19,'sine'),90);
+      setTimeout(()=>ping(1170+niv*380,0.50,0.13,'sine'),190)},
+    lance(){ping(300,0.09,0.10,'triangle')},
+    impact(){ping(84,0.34,0.24,'square')},
+    cri(){
+      if(!A.ctx)return;
+      const t=A.ctx.currentTime,o=A.ctx.createOscillator(),g=A.ctx.createGain(),
+            f=A.ctx.createBiquadFilter();
+      o.type='sawtooth';
+      o.frequency.setValueAtTime(680,t);
+      o.frequency.exponentialRampToValueAtTime(96,t+0.75);
+      f.type='bandpass';f.frequency.value=520;f.Q.value=3.5;
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(0.16,t+0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+0.9);
+      o.connect(f).connect(g).connect(A.cPan||A.bus);
+      o.start(t);o.stop(t+1.0);
+      o.onended=()=>{try{g.disconnect()}catch(e){}};
+    },
+    // frottement de chitine + train de clics, tous deux posés sur sa position
+    menace(dist,chasse){
+      if(!A.ctx||!A.menace)return;
+      const t=A.ctx.currentTime;
+      const n=clamp(1-(dist-1.5)/34,0,1), n3=n*n*n;
+      // plus elle est près, plus c'est grave et plus ça pousse
+      A.menace.o1.frequency.setTargetAtTime(lerp(38,17,n),t,0.35);
+      A.menace.o2.frequency.setTargetAtTime(lerp(38,17,n)*1.011,t,0.35);
+      A.menace.g.gain.setTargetAtTime(n3*(chasse?0.52:0.30),t,0.18);
+      A.menace.fg.frequency.setTargetAtTime(lerp(70,220,n),t,0.30);
+      A.menace.gg.gain.setTargetAtTime(n3*(chasse?0.30:0.13),t,0.22);
+    },
+    jeunes(lx,ly,lz,dist){
+      if(!A.ctx||!A.jMenace)return;
+      const p=A.jPan;
+      if(p.positionX){p.positionX.value=lx;p.positionY.value=ly;p.positionZ.value=lz;}
+      else p.setPosition(lx,ly,lz);
+      const t=A.ctx.currentTime, n=clamp(1-(dist-1.5)/22,0,1), n2=n*n;
+      A.jMenace.o1.frequency.setTargetAtTime(lerp(74,40,n),t,0.30);
+      A.jMenace.o2.frequency.setTargetAtTime(lerp(74,40,n)*1.014,t,0.30);
+      A.jMenace.g.gain.setTargetAtTime(n2*0.17,t,0.20);
+      A.jMenace.fg.frequency.setTargetAtTime(lerp(110,330,n),t,0.25);
+      A.jMenace.gg.gain.setTargetAtTime(n2*0.11,t,0.22);
+    },
+    creature(lx,ly,lz,dist,chasse,dt){
+      if(!A.ctx)return;
+      placer(lx,ly,lz);
+      const near=clamp(1-(dist-2)/30,0,1);
+      A.cGain.gain.value=near*near*(chasse?0.32:0.16);
+      A.cFilt.frequency.value=lerp(150,1250,near);
+      A.clickRate=lerp(0.9,7.5,near)*(chasse?1.7:1);
+      A.nextClick-=dt;
+      if(A.nextClick<=0&&near>0.05){
+        A.nextClick=1/A.clickRate*(0.7+Math.random()*0.6);
+        ping(1500+Math.random()*900,0.030,0.030*near,'square',A.cPan);
+      }
+    }
+  };
+})();
+
+/* ───────────────────────── 9. RENDU ───────────────────────── */
+let fbo,fboTex,fboDepth,LW=0,LH=0;
+function makeFBO(w,h){
+  if(fbo){gl.deleteFramebuffer(fbo);gl.deleteTexture(fboTex);gl.deleteRenderbuffer(fboDepth);}
+  LW=w;LH=h;
+  fboTex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,fboTex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  [[gl.TEXTURE_MIN_FILTER,gl.NEAREST],[gl.TEXTURE_MAG_FILTER,gl.NEAREST],
+   [gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE],[gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE]]
+    .forEach(([k,v])=>gl.texParameteri(gl.TEXTURE_2D,k,v));
+  fboDepth=gl.createRenderbuffer();gl.bindRenderbuffer(gl.RENDERBUFFER,fboDepth);
+  gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,w,h);
+  fbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,fboTex,0);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,fboDepth);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+}
+function resize(){
+  cv.width=Math.floor(innerWidth);cv.height=Math.floor(innerHeight);
+  const h=Math.round(TUNE.res),w=Math.max(2,Math.round(h*(cv.width/cv.height)));
+  makeFBO(w,h);
+}
+addEventListener('resize',resize);
+
+const proj=M.mk(),view=M.mk(),model=M.mk();
+let lureM,vus=0;
+let curBiome=0, fogC=[0,0,0], fogD=4.4, ambNow=0.016, snowNow=0, nLum=0;
+const lpArr=new Float32Array(NLIGHT*3), lcArr=new Float32Array(NLIGHT*3);
+
+function draw(m,tint,emit){
+  gl.uniform3fv(uS.uTint,tint);gl.uniform1f(uS.uEmit,emit||0);
+  gl.uniformMatrix4fv(uS.uModel,false,model);
+  gl.bindVertexArray(m.vao);gl.drawArrays(gl.TRIANGLES,0,m.count);
+}
+/* On triait la totalité des lampes à chaque image — 3 222 objets alloués et
+   triés 60 fois par seconde. On ne regarde plus que les pavés voisins, et on
+   insère dans un tableau de six sans jamais trier l'ensemble. */
+const meilleurs=new Array(NLIGHT), dMeilleurs=new Float32Array(NLIGHT);
+function pickLights(){
+  let n=0;
+  for(let i=0;i<NLIGHT;i++){meilleurs[i]=null;dMeilleurs[i]=Infinity;}
+  const cx=(w2c(player.x)/CH)|0, cz=(w2c(player.z)/CH)|0;
+  for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
+    const a=cx+dx, b=cz+dz;
+    if(a<0||b<0||a>=CHW||b>=CHH)continue;
+    const lot=lampesParPave.get(b*CHW+a); if(!lot)continue;
+    for(const L of lot){
+      const d=(L.x-player.x)**2+(L.z-player.z)**2;
+      if(d>=dMeilleurs[NLIGHT-1])continue;
+      let j=NLIGHT-1;
+      while(j>0&&dMeilleurs[j-1]>d){dMeilleurs[j]=dMeilleurs[j-1];meilleurs[j]=meilleurs[j-1];j--;}
+      dMeilleurs[j]=d;meilleurs[j]=L;
+    }
+  }
+  for(let i=0;i<NLIGHT;i++) if(meilleurs[i]) n=i+1;
+  const cand=[];
+  for(let i=0;i<n;i++) cand.push({L:meilleurs[i]});
+  cand.forEach(({L},i)=>{
+    const fl=0.72+0.28*Math.sin(time*(2.3+L.ph)+L.ph*7);
+    lpArr[i*3]=L.x;lpArr[i*3+1]=L.y;lpArr[i*3+2]=L.z;
+    lcArr[i*3]=L.c[0]*fl;lcArr[i*3+1]=L.c[1]*fl;lcArr[i*3+2]=L.c[2]*fl;
+  });
+  return cand.length;
+}
+/* ═══════════════ GÉOMÉTRIE DE LA CRÉATURE ═══════════════
+   Vingt cubes empilés donnent vingt cubes empilés. Ici le corps est un vrai
+   tube : 30 anneaux de 10 sommets suivant l'échine, à section aplatie, avec
+   une crête dorsale, une tête effilée, des mandibules articulées en trois
+   segments, des antennes, et 13 paires de pattes à trois articulations
+   animées en vague. Environ 4 000 triangles, reconstruits chaque image dans
+   un seul tampon dynamique — un seul appel de rendu. */
+const C_SEG=46, C_RING=16, C_PAIRES=21, C_MAXV=40000;
+const cP=new Float32Array(C_MAXV*3), cNr=new Float32Array(C_MAXV*3), cC=new Float32Array(C_MAXV*3);
+let cN_=0, crea=null;
+
+function creerCreature(){
+  const vao=gl.createVertexArray(); gl.bindVertexArray(vao);
+  const mk=loc=>{const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);
+    gl.bufferData(gl.ARRAY_BUFFER,C_MAXV*3*4,gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,0,0);return b;};
+  const bp=mk(0),bn=mk(1),bc=mk(2);
+  gl.bindVertexArray(null);
+  return {vao,bp,bn,bc};
+}
+function cV(p,n,c){
+  const i=cN_;
+  cP[i]=p[0];cP[i+1]=p[1];cP[i+2]=p[2];
+  cNr[i]=n[0];cNr[i+1]=n[1];cNr[i+2]=n[2];
+  cC[i]=c[0];cC[i+1]=c[1];cC[i+2]=c[2];
+  cN_+=3;
+}
+function cQuad(a,b,c,d,col){
+  const u=[b[0]-a[0],b[1]-a[1],b[2]-a[2]], v=[d[0]-a[0],d[1]-a[1],d[2]-a[2]];
+  let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+  const L=Math.hypot(n[0],n[1],n[2])||1; n=[n[0]/L,n[1]/L,n[2]/L];
+  cV(a,n,col);cV(b,n,col);cV(c,n,col);
+  cV(a,n,col);cV(c,n,col);cV(d,n,col);
+}
+/* Prisme effilé entre deux points : la brique de toutes les pattes,
+   mandibules et antennes. Six faces, section carrée qui rétrécit. */
+function cTube(p0,r0,p1,r1,col,cotes){
+  let ax=p1[0]-p0[0],ay=p1[1]-p0[1],az=p1[2]-p0[2];
+  const L=Math.hypot(ax,ay,az)||1e-4; ax/=L;ay/=L;az/=L;
+  let ux=0,uy=1,uz=0;
+  if(Math.abs(ay)>0.94){ux=1;uy=0;}
+  let sx=uy*az-uz*ay, sy=uz*ax-ux*az, sz=ux*ay-uy*ax;
+  const SL=Math.hypot(sx,sy,sz)||1; sx/=SL;sy/=SL;sz/=SL;
+  const tx=ay*sz-az*sy, ty=az*sx-ax*sz, tz=ax*sy-ay*sx;
+  const P=(p,r,cs,sn)=>[p[0]+sx*cs*r+tx*sn*r, p[1]+sy*cs*r+ty*sn*r, p[2]+sz*cs*r+tz*sn*r];
+  const NC=cotes||6, A=[],B=[];
+  for(let k=0;k<NC;k++){
+    const a=(k+0.5)/NC*6.283185, cs=Math.cos(a), sn=Math.sin(a);
+    A.push(P(p0,r0,cs,sn)); B.push(P(p1,r1,cs,sn));
+  }
+  for(let k=0;k<NC;k++){const j=(k+1)%NC; cQuad(A[k],A[j],B[j],B[k],col);}
+  for(let k=1;k<NC-1;k++) cQuad(B[0],B[k],B[k+1],B[k],col);
+}
+
+function batirJeune(j){
+  if(cN_>C_MAXV*3-2600)return;
+  if(Math.hypot(j.x-player.x,j.z-player.z)>62)return;
+  const e=j.ech, chit=[0.13,0.115,0.10], dos2=[0.20,0.175,0.15];
+  let prev=[j.x,j.y,j.z];
+  const ph=time*13+j.ph;
+  for(let i=1;i<11;i++){
+    const back=i*0.34;
+    let p;
+    const h=j.hist;
+    if(h.length<2) p=[j.x+Math.sin(j.h)*back,j.y,j.z+Math.cos(j.h)*back];
+    else{
+      const tg=j.cum-back; let q=h[0];
+      for(let n2=h.length-1;n2>0;n2--)
+        if(h[n2-1].cum<=tg&&tg<=h[n2].cum){
+          const t2=(tg-h[n2-1].cum)/Math.max(1e-4,h[n2].cum-h[n2-1].cum);
+          q={x:lerp(h[n2-1].x,h[n2].x,t2),y:lerp(h[n2-1].y,h[n2].y,t2),
+             z:lerp(h[n2-1].z,h[n2].z,t2)};break;}
+      p=[q.x,q.y,q.z];
+    }
+    const r=e*(1-i/12)*0.85+0.02;
+    cTube(prev,r*1.1,p,r,i%2?chit:dos2);
+    // pattes
+    const dx=p[0]-prev[0], dz=p[2]-prev[2], L=Math.hypot(dx,dz)||1;
+    const rx=dz/L, rz=-dx/L, sw=Math.sin(ph-i*0.6)*0.4;
+    for(const sd of [1,-1])
+      cTube([p[0]+rx*r*sd,p[1],p[2]+rz*r*sd],
+            r*0.34,
+            [p[0]+rx*(r+e*0.9)*sd+dx*sw, Math.max(groundAt(p[0],p[2])+0.02,p[1]-e*1.1), p[2]+rz*(r+e*0.9)*sd+dz*sw],
+            r*0.10, chit);
+    prev=p;
+  }
+}
+
+function batirCreature(){
+  cN_=0;
+  const c=creature;
+  const chasse=c.state===ST.CHASE, fige=c.state===ST.LISTEN;
+  const cadence=fige?0:(chasse?15:8.5);
+  const phase=time*cadence;
+
+  // ── échine : positions + repère local à chaque anneau
+  const S=[];
+  for(let i=0;i<C_SEG;i++){
+    const t=i/(C_SEG-1);
+    const p = i===0 ? {x:c.x,y:c.y,z:c.z} : sampleBody(i*c.SP*0.52);
+    S.push({p,t});
+  }
+  for(let i=0;i<C_SEG;i++){
+    const a=S[Math.max(0,i-1)].p, b=S[Math.min(C_SEG-1,i+1)].p;
+    let dx=a.x-b.x, dy=a.y-b.y, dz=a.z-b.z;
+    const L=Math.hypot(dx,dy,dz)||1; dx/=L;dy/=L;dz/=L;
+    if(i===0){ dx=-Math.sin(c.heading+(fige?c.scan:0)); dy=0; dz=-Math.cos(c.heading+(fige?c.scan:0)); }
+    S[i].f=[dx,dy,dz];
+    let rx=dz, rz=-dx; const RL=Math.hypot(rx,rz)||1; rx/=RL;rz/=RL;
+    S[i].r=[rx,0,rz];
+    S[i].u=[dy*rz-dz*0, dz*rx-dx*rz, dx*0-dy*rx];
+    const UL=Math.hypot(...S[i].u)||1; S[i].u=S[i].u.map(v=>v/UL);
+    // ondulation latérale : le corps serpente, il ne suit pas un rail
+    const ond=Math.sin(phase*0.55-i*0.42)*(chasse?0.16:0.09);
+    S[i].p={x:S[i].p.x+rx*ond, y:S[i].p.y, z:S[i].p.z+rz*ond};
+  }
+
+  // ── rayon : renflé sur les premiers tiers, effilé vers la queue
+  const rayon=i=>{
+    const t=i/(C_SEG-1);
+    return 0.46*(0.55+0.45*Math.sin(Math.min(1,t*3.4)*1.571))*(1-t*0.80)+0.05;
+  };
+  const anneau=(i,gonfle)=>{
+    const s=S[i], R=rayon(i)*(gonfle||1), pts=[];
+    for(let k=0;k<C_RING;k++){
+      const a=k/C_RING*6.283185;
+      const cs=Math.cos(a), sn=Math.sin(a);
+      // section aplatie + crête dorsale
+      const rx=R*1.42, ry=R*(0.74+0.30*Math.max(0,sn));
+      pts.push([s.p.x+s.r[0]*cs*rx+s.u[0]*sn*ry,
+                s.p.y+s.r[1]*cs*rx+s.u[1]*sn*ry,
+                s.p.z+s.r[2]*cs*rx+s.u[2]*sn*ry]);
+    }
+    return pts;
+  };
+
+  const chitine=[0.155,0.135,0.120], dos=[0.235,0.205,0.180],
+        pale=[0.52,0.47,0.38], creme=[0.66,0.60,0.47];
+
+  // ── corps
+  let A=anneau(0);
+  for(let i=1;i<C_SEG;i++){
+    const B=anneau(i);
+    for(let k=0;k<C_RING;k++){
+      const j=(k+1)%C_RING;
+      const a=k/C_RING*6.283185;
+      const haut=Math.sin(a);
+      const col = haut>0.35 ? dos : (haut<-0.55 ? [0.10,0.09,0.08] : chitine);
+      cQuad(A[k],A[j],B[j],B[k],col);
+    }
+    A=B;
+  }
+
+  // ── tête : trois anneaux qui se resserrent vers l'avant
+  {
+    const s=S[0]; let prev=anneau(0,1.16);
+    for(let q=1;q<=3;q++){
+      const av=q*0.30, R=1.16-q*0.34;
+      const pts=[];
+      for(let k=0;k<C_RING;k++){
+        const a=k/C_RING*6.283185, cs=Math.cos(a), sn=Math.sin(a);
+        const rr=rayon(0)*Math.max(0.08,R);
+        pts.push([s.p.x+s.f[0]*av+s.r[0]*cs*rr*1.35+s.u[0]*sn*rr*0.80,
+                  s.p.y+s.f[1]*av+s.r[1]*cs*rr*1.35+s.u[1]*sn*rr*0.80,
+                  s.p.z+s.f[2]*av+s.r[2]*cs*rr*1.35+s.u[2]*sn*rr*0.80]);
+      }
+      for(let k=0;k<C_RING;k++){const j=(k+1)%C_RING;cQuad(prev[k],prev[j],pts[j],pts[k],dos);}
+      prev=pts;
+    }
+    // mandibules : trois segments qui se referment
+    const ouv=fige?0.34:0.20+Math.abs(Math.sin(time*(chasse?7:2.4)))*0.40;
+    for(const sd of [1,-1]){
+      const base=[s.p.x+s.f[0]*0.52+s.r[0]*0.20*sd, s.p.y+s.f[1]*0.52-0.04, s.p.z+s.f[2]*0.52+s.r[2]*0.20*sd];
+      const m1=[base[0]+s.f[0]*0.34+s.r[0]*ouv*sd, base[1]-0.02, base[2]+s.f[2]*0.34+s.r[2]*ouv*sd];
+      const m2=[m1[0]+s.f[0]*0.34+s.r[0]*ouv*0.35*sd, m1[1]-0.03, m1[2]+s.f[2]*0.34+s.r[2]*ouv*0.35*sd];
+      const m3=[m2[0]+s.f[0]*0.26-s.r[0]*ouv*0.85*sd, m2[1]-0.05, m2[2]+s.f[2]*0.26-s.r[2]*ouv*0.85*sd];
+      cTube(base,0.075,m1,0.060,pale);
+      cTube(m1,0.060,m2,0.042,pale);
+      cTube(m2,0.042,m3,0.012,creme);
+    }
+    // antennes : elles fouettent, surtout à l'arrêt quand elle écoute
+    for(const sd of [1,-1]){
+      let pt=[s.p.x+s.f[0]*0.44+s.r[0]*0.22*sd, s.p.y+0.16, s.p.z+s.f[2]*0.44+s.r[2]*0.22*sd];
+      let dir=[s.f[0]*0.9+s.r[0]*0.5*sd, 0.34, s.f[2]*0.9+s.r[2]*0.5*sd];
+      for(let q=0;q<5;q++){
+        const w=Math.sin(time*(fige?5.5:3.0)+q*0.9+sd)*(fige?0.20:0.11);
+        const nx=[pt[0]+dir[0]*0.24+s.r[0]*w, pt[1]+dir[1]*0.24-q*0.045, pt[2]+dir[2]*0.24+s.r[2]*w];
+        cTube(pt,0.030-q*0.005,nx,0.026-q*0.005,chitine);
+        pt=nx; dir[1]-=0.16;
+      }
+    }
+  }
+
+  /* ── PATTES À CONTACT RÉEL ──
+     Avant, le pied descendait d'une hauteur fixe : sur un sol qui monte, la
+     patte s'enfonçait ; sur un sol qui descend, elle flottait. Maintenant on
+     interroge le relief SOUS le pied, et le genou se replie pour absorber la
+     différence. Une patte en appui reste plantée, une patte en l'air passe
+     au-dessus : c'est ce qui donne la démarche. */
+  for(let n=0;n<C_PAIRES;n++){
+    const i=1+Math.round(n*(C_SEG-7)/C_PAIRES);
+    const s=S[i], R=rayon(i);
+    const ph=phase*0.55-n*0.46;
+    const bal=Math.sin(ph);
+    const lev=Math.max(0,Math.sin(ph+1.5));      // >0 : la patte est en l'air
+    const ech=1.05-Math.max(0,(i/(C_SEG-1)-0.5))*0.95;
+    for(const sd of [1,-1]){
+      const dec=sd>0?0:2.0;                      // gauche et droite en opposition
+      const bal2=Math.sin(ph+dec), lev2=Math.max(0,Math.sin(ph+dec+1.5));
+      const hanche=[s.p.x+s.r[0]*R*1.15*sd, s.p.y-R*0.15, s.p.z+s.r[2]*R*1.15*sd];
+      // où le pied VEUT se poser, en projetant vers l'extérieur
+      const px=hanche[0]+s.r[0]*0.86*sd*ech+s.f[0]*bal2*0.52*ech;
+      const pz=hanche[2]+s.r[2]*0.86*sd*ech+s.f[2]*bal2*0.52*ech;
+      const solLocal=estVide(w2c(px),w2c(pz))?s.p.y-1.4:groundAt(px,pz);
+      const appui=Math.min(solLocal+0.03, hanche[1]-0.10);
+      const pied=[px, appui+lev2*0.30*ech, pz];
+      // le genou se lève d'autant plus que la patte est tendue
+      const port=Math.hypot(px-hanche[0],pz-hanche[2]);
+      const repli=clamp(1-(hanche[1]-pied[1])/(0.95*ech+0.01),0,1);
+      const genou=[(hanche[0]+px)/2 + s.r[0]*0.16*sd,
+                   hanche[1]+0.20*ech+repli*0.30*ech+lev2*0.12,
+                   (hanche[2]+pz)/2 + s.r[2]*0.16*sd];
+      cTube(hanche,0.105,genou,0.072,dos,6);
+      cTube(genou,0.072,pied,0.030,chitine,6);
+      // tarse puis griffe, orientés vers l'avant
+      const gr=[pied[0]+s.f[0]*0.16, pied[1]-0.05-lev2*0.02, pied[2]+s.f[2]*0.16];
+      cTube(pied,0.030,gr,0.016,chitine,5);
+      cTube(gr,0.016,[gr[0]+s.f[0]*0.09,gr[1]-0.08,gr[2]+s.f[2]*0.09],0.004,creme,4);
+      // épine dorsale au-dessus de chaque hanche
+      if(n%2===0)
+        cTube([s.p.x+s.u[0]*R*0.9,s.p.y+s.u[1]*R*0.9,s.p.z+s.u[2]*R*0.9],0.05,
+              [s.p.x+s.u[0]*(R*0.9+0.34)+s.f[0]*0.10,s.p.y+s.u[1]*(R*0.9+0.34),
+               s.p.z+s.u[2]*(R*0.9+0.34)+s.f[2]*0.10],0.004,[0.30,0.26,0.22],4);
+    }
+  }
+  if(cN_>C_MAXV*3) cN_=C_MAXV*3;
+}
+
+function render(){
+  const B=BIOMES[curBiome];
+  for(let i=0;i<3;i++) fogC[i]=lerp(fogC[i],B.fog[i],0.03);
+  fogD=lerp(fogD,B.fogD*TUNE.fogMul,0.03);
+  ambNow=lerp(ambNow,B.amb,0.03);
+  snowNow=lerp(snowNow,B.snow,0.02);
+
+  const sk=player.shake;
+  const eyeY=player.gy+player.eye+Math.sin(time*47)*0.035*sk;
+  const yaw=player.yaw+Math.sin(time*39)*0.012*sk;
+  const cp=Math.cos(player.pitch),sp=Math.sin(player.pitch);
+  const fwd=[-Math.sin(yaw)*cp,sp,-Math.cos(yaw)*cp];
+
+  M.persp(proj,1.30,LW/LH,0.05,300);
+  M.trans(_c,-player.x,-eyeY,-player.z);
+  M.rotY(_d,-yaw);M.mul(_e,_d,_c);
+  M.rotX(_d,-player.pitch);M.mul(view,_d,_e);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);
+  gl.viewport(0,0,LW,LH);
+  gl.clearColor(fogC[0],fogC[1],fogC[2],1);
+  gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+
+  gl.useProgram(pS);
+  gl.uniformMatrix4fv(uS.uProj,false,proj);
+  gl.uniformMatrix4fv(uS.uView,false,view);
+  gl.uniform3f(uS.uCam,player.x,eyeY,player.z);
+  gl.uniform3fv(uS.uFwd,fwd);
+  gl.uniform3fv(uS.uFog,fogC);
+  gl.uniform1f(uS.uFogD,fogD);
+  gl.uniform1f(uS.uLampGain,1);
+  gl.uniform1f(uS.uAmb,ambNow);
+  gl.uniform1f(uS.uLampGain,(torche.on?1:0.07)*(0.45+0.55*Math.min(1,chaleur*2.4)));
+  const n=pickLights(); nLum=n;
+  gl.uniform3fv(uS.uLP,lpArr);gl.uniform3fv(uS.uLC,lcArr);gl.uniform1i(uS.uLN,n);
+
+  // Le fog borne la vue à quelques dizaines de mètres : on ne dessine que
+  // les pavés à portée. C'est ce qui rend une grande carte tenable.
+  M.ident(model);
+  const PORTEE=(2.4/(fogD*0.01))+CH*CELL*1.4, P2=PORTEE*PORTEE;
+  vus=0;
+  gl.uniform3fv(uS.uTint,[1,1,1]); gl.uniform1f(uS.uEmit,0);
+  gl.uniformMatrix4fv(uS.uModel,false,model);
+  for(const [k,p] of paves){
+    if(!p.m)continue;
+    if((p.x-player.x)**2+(p.z-player.z)**2>P2)continue;
+    gl.bindVertexArray(p.m.vao); gl.drawArrays(gl.TRIANGLES,0,p.m.count); vus++;
+  }
+
+  // cartes : elles tournent sur elles-mêmes, face puis tranche
+  for(const k of cartes){
+    if(k.prise)continue;
+    const dx=k.x-player.x, dz=k.z-player.z;
+    if(dx*dx+dz*dz>2600)continue;
+    const R=RARETES[k.niv];
+    trs(model,k.x,k.y+Math.sin(time*1.6+k.id)*0.12,k.z,time*1.15+k.id,0,0,0.62,0.94,0.045);
+    draw(lureM,R.c,0.55);
+    trs(model,k.x,k.y+Math.sin(time*1.6+k.id)*0.12,k.z,time*1.15+k.id,0,0,0.70,1.03,0.02);
+    draw(lureM,[R.c[0]*.35,R.c[1]*.35,R.c[2]*.35],0.18);
+  }
+  // combustible au sol
+  for(const f of combustibles){
+    if(f.pris)continue;
+    const dx=f.x-player.x, dz=f.z-player.z;
+    if(dx*dx+dz*dz>1400)continue;
+    trs(model,f.x,f.y+Math.sin(time*2+f.x)*0.05,f.z,time*0.6,0,0,0.30,0.30,0.30);
+    draw(lureM,[0.85,0.55,0.20],0.42);
+  }
+  // leurres au sol
+  for(const l of lures){
+    if(l.held)continue;
+    const p=l.fly||l;
+    const y=l.fly?p.y:l.y;
+    trs(model,p.x,y,p.z,time*1.4,0,0,0.26,0.26,0.26);
+    draw(lureM,[0.75,0.68,0.42],0.30);
+  }
+
+  // ── la créature : maillage reconstruit à chaque image
+  batirCreature();
+  for(const j of jeunes) batirJeune(j);
+  M.ident(model);
+  gl.uniform3fv(uS.uTint,[1,1,1]); gl.uniform1f(uS.uEmit,0.010);
+  gl.uniformMatrix4fv(uS.uModel,false,model);
+  gl.bindVertexArray(crea.vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER,crea.bp); gl.bufferSubData(gl.ARRAY_BUFFER,0,cP,0,cN_);
+  gl.bindBuffer(gl.ARRAY_BUFFER,crea.bn); gl.bufferSubData(gl.ARRAY_BUFFER,0,cNr,0,cN_);
+  gl.bindBuffer(gl.ARRAY_BUFFER,crea.bc); gl.bufferSubData(gl.ARRAY_BUFFER,0,cC,0,cN_);
+  gl.drawArrays(gl.TRIANGLES,0,cN_/3);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,cv.width,cv.height);
+  gl.disable(gl.DEPTH_TEST);
+  gl.useProgram(pP);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,fboTex);
+  gl.uniform1i(uP.uTex,0);gl.uniform2f(uP.uRes,LW,LH);
+  gl.uniform1f(uP.uTime,time);gl.uniform1f(uP.uGrain,TUNE.grain);
+  gl.uniform1f(uP.uDread,dread);
+  gl.uniform1f(uP.uSnow,snowNow);
+  gl.uniform1f(uP.uWind,Math.cos(vent.a)*vent.f);
+  // projection des trois lampes les plus proches en coordonnées d'écran
+  {const sp=new Float32Array(6), sc=new Float32Array(9); let n=0;
+   for(let i=0;i<Math.min(3,nLum);i++){
+     const lx=lpArr[i*3],ly=lpArr[i*3+1],lz=lpArr[i*3+2];
+     const vx=view[0]*lx+view[4]*ly+view[8]*lz+view[12];
+     const vy=view[1]*lx+view[5]*ly+view[9]*lz+view[13];
+     const vz=view[2]*lx+view[6]*ly+view[10]*lz+view[14];
+     const w=-vz; if(w<0.25) continue;
+     const px2=(proj[0]*vx)/w, py2=(proj[5]*vy)/w;
+     if(Math.abs(px2)>1.7||Math.abs(py2)>1.7) continue;
+     sp[n*2]=px2*0.5+0.5; sp[n*2+1]=py2*0.5+0.5;
+     sc[n*3]=lcArr[i*3];sc[n*3+1]=lcArr[i*3+1];sc[n*3+2]=lcArr[i*3+2];
+     n++;
+   }
+   gl.uniform1i(uP.uSunN,n);
+   if(n){gl.uniform2fv(uP.uSun,sp);gl.uniform3fv(uP.uSunC,sc);}
+   gl.uniform1f(uP.uRays,TUNE.rays);}
+  gl.bindVertexArray(null);gl.drawArrays(gl.TRIANGLES,0,3);
+}
+
+/* ── sismographe ── */
+const dbg=document.getElementById('dbg'),dc=dbg.getContext('2d');
+let showScope=true;const SPAN=48;
+function drawScope(dP){
+  if(!showScope)return;
+  const S=dbg.width,k=S/(SPAN*2);
+  const ox=player.x-SPAN,oz=player.z-SPAN;
+  const X=v=>(v-ox)*k,Z=v=>(v-oz)*k;
+  dc.fillStyle='#07080a';dc.fillRect(0,0,S,S);
+
+  const x0=Math.max(0,w2c(ox)),x1=Math.min(GW-1,w2c(ox+SPAN*2));
+  const z0=Math.max(0,w2c(oz)),z1=Math.min(GH-1,w2c(oz+SPAN*2));
+  const ph=groundAt(player.x,player.z);
+  for(let z=z0;z<=z1;z++)for(let x=x0;x<=x1;x++){
+    const i=idx(x,z);if(grid[i]!==FLOOR)continue;
+    if(blocked[i]){dc.fillStyle='#15161a';}
+    else{
+      // le relief se lit en clair/sombre : plus haut = plus clair
+      const rel=clamp((floorH[i]-ph)/5+0.5,0,1);
+      const g=Math.round(lerp(14,54,rel));
+      dc.fillStyle=`rgb(${g},${g+1},${g-2})`;
+    }
+    dc.fillRect(X(x*CELL),Z(z*CELL),CELL*k+0.6,CELL*k+0.6);
+  }
+  dc.strokeStyle='rgba(143,168,140,.30)';dc.lineWidth=1;dc.beginPath();
+  for(let i=0;i<scent.length;i++){const p=scent[i];
+    i?dc.lineTo(X(p.x),Z(p.z)):dc.moveTo(X(p.x),Z(p.z));}
+  dc.stroke();
+  for(const l of lures){
+    if(l.held)continue;
+    dc.fillStyle=l.fly?'rgba(207,199,180,.9)':'rgba(180,160,90,.55)';
+    const p=l.fly||l;dc.fillRect(X(p.x)-1.5,Z(p.z)-1.5,3,3);
+  }
+  dc.strokeStyle='rgba(207,199,180,.15)';dc.setLineDash([2,4]);
+  dc.beginPath();dc.arc(X(director.zone.x),Z(director.zone.z),director.zone.r*k,0,6.283);
+  dc.stroke();dc.setLineDash([]);
+  const p=creature.path;
+  if(p&&p.length>1){
+    dc.strokeStyle='rgba(180,85,63,.85)';dc.lineWidth=1.2;dc.beginPath();
+    dc.moveTo(X(creature.x),Z(creature.z));
+    for(let i=creature.pathIdx;i<p.length;i++)dc.lineTo(X(p[i].x),Z(p[i].z));
+    dc.stroke();
+  }
+  for(const s of sounds){
+    const a=1-s.t/0.8;
+    dc.strokeStyle=s.lure?`rgba(207,199,180,${a*0.8})`:`rgba(207,199,180,${a*0.45})`;
+    dc.lineWidth=s.lure?1.5:1;
+    dc.beginPath();dc.arc(X(s.x),Z(s.z),s.r*k*(0.35+s.t*0.9),0,6.283);dc.stroke();
+  }
+  const b=creature.belief;
+  if(b.conf>0.02){
+    dc.lineWidth=1;dc.strokeStyle=`rgba(180,85,63,${0.25+b.conf*0.5})`;
+    dc.beginPath();dc.arc(X(b.x),Z(b.z),4+(1-b.conf)*16,0,6.283);dc.stroke();
+  }
+  // les jeunes : ils doivent se voir, sinon on meurt sans comprendre
+  for(const j of jeunes){
+    const dj=Math.hypot(j.x-player.x,j.z-player.z);
+    dc.fillStyle=dj<14?'rgba(201,97,74,.95)':'rgba(180,120,90,.7)';
+    dc.beginPath();dc.arc(X(j.x),Z(j.z),2,0,6.283);dc.fill();
+    dc.strokeStyle='rgba(180,120,90,.45)';dc.lineWidth=1;dc.beginPath();
+    for(let q=0;q<j.hist.length;q+=2){
+      const p2=j.hist[j.hist.length-1-q]; if(!p2)break;
+      q?dc.lineTo(X(p2.x),Z(p2.z)):dc.moveTo(X(p2.x),Z(p2.z));
+    }
+    dc.stroke();
+  }
+  dc.fillStyle=creature.state===ST.LISTEN?'#cfc7b4':'#b4553f';
+  dc.beginPath();dc.arc(X(creature.x),Z(creature.z),3,0,6.283);dc.fill();
+  dc.strokeStyle='rgba(180,85,63,.55)';dc.beginPath();
+  for(let i=0;i<creature.SEG;i++){const q=sampleBody(i*creature.SP);
+    i?dc.lineTo(X(q.x),Z(q.z)):dc.moveTo(X(q.x),Z(q.z));}
+  dc.stroke();
+  dc.fillStyle='#cfc7b4';dc.beginPath();dc.arc(S/2,S/2,2.5,0,6.283);dc.fill();
+  dc.strokeStyle='rgba(207,199,180,.45)';dc.beginPath();dc.moveTo(S/2,S/2);
+  dc.lineTo(S/2-Math.sin(player.yaw)*13,S/2-Math.cos(player.yaw)*13);dc.stroke();
+
+  const set=(id,v,hot)=>{const e=document.getElementById(id);e.textContent=v;e.className=hot?'hot':''};
+  document.getElementById('stateLbl').textContent=creature.state.toUpperCase();
+  set('rDist',dP.toFixed(1)+' m',dP<12);
+  set('rConf',(b.conf*100).toFixed(0)+' %',b.conf>0.5);
+  set('rTrail',creature.trailCd>0?'perdue '+creature.trailCd.toFixed(0)+'s'
+    :creature.trail>0.2?'suit '+creature.trail.toFixed(0)+'s':'—',creature.trail>0.2);
+  set('rPress',(director.pressure*100).toFixed(0)+' %',director.pressure>0.7);
+  {let dj=1e9;for(const j of jeunes)dj=Math.min(dj,Math.hypot(j.x-player.x,j.z-player.z));
+   set('rJeunes',jeunes.length?jeunes.length+' · '+dj.toFixed(0)+' m':'aucun',dj<14);}
+  set('rPath',(creature.path?creature.path.length:0)+' nœuds · '+lastExpanded+' exp.'
+    +(lastPartial?' · partiel':''),lastPartial);
+}
+
+/* ───────────────────────── 10. BOUCLE ───────────────────────── */
+const veil=document.getElementById('veil'),caught=document.getElementById('caught');
+let running=false,caughtT=0;
+/* ═══ MENU ═══
+   Le verrouillage du pointeur confisque la souris : les réglages étaient donc
+   inatteignables en jeu. ÉCHAP le relâche et ouvre ce menu, où la souris
+   fonctionne. Le panneau de réglages y est déplacé au lieu de flotter. */
+document.getElementById('mReglages').appendChild(document.getElementById('tune'));
+const vues={jouer:'mJouer',reglages:'mReglages',collection:'mCollection'};
+document.querySelectorAll('.mo').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.mo').forEach(o=>o.setAttribute('aria-pressed',String(o===b)));
+    for(const k in vues) document.getElementById(vues[k]).hidden = (k!==b.dataset.vue);
+  });
+});
+document.getElementById('mJouer').addEventListener('click',()=>{
+  cv.requestPointerLock();
+  Nappe.demarrer(['gouffre','givre','beton','gelisol','ville'][curBiome]);
+  Nappe.reprendre();
+});
+
+/* ═══ COLLECTION ═══ */
+collec=new Set();
+function nomCarte(id){
+  if(CATALOGUE.length&&CATALOGUE[id]){
+    const e=CATALOGUE[id];
+    return {niv:Math.min(3,e.stack), nom:STACKS[e.stack].rang.toUpperCase()+' '+e.n, img:e.img};
+  }
+  return {niv:Math.floor(id/NOMS.length), nom:NOMS[id%NOMS.length]};
+}
+function majCollection(){
+  // TOTAL = somme des cartes trouvées dans tes dossiers
+  const total=CATALOGUE.length||RARETES.length*NOMS.length;
+  for(const cible of ['grille','invG']){
+    const el=document.getElementById(cible);
+    if(!el) continue;
+    let html='';
+    for(let id=0;id<total;id++){
+      const {niv,nom}=nomCarte(id);
+      const eue=collec.has(id);
+      const R=RARETES[niv];
+      const col=`rgb(${R.c.map(v=>Math.round(v*255)).join(',')})`;
+      const e2=CATALOGUE[id];
+      const fond = (eue&&e2) ? `background:#000 center/contain no-repeat url('${e2.img.src}')` : '';
+      html+=`<div class="carte${eue?' eue':''}" style="${eue?`border-color:${col};box-shadow:inset 0 0 18px ${col}22;${fond}`:''}">`
+          +(eue?(e2?'':`${nom}<br><span style="color:${col};font-size:7px">${R.n.toUpperCase()}</span>`):'—')+'</div>';
+    }
+    el.innerHTML=html;
+  }
+  const e=document.getElementById('oCartes');
+  if(e) e.textContent=collec.size+'/'+total;
+}
+document.addEventListener('pointerlockchange',()=>{
+  running=document.pointerLockElement===cv;
+  veil.style.display=running?'none':'grid';
+});
+addEventListener('mousemove',e=>{
+  if(!running)return;
+  player.yaw-=e.movementX*0.0022;
+  player.pitch=clamp(player.pitch-e.movementY*0.0022,-1.4,1.4);
+});
+addEventListener('mousedown',e=>{if(running&&e.button===0)throwLure()});
+const invEl=document.getElementById('inv');
+addEventListener('keydown',e=>{
+  keys[e.code]=true;
+  if(e.code==='KeyI'){
+    e.preventDefault();
+    const ouvert=invEl.style.display==='block';
+    invEl.style.display=ouvert?'none':'block';
+    if(!ouvert){majCollection();document.exitPointerLock();}
+    return;
+  }
+  if(e.code==='Tab'){e.preventDefault();showScope=!showScope;
+    document.getElementById('scope').style.display=showScope?'block':'none';}
+  if(e.code==='KeyP'){const t=document.getElementById('tune');
+    t.style.display=t.style.display==='block'?'none':'block';}
+  if(e.code==='KeyE'||e.code==='Space'){e.preventDefault();throwLure();}
+  if(e.code==='CapsLock')crouchLock=!crouchLock;
+  if(e.code==='KeyF'&&torche.jus>0)torche.on=!torche.on;
+  if(e.code==='KeyR'){graine=(Math.random()*4294967295)>>>0;gagne=0;
+    caught.style.opacity='0';caught.querySelector('span').style.color='';
+    caught.querySelector('span').textContent="ELLE T'A TROUVÉ";regenerer(graine);}
+  // Ctrl+W et Ctrl+D sont réservés par le navigateur : on neutralise
+  // la touche plutôt que de tenter un preventDefault qui ne marchera pas.
+  if(e.code==='ControlLeft'||e.code==='ControlRight'){keys[e.code]=false;}
+});
+addEventListener('keyup',e=>{keys[e.code]=false});
+addEventListener('dragover',e=>e.preventDefault());
+addEventListener('drop',e=>{
+  e.preventDefault();
+  const f=e.dataTransfer.files[0];
+  if(!f||f.type!=='image/png')return;
+  const img=new Image();
+  img.onload=()=>{
+    const err=chargerCartePNG(img);
+    elNappe.textContent = err ? err : 'carte chargée';
+  };
+  img.src=URL.createObjectURL(f);
+});
+addEventListener('blur',()=>{for(const k in keys)keys[k]=false});
+
+const bind=(s,v,key,fmt,after)=>{
+  const el=document.getElementById(s),lab=document.getElementById(v);
+  const go=()=>{TUNE[key]=parseFloat(el.value);lab.textContent=fmt(TUNE[key]);if(after)after()};
+  el.addEventListener('input',go);go();
+};
+bind('sFog','vFog','fogMul',v=>'×'+v.toFixed(2));
+bind('sRays','vRays','rays',v=>'×'+v.toFixed(2));
+bind('sGrain','vGrain','grain',v=>v.toFixed(3));
+bind('sRes','vRes','res',v=>v.toFixed(0)+' p',()=>resize());
+bind('sScent','vScent','scentLife',v=>v.toFixed(0)+' s');
+bind('sFat','vFat','trailStamina',v=>v.toFixed(1)+' s');
+bind('sHear','vHear','hearMul',v=>'×'+v.toFixed(2));
+bind('sSpd','vSpd','chaseSpeed',v=>v.toFixed(1)+' m/s');
+bind('sOpen','vOpen','openAversion',v=>v.toFixed(2),()=>rebuildNavCost());
+bind('sPress','vPress','pressRate',v=>v.toFixed(3));
+bind('sVol','vVol','vol',v=>v.toFixed(0),()=>Nappe.volume(TUNE.vol));
+
+/* La carte est entièrement générée. Elle l'était déjà, mais avec une graine
+   figée : on retombait donc toujours sur la même — ce qui ressemble beaucoup
+   à ne pas être généré du tout. La graine est maintenant tirée au chargement,
+   et R en tire une nouvelle sans recharger la page. */
+function regenerer(nouvelle){
+  if(nouvelle!==undefined){graine=nouvelle>>>0;}
+  sky.fill(0);pont.fill(0);pontH.fill(0);echelle.fill(0);vide.fill(0);
+  rngS=graine;
+  grid.fill(WALL);blocked.fill(0);floorH.fill(0);ceilH.fill(0);openN.fill(0);
+  biome.fill(0);platform.fill(0);sky.fill(0);navCost.fill(0);
+  rooms.length=0;props.length=0;lights.length=0;lures.length=0;colliders.length=0;
+  buildWorld();
+  for(const k of [...paves.keys()]) libererPave(k);
+  indexerProps();
+  spawnPlayer();spawnCreature();director.reset();jeunes.length=0;gagne=0;
+  curBiome=biome[idx(w2c(player.x),w2c(player.z))]||0;
+  fogC=BIOMES[curBiome].fog.slice();
+  if(Nappe)Nappe.biome(curBiome);
+}
+
+buildWorld();
+indexerProps();
+lureM=box(-0.5,0.5);crea=creerCreature();
+spawnPlayer();spawnCreature();director.reset();sonderStacks();majCollection();
+fogC=BIOMES[0].fog.slice();
+resize();
+
+const elLures=document.getElementById('lures'),
+      elPlace=document.getElementById('place'),
+      elNappe=document.getElementById('nappe');
+let uiT=0, majT=-1, prevT=performance.now();
+
+let fautes=0;
+function frame(now){
+  try{ coeur(now); }
+  catch(e){
+    // Filet de sécurité : une exception isolée ne doit plus faire perdre la
+    // partie. On la signale, on saute l'image, et on continue.
+    if(fautes++<6) console.error('image ignorée :',e);
+    if(fautes===6) console.error('erreurs suivantes silencieuses');
+  }
+  requestAnimationFrame(frame);
+}
+function coeur(now){
+  const dt=Math.min(0.05,(now-prevT)/1000);prevT=now;
+  time+=dt;
+  let dP=Math.hypot(player.x-creature.x,player.z-creature.z);
+
+  if(gagne){
+    caught.style.opacity='1';
+    caught.querySelector('span').textContent=
+      'SORTIE ATTEINTE  ·  '+collec.size+' CARTES  ·  R POUR UN NOUVEAU MONDE';
+    caught.querySelector('span').style.color='#8fa88c';
+    render();return;
+  }
+  if(running&&caughtT<=0){
+    updatePlayer(dt);director.update(dt);
+    dP=updateCreature(dt);
+    updateJeunes(dt);
+    if((time*3|0)!==majT){majT=(time*3|0);majJeunes();}
+    const pc=w2c(player.x),pz=w2c(player.z);
+    if(isFloor(pc,pz)){
+      const nb=biome[idx(pc,pz)];
+      if(nb!==curBiome){curBiome=nb;Nappe.biome(nb);}
+    }
+    if(dP<1.15){caughtT=1.2;player.shake=1;}
+    if(dP<7&&creature.state===ST.CHASE)player.shake=Math.max(player.shake,1-(dP-1)/6);
+  }else if(caughtT>0){
+    caughtT-=dt;caught.style.opacity=String(clamp(caughtT/0.4,0,1));
+    caught.querySelector('span').textContent=chute?'TU ES TOMBÉ':"ELLE T'A TROUVÉ";
+    if(caughtT<=0){caught.style.opacity='0';chute=false;spawnPlayer();spawnCreature();director.reset();}
+  }
+
+  // position de la créature dans le repère de l'auditeur (il regarde vers -Z)
+  {const dx=creature.x-player.x, dz=creature.z-player.z;
+   const cy=Math.cos(player.yaw),sy=Math.sin(player.yaw);
+   const lx=dx*cy-dz*sy, f=dx*-sy+dz*-cy;
+   Nappe.creature(lx,creature.y-(player.gy+player.eye),-f,dP,
+     creature.state===ST.CHASE,dt);
+   Nappe.menace(dP,creature.state===ST.CHASE);
+   // le jeune le plus proche pilote son propre bus
+   let pj=null,dj=1e9;
+   for(const j of jeunes){const d2=Math.hypot(j.x-player.x,j.z-player.z);
+     if(d2<dj){dj=d2;pj=j;}}
+   if(pj){
+     const jx=pj.x-player.x, jz=pj.z-player.z;
+     Nappe.jeunes(jx*cy-jz*sy, pj.y-(player.gy+player.eye), -(jx*-sy+jz*-cy), dj);
+   } else Nappe.jeunes(0,0,-30,999);}
+
+  majPaves();
+  dread=lerp(dread,clamp(1-(dP-2.5)/16,0,1)*(creature.state===ST.CHASE?1:0.55),
+             1-Math.exp(-4*dt));
+  render();drawScope(dP);
+
+  uiT+=dt;
+  if(uiT>0.2){
+    uiT=0;
+    elLures.innerHTML='◆'.repeat(player.held)+'<u>'+'◆'.repeat(3-player.held)+'</u>';
+    elPlace.textContent=BIOMES[curBiome].n+'   ·   '+(player.gy>=0?'+':'')+player.gy.toFixed(0)+' m';
+    if(sortie){
+      const d=Math.hypot(sortie.x-player.x,sortie.z-player.z);
+      document.getElementById('oDist').textContent=d>400?'très loin':d.toFixed(0)+' m';
+    }
+    document.getElementById('oProf').textContent=player.gy.toFixed(0)+' m'
+    +'  ·  chaleur '+(chaleur*100).toFixed(0)+'%'
+    +'  ·  torche '+(torche.on?(torche.jus*100).toFixed(0)+'%':'éteinte');
+    document.getElementById('oCartes').textContent=collec.size;
+    elNappe.textContent='nappe '+Nappe.nom()+'  ·  '+vus+'/'+paves.size+' pavés  ·  graine '+graine.toString(16);
+  }
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

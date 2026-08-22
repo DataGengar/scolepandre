@@ -1,0 +1,7 @@
+dist/
+_smoke.html
+__pycache__/
+*.pyc
+nav_out/
+.DS_Store
+Thumbs.db
