@@ -1,5 +1,8 @@
-dist/
+# Le fichier jouable dist/scolopandre.html EST suivi : c'est lui qu'on
+# télécharge depuis GitHub. Seuls les intermédiaires sont ignorés.
+dist/_smoke.html
 _smoke.html
+_diag.html
 __pycache__/
 *.pyc
 nav_out/

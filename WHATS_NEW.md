@@ -5,6 +5,245 @@ Suivi de l'évolution du projet. Trois sections : **demandé**, **implémenté**
 
 ---
 
+# v3.1 — 22 août 2026 · « on ne voit rien »
+
+Deuxième passe de test. Vingt-deux retours, dont plusieurs régressions
+introduites par la v3.0. Le fichier jouable est **`dist/scolopandre.html`**, et
+il est désormais SUR le dépôt : `dist/` n'est plus dans le `.gitignore`.
+
+## 1. LE DIAGNOSTIC D'ABORD
+
+Avant de toucher quoi que ce soit, j'ai mesuré. Trois chiffres expliquent la
+moitié des retours :
+
+| mesure | v3.0 | cause |
+|---|---|---|
+| objet visible à 10 m | **2 % à 17 %** | fog à 2,625 (« 75 % du max », pris au mot) |
+| densité de lumières | **÷4 vs v2** | grille passée à 1088² sans toucher `maxLumieres` |
+| densité de décor | **÷4 vs v2** | même oubli sur `semis` |
+| son de la créature à 30 m | **1 % du signal** | distance appliquée DEUX fois |
+
+Les deux « ÷4 » sont ma faute directe : j'ai quadruplé le nombre de cellules en
+v3.0 et laissé les compteurs de décor et de lumières inchangés. Le monde était
+donc littéralement quatre fois plus vide et plus noir qu'en v2.
+
+## 2. CE QUI A ÉTÉ CORRIGÉ
+
+### On ne voyait rien
+
+| | avant | après |
+|---|---|---|
+| fog | 2,625 | **1,05** — 42 % de visibilité à 20 m au lieu de 0,05 % |
+| ambiante des biomes | 0,010 – 0,115 | **0,15 – 0,34** |
+| vignette | 92 % des bords | **55 %** |
+| lumières dans le monde | 3 200 | **~9 000** |
+| éléments de décor | ~8 000 | **~20 000** |
+
+**La torche devient une lampe de poche.** Le vieux cône `pow(cos,3)` avec une
+atténuation `exp(-d×0,085)` ne laissait que 18 % à 20 m. Le nouveau faisceau a
+un cœur net (`smoothstep` entre deux angles), une nappe faible autour, et une
+portée réelle : **57 % à 20 m, 33 % à 40 m**.
+
+**Les lumières du décor mouraient à 5 m** (16 %). L'atténuation est réglable et
+desserrée : **59 % à 10 m, 21 % à 20 m**. Cristaux, fenêtres et braseros
+éclairent enfin la pièce.
+
+**Nouvelles sources** : champignons luminescents dans le souterrain (vert froid,
+qui contraste avec l'orange des cristaux), lampadaires qui marchent encore deux
+fois sur trois, plafonniers de voiture, braseros de village.
+
+### La lune brisée
+
+`src/rendu/lune.js`. Dehors seulement : un corps amputé d'un quartier, onze
+fragments qui s'échappent le long de l'ancienne ligne de rupture, et une
+poussière d'éclats plus loin. Dessinée comme un fond de ciel (profondeur
+coupée, `uCiel=1` pour sauter la brume). Elle n'éclaire presque pas — c'est
+l'ambiante du biome qui porte la clarté.
+
+### Il neigeait sous terre
+
+La neige suivait le BIOME, et la glacière est souterraine. Elle suit maintenant
+l'**ouverture réelle du ciel au-dessus du joueur**, et la glacière n'a plus de
+`snow` du tout : elle a du givre sur les parois, pas des flocons.
+
+### Les biomes étaient placés au hasard
+
+Le biome était tiré par l'INDICE de la salle dans le plan, pas par sa
+profondeur. Deux salles voisines à la même altitude pouvaient être de biomes
+différents. Le monde a maintenant une **stratigraphie**, et le biome est une
+FONCTION DE L'ALTITUDE, rien d'autre :
+
+```
+−131 … −85   BARRAGE            l'ouvrage noyé, tout au fond
+ −85 … −45   GLACIÈRE           les grottes de glace
+ −45 … +10   SOUTERRAIN         la roche nue, le gros du monde
+ +10 … +70   VILLE ENSEVELIE    ce qu'il reste des gens
+ +70 …       SURFACE GELÉE      dehors, la neige, la lune
+```
+
+La frontière est brouillée de quelques mètres par un bruit déterministe : une
+coupe parfaitement plane ferait maquette.
+
+### Les plateformes flottaient
+
+Elles étaient posées au MILIEU des salles dégagées et ne reliaient rien.
+Supprimées. À la place, des **rampes d'éboulis** : on cherche les falaises et on
+y taille un escalier, marche par marche, chacune franchissable. On ne creuse
+jamais dans la roche — on relève des cellules de sol déjà praticables du côté
+bas. ~140 par monde, avec deux repères lumineux au pied et au sommet.
+
+### On n'entendait pas les scolopandres
+
+**La distance était appliquée deux fois** : le PannerNode atténuait, et une
+courbe explicite atténuait encore par-dessus. Il restait 1 % du signal à 30 m et
+0,01 % à 80 m.
+
+Le panner ne sert plus qu'à donner la DIRECTION (`refDistance` 30, rolloff
+0,15), la courbe porte seule l'éloignement. Gain à 30 m : **0,010 → 0,39**.
+
+Et il manquait le son de proximité. Nouvelle couche **PANIQUE** sous 14 m :
+stridence dissonante qui monte, souffle de mandibules, cœur qui cogne de plus en
+plus vite. C'est le « elle est SUR toi » qui n'existait pas.
+
+### Le drone n'était pas grave
+
+Paradoxalement parce qu'il était TROP bas : les fondamentales à 16–27 Hz sont
+sous le seuil d'audition et absentes de n'importe quel haut-parleur. On
+n'entendait pas un grave, on n'entendait rien.
+
+Quatre voix maintenant : un sub à la fréquence réelle (le poids), la tonique
+remontée d'une octave (33–55 Hz, le grave qu'on entend), la quinte, et une
+**neuvième mineure** très en retrait — c'est la dissonance tenue qui fait peur,
+pas la hauteur. La mélodie descend de deux octaves. Plus un **grondement** de
+bruit brun filtré qui balaie lentement sous le tout.
+
+### Le son saturait
+
+Le gain maître valait **1,41** — au-dessus de 1, donc écrêtage permanent, vent
+ou pas. Ramené à 0,82 max, et un **écrêteur doux** (WaveShaper en tanh) arrondit
+les crêtes en bout de chaîne au lieu de les couper.
+
+### Le froid mordait trop vite
+
+45 secondes de 100 à 0 sur la surface gelée, et trois braseros seulement sur
+1 632 m. Divisé par ~4 (surface : **4 minutes**), le vent compte deux fois
+moins, et il y a maintenant **14 braseros**, les villages, et les feux de camp.
+
+Surtout : **le froid ne tue plus d'un coup**. À zéro il ronge la santé, ce qui
+laisse le temps d'atteindre un feu.
+
+### Les cartes n'avaient plus leur bordure ni leur son
+
+Le shader ne teintait PAS l'émissif (`vC*uEmit` au lieu de `vC*uTint*uEmit`) :
+le halo sortait blanc au lieu de porter la couleur du rang. Corrigé, plus trois
+passes de rendu (face, liseré, halo diffus) et **la carte la plus proche est une
+vraie source de lumière**. Le son de ramassage passe à six voix et était de toute
+façon noyé par la saturation.
+
+### Les jeunes
+
+**Trop rapides** : 4,2 m/s contre 3,2 en marche. Ramenés à **2,9**, avec une
+endurance de 7 s puis 6 s de répit.
+
+**Impossibles à leurrer** : ils ignoraient complètement les leurres. Un impact
+les fixe maintenant dans un rayon de 26 m, pendant 7 s. Et **le feu les
+repousse** — feu de camp, fusée, ou lampe brandie.
+
+**Moches et risibles** : c'était la même recette que la mère, une chaîne de
+tubes coniques. Corps entièrement refait — une larve cuirassée basse et large,
+huit plaques dorsales qui se chevauchent, une tête distincte à mandibules en
+crochet, un abdomen translucide qui pulse, quatre yeux en grappe, douze pattes
+anguleuses à contact réel.
+
+### Le nom
+
+**scolopandre**, pas scoléopandre. Renommé partout (le dépôt GitHub s'appelait
+déjà `scolepandre`).
+
+## 3. CE QUI A ÉTÉ AJOUTÉ
+
+### Vestiges humains
+
+Cinq nouveaux éléments de décor : **maisons** crevées (un mur sur quatre tombé,
+charpente sans toit), **voitures** sur le flanc ou sur le toit, jamais à
+l'endroit, **lampadaires**, **pylônes** en treillis, **champignons**
+luminescents.
+
+### Villages engloutis — `src/monde/villages.js`
+
+Une dizaine par monde. Maisons, carcasses et lampadaires en couronne autour
+d'une **place barricadée** :
+
+- la créature et les jeunes **refusent d'y entrer** ;
+- quatre braseros : on s'y réchauffe presque comme à un refuge ;
+- une à trois **trousses médicales, épuisables** — elles ne repoussent pas ;
+- du bois empilé contre les maisons.
+
+Le prix : c'est fixe, donc il faut y retourner, et c'est éclairé, donc tout ce
+qui rôde sait où c'est.
+
+### Santé — `src/joueur/sante.js`
+
+Il n'y en avait aucune : on mourait d'un coup, ce qui rendait les trousses
+absurdes. 100 points. Morsure de jeune −22, chute −9/m, froid à zéro −3,5/s.
+Régénération très lente après 12 s sans blessure. Trousse +45.
+
+**La mère tue toujours net.** Lui opposer une barre de vie la banaliserait.
+
+### Feu — `src/joueur/feu.js`
+
+Trois demandes, une seule idée : le feu chauffe, éclaire et repousse.
+
+- **BOIS** (six max) → **feu de camp** (`G`), 150 s, réchauffe dans 6 m,
+  repousse les petits dans 9 m ;
+- **FUSÉE** (`V`), 26 s, éclaire dans **14 m** — c'est l'outil pour LIRE une
+  salle d'un coup ;
+- **LAMPE BRANDIE** (clic droit maintenu) : ils reculent, mais le jus fond sept
+  fois plus vite. Dernier recours, jamais une stratégie.
+
+Aucun n'a d'effet sur la mère. Elle est aveugle : le feu ne lui dit rien.
+
+### Pancartes — `src/monde/pancartes.js`
+
+`B` pour poser une pancarte avec un message, `B` à côté pour la lire, `MAJ+B`
+pour la retirer. Une **loupiote qui clignote** — le seul élément du jeu qui
+clignote, donc immédiatement lisible comme artificiel, donc comme le tien.
+Sauvegardées par graine de monde.
+
+## 4. VÉRIFICATION
+
+`outils/smoke.py`, sur les modules **et** sur le bundle, zéro erreur :
+
+```
+génération 1,5 s
+390 salles · 42 gouffres · 147 rampes · 260 ponts · 16 cachettes · 11 villages
+19 800 éléments · 9 000 lumières       ← 2,5× et 2,8× la v3.0
+altitude −131 … +141 m
+paliers de froid traversés : les quatre
+états créature vus : traque, écoute, approche, fouille, poursuite
+JEUNES BLOQUÉS : 0
+chute sismique, cachette, passerelle : déclenchés
+```
+
+Un bug trouvé au passage : un **accent grave dans un commentaire GLSL** fermait
+le template literal qui l'englobait, et la page ne démarrait plus du tout.
+Invisible à la lecture, et l'équilibre des délimiteurs restait juste puisqu'il y
+en avait deux. `outils/syntaxe.py` a maintenant une règle pour ça.
+
+## 5. CE QUI RESTE
+
+- **Le rendu n'a toujours pas été vu.** WebGL est simulé dans le test. Tous les
+  chiffres de lumière ci-dessus sont calculés, pas observés. C'est ton prochain
+  lancement qui tranchera. Quatre curseurs ont été ajoutés au panneau RÉGLAGES
+  pour que tu puisses ajuster sans moi : **Lumière ambiante**, **Vignette**,
+  **Puissance de la lampe** et **Portée de la lampe**.
+- **L'audio n'a pas été écouté.** Le graphe se monte sans erreur.
+- Le monolithe et la tour à fenêtres restent des boîtes : ils mériteraient le
+  même traitement que les maisons.
+- La mère ne monte toujours pas sur les passerelles (navigation à un étage).
+
+---
+
 # v3 — 22 août 2026
 
 Refonte complète : le jeu passe d'un fichier unique de 2 846 lignes à 48 modules
@@ -22,10 +261,10 @@ Reproduit tel quel, pour qu'on puisse cocher.
 3. Créer explicitement un module **carte** avec les 3 rangs, où renseigner le
    chemin des stacks de cartes collectionnables.
 4. Son ambient : plus mélodieux, plus sombre, plus fort.
-5. Son des scoléopandres : revoir, et accroître la distance d'audition.
-6. Caméra : trembler davantage en présence d'un scoléopandre en mouvement.
+5. Son des scolopandres : revoir, et accroître la distance d'audition.
+6. Caméra : trembler davantage en présence d'un scolopandre en mouvement.
 7. Le personnage peut chuter à cause des mouvements sismiques.
-8. Scoléopandres : yeux rouges lumineux, flippants, visibles de loin. Si les
+8. Scolopandres : yeux rouges lumineux, flippants, visibles de loin. Si les
    yeux changent de couleur ou grossissent, c'est qu'ils veulent te bouffer.
    Pattes lumineuses. Interstices de carapace lumineux pour attirer les proies.
    Les rendre terrifiants.
@@ -36,7 +275,7 @@ Reproduit tel quel, pour qu'on puisse cocher.
 13. Pas assez de cachettes de survie — littéralement des trous. Peu dans le
     monde, mais visibles discrètement sur la carte.
 14. Dossiers propres, commentaires explicatifs.
-15. Des mini-scoléopandres (jeunes) restent bloqués ou immobiles. Rectifier.
+15. Des mini-scolopandres (jeunes) restent bloqués ou immobiles. Rectifier.
 16. Fog et godrays à 75 % du max comme standard.
 17. Travailler à fond l'ambiance sonore : d'autres sons, meilleures fonctions
     génératives.

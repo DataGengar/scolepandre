@@ -1,4 +1,4 @@
-# SCOLÉOPANDRE
+# SCOLOPANDRE
 
 Un jeu d'horreur souterraine en WebGL2 brut. Zéro dépendance, zéro build
 obligatoire, un moteur maison.
@@ -22,7 +22,7 @@ en `file://`.
 **Version fichier unique** (double-cliquable, sans serveur) :
 
 ```sh
-python outils/bundler.py      # → dist/scoleopandre.html
+python outils/bundler.py      # → dist/scolopandre.html
 ```
 
 Les GIF de cartes exigent toujours un serveur ; le monde, lui, se joue hors ligne.
@@ -34,14 +34,28 @@ Les GIF de cartes exigent toujours un serveur ; le monde, lui, se joue hors lign
 | `ZQSD` / `WASD` | avancer |
 | `MAJ` | courir |
 | `C` (ou `MAJ.VERR` pour basculer) | ramper — **n'imprime aucune trace** |
-| `E` | entrer / sortir d'une cachette |
+| `F` | lampe de poche |
+| `CLIC DROIT` (maintenu) | brandir la lampe : les petits reculent, le jus fond |
 | `CLIC` ou `ESPACE` | lancer un leurre |
-| `F` | torche |
+| `G` | allumer un feu de camp (il faut du bois) |
+| `V` | lancer une fusée de détresse |
+| `B` | poser une pancarte · à côté d'une : la lire · `MAJ+B` : la retirer |
+| `E` | cachette, ou échelle de passerelle |
 | `TAB` | sismographe |
 | `I` | collection |
 | `P` | réglages |
 | `R` | nouveau monde |
 | `ÉCHAP` | menu (rend la souris) |
+
+### Survivre
+
+- **On ne combat pas la mère.** Elle tue au contact, quoi qu'il reste de santé.
+- **Les petits, si.** Le feu les repousse : feu de camp, fusée, lampe brandie.
+  Un leurre les fixe aussi. Ils mordent au lieu de tuer net.
+- **Le froid** ronge en surface, beaucoup moins en profondeur : descendre
+  réchauffe. Les villages ont des braseros et des trousses médicales.
+- **Les villages** ont une place barricadée où rien n'entre. Les trousses ne
+  repoussent pas.
 
 ---
 
@@ -53,12 +67,12 @@ src/
   setup.js            ★ TOUTES les valeurs réglables
   jeu.js              assemblage + boucle principale
   noyau/              maths, RNG, WebGL, shaders
-  monde/              terrain, gouffres, ponts, cachettes, décor, navigation
+  monde/              terrain, gouffres, ponts, cachettes, villages, décor
   carte/              ★ les 3 rangs de cartes et leurs dossiers
   creatures/          la mère, les jeunes, leurs lueurs, leur maillage
-  joueur/             déplacement, froid, chute, torche, leurres
+  joueur/             déplacement, froid, santé, chute, feu, leurres
   audio/              nappes, vent, cavernes, effondrements, créature
-  rendu/              caméra, lumières, pipeline, sismographe
+  rendu/              caméra, lumières, lune, pipeline, sismographe
   ui/                 menu, HUD, réglages
 outils/               vérification, bundler, éditeur de carte, pipeline OBJ
 cartes/               tes stacks : communes/ rares/ legendaires/
@@ -105,7 +119,7 @@ Quatre mécanismes, pas une intention :
 python outils/syntaxe.py      # délimiteurs équilibrés dans tous les .js
 python outils/verifier.py     # cohérence du projet
 python outils/smoke.py        # LANCE LE JEU pour de vrai, 30 s, sans GPU
-python outils/bundler.py      # produit dist/scoleopandre.html
+python outils/bundler.py      # produit dist/scolopandre.html
 ```
 
 `smoke.py` est l'outil important : il exécute le jeu dans Chrome headless avec

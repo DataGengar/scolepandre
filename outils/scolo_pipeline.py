@@ -9,7 +9,7 @@ POURQUOI CE PIPELINE EXISTE
 POURQUOI UN GRAPHE DE VOXELS DE SURFACE, ET PAS UN NAVMESH POLYGONAL
     Un navmesh à la Recast suppose un agent qui marche : il ne conserve que les
     triangles dont la pente est sous un seuil, et jette les murs. Or le
-    scoléopandre grimpe aux parois et court au plafond — ces surfaces sont
+    scolopandre grimpe aux parois et court au plafond — ces surfaces sont
     précisément celles qu'un navmesh polygonal supprime.
 
     On extrait donc les voxels libres au contact d'un solide, sur TOUTE

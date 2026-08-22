@@ -3,7 +3,7 @@
 SMOKE — exécute vraiment le jeu, sans GPU, et rapporte ce qui casse.
 
     python outils/smoke.py            # teste les modules (src/, comme en dev)
-    python outils/smoke.py --bundle   # teste dist/scoleopandre.html
+    python outils/smoke.py --bundle   # teste dist/scolopandre.html
 
 Pourquoi : il n'y a pas de moteur JavaScript en ligne de commande sur cette
 machine, mais il y a Chrome. On s'en sert en mode headless.
@@ -338,7 +338,7 @@ def servir(racine, port):
 
 def main():
     bundle = "--bundle" in sys.argv
-    src = RACINE / ("dist/scoleopandre.html" if bundle else "index.html")
+    src = RACINE / ("dist/scolopandre.html" if bundle else "index.html")
     if not src.exists():
         raise SystemExit(f"ERREUR  {src} introuvable")
 

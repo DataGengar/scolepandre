@@ -40,6 +40,11 @@ AVANT_REGEX = set("(,=:[!&|?{};+-*%~^<>") | {"return", "typeof", "case", "in", "
 def controler(chemin: Path):
     """Renvoie une liste de messages d'erreur pour ce fichier."""
     s = chemin.read_text(encoding="utf-8")
+    # Le piège de l'accent grave ne concerne QUE les fichiers dont les
+    # commentaires vivent à l'intérieur d'une chaîne gabarit : chez nous, les
+    # sources GLSL. Partout ailleurs, « `nom` » dans un commentaire est de la
+    # prose parfaitement légitime, et la signaler noierait le rapport.
+    glsl = "#version 300 es" in s
     n = len(s)
     pb = []
     pile = []          # [(caractère, ligne)]
@@ -66,6 +71,15 @@ def controler(chemin: Path):
                 if j < 0:
                     pb.append(f"ligne {ligne} : commentaire de bloc jamais fermé")
                     break
+                # PIÈGE VÉCU : un accent grave dans un commentaire de bloc FERME
+                # le template literal qui l'englobe. C'est exactement ce qui a
+                # cassé le shader — un « `ang` » dans un commentaire GLSL, à
+                # l'intérieur d'une chaîne gabarit. Invisible à la lecture, et
+                # l'équilibre des délimiteurs restait juste puisqu'il y en avait
+                # deux : seul le navigateur s'en plaignait.
+                if glsl and "`" in s[i:j]:
+                    pb.append(f"ligne {ligne} : accent grave dans un commentaire de "
+                              f"bloc — il FERME le template literal GLSL qui l'englobe")
                 ligne += s.count("\n", i, j)
                 i = j + 2
                 continue

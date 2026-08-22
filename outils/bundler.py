@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-BUNDLER — src/*.js + index.html  →  dist/scoleopandre.html (fichier unique)
+BUNDLER — src/*.js + index.html  →  dist/scolopandre.html (fichier unique)
 
     python outils/bundler.py
 
@@ -44,7 +44,7 @@ RACINE = Path(__file__).resolve().parent.parent
 SRC = RACINE / "src"
 ENTREE = SRC / "jeu.js"
 GABARIT = RACINE / "index.html"
-SORTIE = RACINE / "dist" / "scoleopandre.html"
+SORTIE = RACINE / "dist" / "scolopandre.html"
 
 # ── expressions ────────────────────────────────────────────────────────────
 # re.S est indispensable : la moitié des imports du projet tiennent sur
@@ -272,7 +272,7 @@ def emettre(modules, ordre):
     out = []
     out.append('"use strict";')
     out.append("/* ══════════════════════════════════════════════════════════")
-    out.append("   SCOLÉOPANDRE — bundle généré par outils/bundler.py")
+    out.append("   SCOLOPANDRE — bundle généré par outils/bundler.py")
     out.append("   NE PAS ÉDITER. Modifie src/ puis relance le bundler.")
     out.append("   ══════════════════════════════════════════════════════════ */")
     out.append("const __M = {};")
@@ -342,8 +342,8 @@ def main():
         '<script type="module" src="src/jeu.js"></script>',
         "<script>\n" + script + "\n</script>",
     )
-    html = html.replace("<title>SCOLÉOPANDRE — v3</title>",
-                        "<title>SCOLÉOPANDRE — v3 (fichier unique)</title>")
+    html = html.replace("<title>SCOLOPANDRE — v3</title>",
+                        "<title>SCOLOPANDRE — v3 (fichier unique)</title>")
 
     SORTIE.parent.mkdir(parents=True, exist_ok=True)
     SORTIE.write_text(html, encoding="utf-8")
