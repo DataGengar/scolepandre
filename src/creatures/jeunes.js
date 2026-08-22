@@ -3,7 +3,7 @@
    grouille.
 
    ── LES TROIS BUGS DE LA v2, ET LEUR CORRECTIF ─────────────────────────────
-   « J'ai souvent vu des mini scoléopandres bloqués ou immobiles. »
+   « J'ai souvent vu des mini scolopandres bloqués ou immobiles. »
    Il y avait trois causes distinctes, pas une :
 
    1. LE DÉPLACEMENT N'AVAIT AUCUN REPLI.
@@ -44,12 +44,36 @@ import {
 import {aStar, smooth, CLIMB} from '../monde/navigation.js';
 import {nouvelEtatYeux, majYeux} from './lueurs.js';
 import {ST} from './etats.js';
+import {dansSafe} from '../monde/villages.js';
 
 export const jeunes = [];
 
 /** Callback pour les stridulations. Branché par jeu.js. */
 let surStridulation = null;
 export const brancherStridulation = fn => { surStridulation = fn; };
+
+/** Renvoie la source de feu la plus proche d'un jeune, ou null. Branché par
+    jeu.js : les jeunes n'ont pas à connaître la torche ni les feux de camp. */
+let sourceDeFeu = null;
+export const brancherFeu = fn => { sourceDeFeu = fn; };
+
+/**
+ * Un leurre vient de tomber. Les jeunes assez proches vont l'étudier.
+ * C'était la demande : « impossibles à leurrer ».
+ */
+export function attirerJeunes(x, z){
+  const S = SETUP.jeunes;
+  let n = 0;
+  for(const j of jeunes){
+    if(Math.hypot(j.x-x, j.z-z) > S.porteeLeurre) continue;
+    j.leurre = {x, z};
+    j.leurreT = S.fixationLeurre * (0.7 + Math.random()*0.6);
+    j.chargeT = 0;
+    j.path = null; j.repathT = 0;
+    n++;
+  }
+  return n;
+}
 
 function nouveauJeune(wx, wz, wy){
   return {
@@ -58,6 +82,8 @@ function nouveauJeune(wx, wz, wy){
     ech: SETUP.jeunes.echelleMin + rnd()*(SETUP.jeunes.echelleMax - SETUP.jeunes.echelleMin),
     // navigation
     path:null, pathIdx:1, repathT:0, cible:null,
+    // charge : elle s'essouffle, et un leurre la détourne
+    chargeT:0, reposT:0, leurre:null, leurreT:0, fuiteT:0,
     // détecteur de blocage
     refX:wx, refZ:wz, blocT:0, coinceT:0,
     // rendu
@@ -110,16 +136,53 @@ export function updateJeunes(dt, joueur, temps, sons){
     j.proche = d;
     plusProche = Math.min(plusProche, d);
 
-    const charge = d < S.porteeCharge && !joueur.abrite;
+    /* ═══ CE QUI LES REND JOUABLES ═══
+       Retour de test : « trop rapides et impossibles à leurrer ». Les deux
+       étaient vrais : 4,2 m/s contre 3,2 en marche, et aucune réaction aux
+       leurres. Trois contre-mesures maintenant, dans l'ordre de priorité. */
+
+    // 1. LE FEU. Une torche brandie ou un feu de camp les fait reculer.
+    j.fuiteT = Math.max(0, j.fuiteT - dt);
+    const feu = sourceDeFeu ? sourceDeFeu(j) : null;
+    if(feu) j.fuiteT = 0.6;
+
+    // 2. LE LEURRE. Un impact les fixe : ils vont l'étudier et t'oublient.
+    j.leurreT = Math.max(0, j.leurreT - dt);
+    if(j.leurreT <= 0) j.leurre = null;
+
+    // 3. L'ESSOUFFLEMENT. Ils ne peuvent pas charger indéfiniment.
+    j.reposT = Math.max(0, j.reposT - dt);
+    let charge = d < S.porteeCharge && !joueur.abrite
+              && j.reposT <= 0 && !j.leurre && j.fuiteT <= 0;
+    if(charge){
+      j.chargeT += dt;
+      if(j.chargeT > S.endurance){ j.chargeT = 0; j.reposT = S.repos; charge = false; }
+    } else j.chargeT = Math.max(0, j.chargeT - dt*0.5);
+
     j.etat = charge ? ST.CHASE : ST.PATROL;
-    const v = charge ? S.vitesseCharge : S.vitesseErrance;
+    const v = j.fuiteT > 0 ? S.vitesseCharge
+            : charge      ? S.vitesseCharge
+            : j.leurre    ? S.vitesseErrance * 1.6
+            :               S.vitesseErrance;
 
     /* ── CIBLE ──
        En charge : A* vers le joueur, recalculé périodiquement. La ligne droite
        de la v2 était la cause principale des blocages en angle.
        En errance : un point devant soi, réévalué quand on l'atteint. */
     j.repathT -= dt;
-    if(charge){
+    if(j.fuiteT > 0){
+      // fuir le feu : demi-tour, tout droit, pas de calcul de chemin
+      j.path = null;
+      j.cible = {x: j.x + (j.x - feu.x)*3, z: j.z + (j.z - feu.z)*3};
+    } else if(j.leurre){
+      // aller étudier le leurre : c'est la contre-mesure du joueur
+      if(j.repathT <= 0 || !j.path){
+        const cells = aStar(w2c(j.x), w2c(j.z), w2c(j.leurre.x), w2c(j.leurre.z), S.budgetAStar);
+        j.path = cells ? smooth(cells) : null;
+        j.pathIdx = 1; j.repathT = S.repath;
+      }
+      j.cible = j.leurre;
+    } else if(charge){
       if(j.repathT <= 0 || !j.path){
         const cells = aStar(w2c(j.x), w2c(j.z), w2c(joueur.x), w2c(joueur.z), S.budgetAStar);
         j.path = cells ? smooth(cells) : null;
@@ -135,7 +198,9 @@ export function updateJeunes(dt, joueur, temps, sons){
 
     // le point à viser cette image
     let tx, tz;
-    if(charge && j.path && j.pathIdx < j.path.length){
+    if(j.fuiteT > 0){
+      tx = j.cible.x; tz = j.cible.z;
+    } else if((charge || j.leurre) && j.path && j.pathIdx < j.path.length){
       let n = j.path[j.pathIdx];
       if(Math.hypot(n.x - j.x, n.z - j.z) < 0.9){
         j.pathIdx++;
@@ -144,6 +209,8 @@ export function updateJeunes(dt, joueur, temps, sons){
       tx = n.x; tz = n.z;
     } else if(charge){
       tx = joueur.x; tz = joueur.z;
+    } else if(j.leurre){
+      tx = j.leurre.x; tz = j.leurre.z;
     } else {
       tx = j.cible.x; tz = j.cible.z;
     }
@@ -214,8 +281,10 @@ export function updateJeunes(dt, joueur, temps, sons){
   return {mort, plusProche};
 }
 
-/** Sol praticable pour un jeune : libre, pas de vide, marche acceptable. */
+/** Sol praticable pour un jeune : libre, pas de vide, marche acceptable, et
+    surtout PAS dans une place barricadée de village — ils n'y entrent pas. */
 function praticable(wx, wz, depuis){
+  if(dansSafe(wx, wz)) return false;
   const cx = w2c(wx), cz = w2c(wz);
   if(!isFree(cx,cz)) return false;
   const i = idx(cx,cz);

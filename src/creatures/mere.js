@@ -22,6 +22,7 @@ import {aStar, smooth, clearLine, CLIMB} from '../monde/navigation.js';
 import {ST} from './etats.js';
 import {directeur} from './directeur.js';
 import {nouvelEtatYeux, majYeux} from './lueurs.js';
+import {dansSafe} from '../monde/villages.js';
 
 export const creature = {
   x:0, z:0, y:0, heading:0,
@@ -152,6 +153,12 @@ function requestPath(tx, tz){
   creature.target = {x:tx, z:tz};
 }
 
+/** Où l'on serait après ce pas : sert au test de la place barricadée. */
+function nxTest(c, dx, dz){
+  const L = Math.hypot(dx, dz) || 1;
+  return {x: c.x + dx/L*1.6, z: c.z + dz/L*1.6};
+}
+
 function follow(dt, speed, turn){
   const c = creature, p = c.path;
   let dx, dz;
@@ -168,6 +175,12 @@ function follow(dt, speed, turn){
       n = p[c.pathIdx]; dx = n.x - c.x; dz = n.z - c.z;
     }
   }
+  /* LA PLACE BARRICADÉE. Elle n'y entre pas — ni ferraille, ni feu, ni
+     l'odeur de ce qui s'y est passé. Ce n'est pas de la magie : c'est le seul
+     endroit du monde que quelqu'un a défendu. Le refus est net, sans quoi on
+     la verrait hésiter au bord et ce serait ridicule. */
+  if(dansSafe(nxTest(c, dx, dz).x, nxTest(c, dx, dz).z)) return false;
+
   const want = Math.atan2(-dx, -dz);
   const diff = deltaAngle(want - c.heading);
   c.heading += clamp(diff, -turn*dt, turn*dt);

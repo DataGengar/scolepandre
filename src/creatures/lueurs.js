@@ -1,5 +1,5 @@
 /* ═══ CRÉATURES / LUEURS ═══
-   Ce qui rend le scoléopandre terrifiant : les yeux, les pattes, la carapace.
+   Ce qui rend le scolopandre terrifiant : les yeux, les pattes, la carapace.
 
    ── LES YEUX ───────────────────────────────────────────────────────────────
    Deux points rouges, injectés dans le tableau de lumières du rendu. Comme

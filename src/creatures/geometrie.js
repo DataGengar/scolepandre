@@ -303,20 +303,75 @@ export function batirCreature(temps){
 
 /* ─────────────── les jeunes ─────────────── */
 
+/* ═══════════════ LES JEUNES ═══════════════
+   Retour de test : « moches, pas flippants, risibles et cons » — et
+   « change le design, ils sont juste risibles ».
+
+   C'était mérité. La v3.0 les faisait avec la même recette que la mère : une
+   chaîne de tubes coniques bout à bout, avec deux pattes par tube. À cette
+   échelle (30 à 50 cm) ça ne lisait pas comme une bête, ça lisait comme un
+   chapelet de saucisses. Rien à corriger là-dedans : il fallait un autre corps.
+
+   ── LE NOUVEAU CORPS ───────────────────────────────────────────────────────
+   Une larve cuirassée, basse et large — entre le cloporte et le trilobite :
+
+     · 8 PLAQUES dorsales en écaille, chacune bombée et débordant sur la
+       suivante. C'est le débord qui fait la carapace : une segmentation qu'on
+       voit en silhouette, même de dos, même dans le noir.
+     · une TÊTE distincte, plus large que le premier segment, aplatie, avec
+       deux mandibules courbes qui s'ouvrent quand il charge.
+     · un ABDOMEN translucide à l'arrière qui PULSE — la poche lumineuse. On
+       la voit à travers la carapace, et c'est elle qu'on repère de loin.
+     · 12 PATTES courtes et anguleuses, en vague, qui touchent vraiment le sol.
+     · quatre YEUX en grappe, pas deux : c'est ce qui fait « insecte » plutôt
+       que « animal ».
+
+   Il est deux fois plus bas et deux fois plus large qu'avant. Une chose qui
+   rampe et qu'on écraserait du pied, sauf qu'elles sont douze.               */
+
+/** Plaque dorsale bombée : un éventail de quads sur un arc. */
+function cPlaque(centre, avant, droite, larg, lon, haut, col, cotes){
+  const N = cotes || 7;
+  const pt = (u, v) => {
+    // u : −1 (gauche) → +1 (droite)   v : 0 (avant) → 1 (arrière)
+    const bomb = Math.sqrt(Math.max(0, 1 - u*u)) * haut;
+    return [
+      centre[0] + droite[0]*u*larg + avant[0]*(v-0.5)*lon,
+      centre[1] + bomb,
+      centre[2] + droite[2]*u*larg + avant[2]*(v-0.5)*lon,
+    ];
+  };
+  for(let k=0;k<N;k++){
+    const u0 = -1 + 2*k/N, u1 = -1 + 2*(k+1)/N;
+    cQuad(pt(u0,0), pt(u1,0), pt(u1,1), pt(u0,1), col);
+    // le rebord qui retombe : c'est lui qui donne l'épaisseur de l'écaille
+    const b0 = pt(u0,1), b1 = pt(u1,1);
+    cQuad(b0, b1, [b1[0], b1[1]-haut*0.55, b1[2]], [b0[0], b0[1]-haut*0.55, b0[2]],
+          [col[0]*0.45, col[1]*0.45, col[2]*0.45]);
+  }
+}
+
 export function batirJeune(j, joueur, temps){
-  if(cN_ > C_MAXV*3 - 4200) return;
+  if(cN_ > C_MAXV*3 - 9000) return;
   if(Math.hypot(j.x - joueur.x, j.z - joueur.z) > 62) return;
 
-  const e = j.ech;
-  const chit = [0.13,0.115,0.10], dos2 = [0.20,0.175,0.15];
-  let prev = [j.x, j.y, j.z];
-  const ph = temps*13 + j.ph;
+  const e = j.ech;                      // échelle : 0.30 à 0.52
   const Y = j.yeux, g = eclat(Y, temps);
+  const chasse = j.etat === ST.CHASE;
+  const ph = temps * (chasse ? 15 : 8) + j.ph;
 
-  for(let i=1;i<14;i++){
-    const back = i*0.26;
-    let p;
+  const carapace = [0.115,0.10,0.088];
+  const ecaille  = [0.175,0.150,0.125];
+  const pale     = [0.42,0.38,0.30];
+
+  /* Le corps suit la trace, comme celui de la mère, mais BEAUCOUP plus court :
+     une larve n'ondule pas sur trois mètres, elle est compacte. */
+  const SEG = 8, PAS = e * 0.62;
+  const S = [];
+  for(let i=0;i<=SEG;i++){
+    const back = i * PAS;
     const h = j.hist;
+    let p;
     if(h.length < 2) p = [j.x + Math.sin(j.h)*back, j.y, j.z + Math.cos(j.h)*back];
     else {
       const tg = j.cum - back; let q = h[0];
@@ -329,38 +384,123 @@ export function batirJeune(j, joueur, temps){
         }
       p = [q.x, q.y, q.z];
     }
-    const r = e*(1 - i/15)*0.85 + 0.02;
-    // interstices : les jeunes brillent aussi, en plus faible
-    const inten = (i % 2 === 0) ? interstice(j.etat === ST.CHASE, temps, i/14)*0.5 : 0;
-    const col = inten > 0.02 ? couleurInterstice(Y, inten) : (i%2 ? chit : dos2);
-    cTube(prev, r*1.1, p, r, col, 6);
+    S.push(p);
+  }
 
-    // pattes
-    const dx = p[0]-prev[0], dz = p[2]-prev[2], L = Math.hypot(dx,dz) || 1;
-    const rx = dz/L, rz = -dx/L, sw = Math.sin(ph - i*0.6)*0.4;
-    const lum = couleurPatte(Y, ph - i*0.6);
+  // repères locaux
+  const rep = [];
+  for(let i=0;i<=SEG;i++){
+    const a = S[Math.max(0,i-1)], b = S[Math.min(SEG,i+1)];
+    let dx = a[0]-b[0], dz = a[2]-b[2];
+    const L = Math.hypot(dx,dz) || 1; dx/=L; dz/=L;
+    if(i === 0 && L < 1e-3){ dx = -Math.sin(j.h); dz = -Math.cos(j.h); }
+    rep.push({av:[dx,0,dz], dr:[dz,0,-dx]});
+  }
+
+  /* ── LES PLAQUES ──
+     Largeur maximale au tiers avant, effilée vers l'arrière. Chaque plaque
+     déborde sur la suivante, d'où l'aspect d'écailles empilées. */
+  for(let i=0;i<SEG;i++){
+    const t = i/(SEG-1);
+    const larg = e * (0.62 + 0.42*Math.sin(Math.min(1, t*2.6)*1.571)) * (1 - t*0.42);
+    const haut = e * (0.30 + 0.16*Math.sin(Math.min(1, t*2.4)*1.571)) * (1 - t*0.40);
+    const p = S[i], r = rep[i];
+    // léger roulis de reptation : le corps se tortille en avançant
+    const roul = Math.sin(ph*0.5 - i*0.7) * e * 0.10;
+    const c = [p[0] + r.dr[0]*roul, p[1] - e*0.14, p[2] + r.dr[2]*roul];
+    cPlaque(c, r.av, r.dr, larg, PAS*1.45, haut, i%2 ? carapace : ecaille, 7);
+  }
+
+  /* ── L'ABDOMEN LUMINEUX ──
+     Une poche translucide sous les dernières plaques, qui pulse lentement.
+     C'est le signal visuel du jeune : ce qu'on aperçoit avant la silhouette. */
+  {
+    const pulse = 0.45 + 0.55 * Math.sin(temps*2.1 + j.ph);
+    const inten = (chasse ? 0.35 : 1.0) * pulse;
+    const col = couleurInterstice(Y, inten * 1.6);
+    const p = S[SEG-1], r = rep[SEG-1];
+    cBulbe([p[0], p[1] - e*0.05, p[2]], e*0.34, col, 6);
+    const p2 = S[SEG-2];
+    cBulbe([p2[0], p2[1] - e*0.05, p2[2]], e*0.28, col, 5);
+  }
+
+  /* ── LA TÊTE ──
+     Plus large que le premier segment, aplatie, avancée. Deux mandibules
+     courbes qui s'écartent quand il charge — le seul moment où on les voit. */
+  {
+    const p = S[0], r = rep[0];
+    const av = r.av, dr = r.dr;
+    const tete = [p[0] + av[0]*e*0.34, p[1] - e*0.12, p[2] + av[2]*e*0.34];
+    cPlaque(tete, av, dr, e*0.72, e*0.80, e*0.30, ecaille, 8);
+
+    // les joues, qui retombent : la tête a une épaisseur
     for(const sd of [1,-1])
-      cTube([p[0]+rx*r*sd, p[1], p[2]+rz*r*sd], r*0.34,
-            [p[0]+rx*(r+e*0.9)*sd + dx*sw,
-             Math.max(groundAt(p[0],p[2])+0.02, p[1]-e*1.1),
-             p[2]+rz*(r+e*0.9)*sd + dz*sw],
-            r*0.10, lum, 5);
-    prev = p;
+      cTube([tete[0]+dr[0]*e*0.62*sd, tete[1]+e*0.04, tete[2]+dr[2]*e*0.62*sd], e*0.16,
+            [tete[0]+dr[0]*e*0.52*sd+av[0]*e*0.22, tete[1]-e*0.16,
+             tete[2]+dr[2]*e*0.52*sd+av[2]*e*0.22], e*0.07, carapace, 5);
+
+    // mandibules : deux crochets courbes, en trois segments
+    const ouv = (chasse ? 0.55 : 0.18) + Math.abs(Math.sin(temps*(chasse?9:2.2)))*0.30;
+    for(const sd of [1,-1]){
+      let pt = [tete[0]+av[0]*e*0.40+dr[0]*e*0.24*sd, tete[1]-e*0.06,
+                tete[2]+av[2]*e*0.40+dr[2]*e*0.24*sd];
+      let ang = 0;
+      for(let q=0;q<3;q++){
+        ang += ouv * (q === 2 ? -1.6 : 0.75);   // il se referme au bout : un crochet
+        const L2 = e*0.26;
+        const nx = [pt[0] + av[0]*L2*Math.cos(ang) + dr[0]*L2*Math.sin(ang)*sd,
+                    pt[1] - e*0.03,
+                    pt[2] + av[2]*L2*Math.cos(ang) + dr[2]*L2*Math.sin(ang)*sd];
+        cTube(pt, e*(0.09 - q*0.022), nx, e*(0.07 - q*0.022), q===2 ? pale : carapace, 5);
+        pt = nx;
+      }
+    }
+
+    /* QUATRE YEUX en grappe, pas deux. C'est ce qui fait « insecte » plutôt
+       qu'« animal », et c'est aussi ce qui se voit de loin. */
+    const YJ = SETUP.jeunes.yeux;
+    const col = [Y.c[0]*g*YJ.c[0]*2.4, Y.c[1]*g*YJ.c[1]*2.8, Y.c[2]*g*YJ.c[2]*2.8];
+    for(const sd of [1,-1]) for(const [av2, dr2, r2] of
+        [[0.52, 0.30, 0.10], [0.44, 0.46, 0.062]]){
+      cBulbe([tete[0]+av[0]*e*av2+dr[0]*e*dr2*sd,
+              tete[1]+e*0.14,
+              tete[2]+av[2]*e*av2+dr[2]*e*dr2*sd],
+             e*r2*YJ.taille*2.4, col, 5);
+    }
+    if(lumieresTemporaires.length < 6)
+      lumieresTemporaires.push({
+        x: tete[0]+av[0]*e*0.5, y: tete[1]+e*0.14, z: tete[2]+av[2]*e*0.5,
+        c: [col[0]*0.5, col[1]*0.5, col[2]*0.5],
+      });
   }
 
-  // les yeux du jeune : ambre, plus petits, mais ils font des godrays aussi
-  const YJ = SETUP.jeunes.yeux;
-  const dirx = -Math.sin(j.h), dirz = -Math.cos(j.h);
-  const rx2 = dirz, rz2 = -dirx;
-  const rO = e * YJ.taille * 0.30 * Y.taille;
-  const col = [Y.c[0]*g*YJ.c[0]*2.0, Y.c[1]*g*YJ.c[1]*2.4, Y.c[2]*g*YJ.c[2]*2.4];
-  for(const sd of [1,-1]){
-    const p = [j.x + dirx*e*0.5 + rx2*e*0.45*sd, j.y + e*0.30, j.z + dirz*e*0.5 + rz2*e*0.45*sd];
-    cBulbe(p, rO, col, 5);
+  /* ── LES PATTES ──
+     Douze, courtes, anguleuses, en vague. Deux articulations : elles pointent
+     vers l'extérieur puis retombent d'aplomb, comme des pattes d'arthropode —
+     pas comme des piquets. Elles cherchent le sol réel. */
+  for(let i=0;i<6;i++){
+    const seg = 1 + i;
+    if(seg > SEG) break;
+    const p = S[seg], r = rep[seg];
+    const t = i/5;
+    const larg = e * (0.66 - t*0.22);
+    for(const sd of [1,-1]){
+      const dec = sd > 0 ? 0 : 2.1;
+      const bal = Math.sin(ph*0.62 - i*0.9 + dec);
+      const lev = Math.max(0, Math.sin(ph*0.62 - i*0.9 + dec + 1.5));
+      const hanche = [p[0]+r.dr[0]*larg*sd, p[1]-e*0.16, p[2]+r.dr[2]*larg*sd];
+      const px = hanche[0] + r.dr[0]*e*0.42*sd + r.av[0]*bal*e*0.30;
+      const pz = hanche[2] + r.dr[2]*e*0.42*sd + r.av[2]*bal*e*0.30;
+      const sol = estVide(w2c(px), w2c(pz)) ? p[1]-e*0.9 : groundAt(px, pz);
+      const pied = [px, Math.min(sol + 0.02 + lev*e*0.22, hanche[1]-e*0.05), pz];
+      // le genou, relevé vers l'extérieur : la silhouette en accent circonflexe
+      const genou = [(hanche[0]+px)/2 + r.dr[0]*e*0.16*sd,
+                     hanche[1] + e*0.22 + lev*e*0.10,
+                     (hanche[2]+pz)/2 + r.dr[2]*e*0.16*sd];
+      cTube(hanche, e*0.075, genou, e*0.055, carapace, 5);
+      cTube(genou, e*0.055, pied, e*0.018, couleurPatte(Y, ph*0.62 - i*0.9 + dec), 4);
+    }
   }
-  if(lumieresTemporaires.length < 6)
-    lumieresTemporaires.push({x: j.x + dirx*e*0.5, y: j.y + e*0.30, z: j.z + dirz*e*0.5,
-                              c: [col[0]*0.55, col[1]*0.55, col[2]*0.55]});
 }
 
 /** Envoie le tampon au GPU et dessine. */
