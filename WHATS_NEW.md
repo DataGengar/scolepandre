@@ -1,0 +1,434 @@
+# WHAT'S NEW
+
+Suivi de l'évolution du projet. Trois sections : **demandé**, **implémenté**,
+**à faire**.
+
+---
+
+# v3 — 22 août 2026
+
+Refonte complète : le jeu passe d'un fichier unique de 2 846 lignes à 48 modules
+ES organisés par domaine, plus un lot de changements de contenu.
+
+## 1. DEMANDÉ
+
+Reproduit tel quel, pour qu'on puisse cocher.
+
+1. Normaliser le code en modules clairs et succincts, en dossiers par élément du
+   jeu, avec les liens synchronisés en cas de mise à jour d'un module. Classes
+   recommandées. Il est crucial de savoir où trouver quoi.
+2. Regrouper les paramètres et valeurs modifiables à la volée dans un fichier
+   commun de type `setup`.
+3. Créer explicitement un module **carte** avec les 3 rangs, où renseigner le
+   chemin des stacks de cartes collectionnables.
+4. Son ambient : plus mélodieux, plus sombre, plus fort.
+5. Son des scoléopandres : revoir, et accroître la distance d'audition.
+6. Caméra : trembler davantage en présence d'un scoléopandre en mouvement.
+7. Le personnage peut chuter à cause des mouvements sismiques.
+8. Scoléopandres : yeux rouges lumineux, flippants, visibles de loin. Si les
+   yeux changent de couleur ou grossissent, c'est qu'ils veulent te bouffer.
+   Pattes lumineuses. Interstices de carapace lumineux pour attirer les proies.
+   Les rendre terrifiants.
+9. Falaises, gouffres sans fond, précipices, ponts suspendus.
+10. Hauteur de la map ×3, taille des blocs ÷2 (plus granulaire).
+11. Accroître le polycount des objets et des carcasses.
+12. Le système de froid ne fait rien : implémenter une règle et s'y tenir.
+13. Pas assez de cachettes de survie — littéralement des trous. Peu dans le
+    monde, mais visibles discrètement sur la carte.
+14. Dossiers propres, commentaires explicatifs.
+15. Des mini-scoléopandres (jeunes) restent bloqués ou immobiles. Rectifier.
+16. Fog et godrays à 75 % du max comme standard.
+17. Travailler à fond l'ambiance sonore : d'autres sons, meilleures fonctions
+    génératives.
+18. Ajouter le bruit du vent, des cavernes, des effondrements dynamiques.
+19. Rendre les lieux souterrains plus exigus.
+20. Tout synchroniser sur le dépôt GitHub, avec suivi et mémo « what's new ».
+
+## 2. IMPLÉMENTÉ
+
+### 1 · Modularisation — `src/`
+
+48 modules ES répartis en 8 dossiers par domaine. Chaque dossier a son
+`README.md` qui dit ce qu'il contient et quel fichier ouvrir pour quelle
+modification. Chaque fichier s'ouvre sur un commentaire expliquant son rôle et,
+quand il corrige quelque chose, ce qui n'allait pas avant.
+
+`jeu.js` ne contient plus aucune règle : il branche les modules et fait tourner
+la boucle.
+
+Sur les classes : elles sont utilisées là où il y a un état encapsulé à
+protéger (`Heap` dans `monde/navigation.js`). Ailleurs, les modules ES donnent
+déjà l'encapsulation qu'on cherchait, et un singleton de classe n'aurait été
+qu'un objet avec des étapes en plus. C'est un écart assumé à la recommandation.
+
+### 1b · Synchronisation des liens — quatre mécanismes
+
+| mécanisme | ce qu'il empêche |
+|---|---|
+| `src/setup.js` source unique + `abonner()` | qu'une valeur existe en deux exemplaires divergents |
+| `src/monde/biomes.js` → `outils/biomes.json` | que l'éditeur de carte et le jeu codent les biomes différemment |
+| `outils/verifier.py` | 6 classes d'incohérence, listées ci-dessous |
+| `outils/bundler.py` | qu'un export renommé produise un fichier cassé au lieu d'une erreur |
+
+`verifier.py` contrôle : imports vers un symbole non exporté · `export let`
+réassigné · clé de `SETUP` jamais lue · curseur orphelin · `biomes.json`
+désynchronisé · module que personne n'importe.
+
+### 2 · `src/setup.js`
+
+Toutes les valeurs réglables du jeu, en un arbre commenté. **Aucun autre fichier
+n'écrit un nombre réglable en dur.** Le panneau RÉGLAGES en jeu se construit
+tout seul à partir de `SETUP.CURSEURS` : ajouter une ligne suffit à faire
+apparaître un curseur fonctionnel.
+
+Bonus : `index.html?debug` expose `window.SCOLO` pour régler à chaud depuis la
+console du navigateur.
+
+### 3 · Module carte — `src/carte/`
+
+`rangs.js` est **le seul fichier à ouvrir** pour brancher tes stacks :
+
+```js
+export const RANGS = [
+  { id:'commune',    chemin:'cartes/communes/',    ext:'gif', profondeurMin:0.00 },
+  { id:'rare',       chemin:'cartes/rares/',       ext:'gif', profondeurMin:0.45 },
+  { id:'legendaire', chemin:'cartes/legendaires/', ext:'gif', profondeurMin:0.78 },
+];
+```
+
+Le jeu sonde chaque dossier (`1.gif`, `2.gif`… jusqu'à trois échecs) : aucune
+liste à tenir. **Trois rangs partout** — la v2 en déclarait 3 côté dossiers mais
+4 côté raretés, reliés par un `Math.min(3, stack)` bancal ; c'est normalisé.
+
+La collection est désormais sauvegardée dans le navigateur (`localStorage`) :
+elle survit à un rechargement.
+
+### 4 · Nappe ambient — plus mélodieuse, plus sombre, plus forte
+
+La v2 faisait une marche aléatoire sur une gamme : un mouvement brownien, pas
+une mélodie. Trois changements dans `audio/nappes.js` :
+
+- **Harmonie.** Chaque drone a un mode sombre (phrygien, mineur harmonique,
+  locrien) et une progression de 4 à 5 accords tenus 25–50 s en fondu croisé.
+  La voix mélodique choisit ses notes *dans l'accord courant*. Une voix médiane
+  tient la tierce et glisse d'un accord au suivant : c'est le mouvement
+  harmonique qu'on entend.
+- **Registre.** Fondamentales descendues à 16–28 Hz (contre 20–37).
+- **Niveau.** Courbe de volume 1,55 → 1,20 · limiteur −12 dB/12:1 → −8 dB/6:1
+  (il compressait la nappe en permanence) · gain des notes 0,30 → 0,52 · volume
+  par défaut 82 → 90.
+
+Nouvel événement lent : le **soupir**, un glissando descendant de 11 s sur la
+quinte diminuée.
+
+Règle conservée : un drone ne se transforme jamais en un autre.
+
+### 5 · Son de la créature — portée très accrue
+
+`audio/creature-audio.js` : `maxDistance` 40 → **110 m**, rolloff 1,1 → 0,75,
+courbe de menace 34 → **95 m**, jeunes 22 → **55 m**. Nouveau **sub d'infrasons
+à 14 Hz audible jusqu'à 150 m**, hors panner (un son de 14 Hz n'est pas
+localisable) : on la sent avant de l'entendre. Le cri gagne une seconde voix une
+octave plus bas. Les jeunes stridulent entre eux.
+
+### 6 · Tremblement de caméra
+
+`rendu/camera.js`. La v2 valait `sin(t·47)×0,035` — invisible, et surtout **sans
+roulis**, or c'est le roulis qui fait sentir que le *sol* bouge. Maintenant :
+amplitudes ×3,5, trois sinusoïdes incommensurables par axe, et `rotZ` ajouté à
+la chaîne de vue. L'intensité dépend de la distance, de **la vitesse réelle** de
+la créature et de son état — une créature immobile ne fait pas trembler le sol.
+
+### 7 · Chute sismique
+
+`joueur/chute.js`. Au-delà de `seuilChute` (0,55), tirage proportionnel à
+l'excès. Tomber met au sol 1,4 s sans aucun contrôle **et émet une vibration de
+rayon 22** : tomber te trahit. Gère aussi la chute de falaise (sonné à 6 m, mort
+à 14 m) et la chute dans le vide.
+
+### 8 · Terreur — `creatures/lueurs.js`
+
+**Yeux.** Deux bulbes émissifs, injectés dans le tableau de lumières du rendu :
+ils produisent donc des **godrays rouges dans le fog** et se voient bien avant
+la silhouette. Grammaire constante :
+
+| état | couleur | taille |
+|---|---|---|
+| traque / retrait | rouge sombre | ×1,0 |
+| écoute | rouge **fixe**, sans pulsation | ×1,0 |
+| approche / fouille | rouge vif, pulsation lente | ×1,3 |
+| poursuite | **orange-blanc**, pulsation rapide | **×2,2** |
+
+Fondu de 0,4 s : assez pour voir le changement, trop court pour réfléchir.
+
+**Pattes lumineuses** : tarses et griffes émissifs, palpitant avec la vague de
+marche — on lit sa démarche dans le noir.
+
+**Interstices de carapace** : bandes bioluminescentes entre les anneaux. Elles
+pulsent au repos (leurre à proies) et **s'éteignent** en poursuite :
+l'extinction est le signal d'attaque.
+
+Plus : maxillaires (crochets sous les mandibules), antennes à 7 segments.
+
+### 9 · Falaises, gouffres, précipices, ponts
+
+Le point délicat. La v2 relaxait *tout* le champ de hauteur pour garantir
+l'absence de cul-de-sac — ce qui interdisait toute falaise. La v3 ne relaxe que
+le long d'une **épine navigable** (le chemin reliant les salles, plus une
+marge). Hors épine, le dénivelé brut survit : ce sont les falaises.
+
+- **Gouffres sans fond** : 42 fosses creusées à l'intérieur du monde
+  (`monde/relief.js`), 20–64 m de long. On y tombe et on meurt.
+- **Précipices** : la lèvre est marquée, relevée de 12 cm, et éclairée en
+  rasant. On voit le trou arriver dans le fog au lieu d'y tomber bêtement.
+- **Ponts suspendus** : 260, dont **un par gouffre en priorité** — un gouffre
+  infranchissable couperait la carte, un gouffre avec un pont est un choix.
+- **On marche dessus.** Le second étage est implémenté : `E` sur une échelle
+  (aux deux bouts de chaque tronçon) monte sur le tablier, `E` redescend. Le
+  tablier fait exactement une cellule de large — 1,5 m au-dessus d'un gouffre
+  sans fond, sans rambarde. Sortir par le côté ne bloque pas : tu tombes.
+  Conséquence à connaître : **la créature ne monte pas sur les ponts**, sa
+  navigation reste à un seul étage. Un tablier est donc un répit — jusqu'à ce
+  qu'il faille redescendre.
+- Le maillage descend la paroi d'un gouffre de 40 m : c'est un puits, pas une
+  flaque noire.
+- Le sismographe montre les gouffres en noir plein cerné de rouge sourd.
+
+### 10 · Granularité et verticalité
+
+| | v2 | v3 |
+|---|---|---|
+| cellule | 3,0 m | **1,5 m** |
+| grille | 544² | **1088²** (1,18 M cellules) |
+| monde | 1632 m | 1632 m (inchangé) |
+| altitude | −42 … +44 m | **−126 … +132 m** (×3) |
+
+Deux réécritures rendues nécessaires, sans quoi la génération devenait
+injouable :
+
+- `relaxHeights` faisait 120 passes sur toute la grille (142 M d'itérations) →
+  **file d'attente circulaire**, coût proportionnel au nombre de corrections.
+- Le calcul d'ouverture faisait 49 lectures par cellule (58 M d'accès) →
+  **image intégrale**, deux passes linéaires.
+
+Résultat mesuré : **génération en 1,4 s**, contre les 5–15 s estimées.
+
+### 11 · Polycount
+
+`monde/props.js` disposait uniquement de boîtes à 6 faces. Trois primitives
+maintenant, toutes pilotées par `SETUP.image.detail` (curseur en jeu) : boîte,
+**colonne** (prisme à N côtés) et **éclat** (roche irrégulière).
+
+Reprises en détail : piliers cannelés · arches à vrais voussoirs · stalactites
+au plafond (le plafond était nu) · troncs à branches · souches à racines ·
+conduits à colliers.
+
+**Carcasses** : les os deviennent de vrais os (diaphyse fine, épiphyses renflées
+aux deux bouts) · les côtes sont des arceaux courbes à 4 segments avec des
+vertèbres réelles, plus un peigne de barreaux · le crâne a un museau effilé, des
+orbites creuses et une mandibule décrochée.
+
+**Créature** : 46 → **64** segments, 16 → **22** anneaux, ~4 000 → **~14 000**
+triangles, toujours en un seul appel de rendu.
+
+### 12 · Le froid — une règle, tenue partout
+
+La v2 perdait 0,0008 à 0,0046 par seconde pour un seul effet à peine
+perceptible. C'était exact : ça ne faisait rien. `joueur/froid.js` porte
+désormais la règle en toutes lettres :
+
+```
+perte/s = base(biome) × exposition × mouvement × torche × géothermie
+
+  base        souterrain 0,35 · barrage 0,50 · ville 0,60
+              glacière 1,60 · surface gelée 2,20
+  exposition  1 + 1,4 × force_du_vent · ×0,5 sous plafond bas · 0 en cachette
+  mouvement   marche 0,85 · course 0,70 · immobile 1,25 · rampé 1,10
+  torche      allumée 0,55 · éteinte 1,00
+  géothermie  −0,4 %/m sous 0 m, plancher ×0,35
+
+gain/s = brasero +14 · cachette +3,5
+```
+
+| chaleur | palier | effets |
+|---|---|---|
+| 100–70 | — | aucun |
+| 70–40 | **ENGOURDI** | vitesse ×0,88 · souffle audible (r=4) : **tu deviens repérable** |
+| 40–15 | **GELÉ** | vitesse ×0,65 · champ −18 % · tremblement de main (visée et lancer imprécis) |
+| 15–0 | **HYPOTHERMIE** | vitesse ×0,45 · champ −32 % · image désaturée · battement de cœur · 20 s à zéro = mort |
+
+Jauge dédiée dans le HUD, message au franchissement de chaque seuil.
+
+**Le pivot :** descendre réchauffe, et les cartes rares sont au fond. Le froid ne
+combat pas la collection — il combat l'hésitation.
+
+### 13 · Cachettes — `monde/cachettes.js`
+
+16 trous creusés dans la roche : une entrée basse (rampé obligatoire) et une
+alcôve de 2×2. `E` pour entrer.
+
+Dedans : la créature ne perçoit **ni ton odeur ni tes vibrations** (`sense()`
+sort immédiatement si `joueur.abrite`) · le vent ne t'atteint plus · la chaleur
+remonte · le monde extérieur passe par un passe-bas à 520 Hz.
+
+Sur le sismographe : un losange creux visible **seulement à moins de 30 m** —
+discrètement visible, comme demandé. Il faut s'en approcher une fois pour les
+connaître.
+
+Ce n'est pas gratuit : on n'y voit presque rien, on n'y ramasse rien, et elle
+continue de patrouiller.
+
+### 14 · Dossiers et commentaires
+
+12 `README.md` (un par dossier + la racine). Chaque module s'ouvre sur un bloc
+qui explique son rôle et, pour les corrections, ce qui n'allait pas avant et
+pourquoi. Les commentaires disent le *pourquoi*, pas le *quoi*.
+
+### 15 · Jeunes bloqués — quatre causes, quatre correctifs
+
+Ce n'était pas un bug mais quatre :
+
+1. **Aucun repli au déplacement.** `if(isFree(nx,nz)){ j.x=nx; }` — bloqué, le
+   jeune gardait son cap dans le mur pour toujours. → glissement le long de
+   l'obstacle (X seul puis Z seul).
+2. **Aucun contrôle de marche.** Il tentait des dénivelés que le relief refuse.
+   → même test que la mère.
+3. **Charge en ligne droite.** À moins de 13 m il visait le joueur sans tenir
+   compte des murs et se coinçait en angle. → A* à petit budget, recalculé
+   toutes les 0,8 s.
+4. **`majJeunes` n'ajoutait qu'un jeune par appel** (un `break` inconditionnel)
+   et recalculait le min/max d'altitude sur toute la grille 3 fois par seconde —
+   insoutenable à 1,18 M de cellules. → boucle correcte, bornes mises en cache.
+
+Plus un filet indépendant : **détecteur de blocage**. Moins de 0,3 m parcouru en
+1,2 s → nouveau cap ; au bout de 2,5 s → repositionnement hors de vue. Aucun
+jeune ne peut rester immobile plus de 2,5 s.
+
+Vérifié : `python outils/smoke.py` rapporte `jeunesCoincesMax: 0` sur 30 s de
+partie avec jusqu'à 12 jeunes simultanés.
+
+### 16 · Fog et godrays à 75 %
+
+`fog 1,55 → 2,625` (75 % de 3,5) et `rays 1,15 → 2,25` (75 % de 3,0). Visibilité
+ramenée d'environ 35 m à environ 15 m. Les maxima des curseurs sont désormais
+lus depuis `SETUP` et ne peuvent plus se désynchroniser des défauts.
+
+Effet de bord bienvenu : moins de pavés à dessiner, donc plus fluide.
+
+### 17–18 · Ambiance sonore, vent, cavernes, effondrements
+
+**`audio/vent.js`** — bruit brun → deux passe-bande (souffle grave large,
+sifflement aigu résonant) modulés par deux LFO incommensurables, plus des
+rafales de 4 à 12 s. L'intensité suit le ciel ouvert, l'ouverture du lieu et la
+proximité d'un gouffre. Nul en cachette. **Une seule source de vérité :** la
+même valeur pilote le son, la dérive de l'odeur et l'exposition au froid.
+
+**`audio/cavernes.js`** — gouttes d'eau (deux impulsions pour faire « plic » et
+non « bip », plus un écho en boyau étroit), craquements de roche, résonances
+lointaines. Tout spatialisé au hasard autour de l'auditeur. Le taux suit
+l'exiguïté et l'humidité du biome. Longueur de réverbération par biome.
+
+**`audio/effondrements.js`** — toutes les 60 à 180 s : grondement sub montant
+sur 2 s, puis fracas (bruit brun filtré + 14 à 26 impacts secs étalés),
+tremblement de caméra à 0,8 pendant 3 s, **vibration de rayon 60 émise dans le
+monde — la créature accourt**, et le terrain se soulève localement en gravats.
+Le vrai danger n'est pas la roche : c'est ce qu'elle attire.
+
+**`audio/effets.js`** — souffle (l'effet audible du palier ENGOURDI, qui te rend
+repérable), battement de cœur en hypothermie, entrée et sortie de cachette,
+impact de chute.
+
+### 19 · Souterrains plus exigus
+
+Plafond : `2,8 + openN×3,2` → **`1,9 + openN×2,1`**. Sous 1,30 m le rampé est
+forcé — ce qui a un intérêt mécanique direct puisque ramper n'imprime aucune
+trace. Les cachettes ont une entrée à 0,95 m.
+
+### 20 · GitHub
+
+Dépôt initialisé, `.gitignore`, commits séquentiels lisibles, poussé sur `main`.
+Ce fichier tient le suivi.
+
+---
+
+## 3. VÉRIFICATION EFFECTUÉE
+
+Pas de moteur JavaScript en ligne de commande sur cette machine, mais Chrome est
+là : `outils/smoke.py` exécute le jeu en headless avec un faux contexte WebGL et
+le joue seul pendant 30 s.
+
+Dernier relevé, sur les modules **et** sur le bundle, **zéro erreur** :
+
+```
+génération        1,4 s
+monde             390 salles · 42 gouffres · 260 ponts · 16 cachettes
+                  8 000 éléments · 3 222 lumières
+altitude          −131 m … +136 m           ← la verticalité ×3
+distance parcourue 1 124 m
+paliers de froid  —, ENGOURDI, GELÉ, HYPOTHERMIE   ← les quatre traversés
+états créature    traque, écoute, approche, fouille, poursuite
+secousse max      1,0
+images au sol     62                        ← la chute sismique se déclenche
+images en cachette 45                       ← on entre et on ressort
+images sur pont   148                       ← on monte, on marche, on redescend
+jeunes max        12
+JEUNES BLOQUÉS    0                         ← le correctif tient
+morts             2 (dont une chute à −191 m, sous le fond du monde)
+```
+
+Trois bugs ont été trouvés et corrigés par cette vérification, tous invisibles à
+la lecture :
+
+1. **Le bundle ne démarrait pas du tout** : les imports sur plusieurs lignes
+   n'étaient pas reconnus par le bundler et restaient tels quels.
+2. **Cinq `const` déclarés deux fois** dans `monde/index.js` une fois bundlé
+   (un module qui importe *et* ré-exporte le même nom) — `SyntaxError`.
+3. **Le vent et la neige n'agissaient plus sur l'odeur** : la décroissance des
+   traces était appelée à deux endroits, et celle qui portait le vent recevait
+   `dt = 0`.
+
+Plus deux corrections trouvées à la relecture : une file d'attente qui débordait
+silencieusement (écriture hors bornes d'un `Int32Array`, ignorée par JavaScript)
+et des gouffres convertis deux fois en cellules, qui sortaient à 17 × 7 m.
+
+## 4. À FAIRE
+
+### De ton côté
+
+- **Remplir les dossiers de cartes** — `cartes/communes/`, `cartes/rares/`,
+  `cartes/legendaires/`, fichiers `1.gif`, `2.gif`… Le jeu tourne avec des
+  cartes procédurales en attendant.
+- **Équilibrage à la manette.** Les valeurs sont posées avec cohérence mais
+  jouées seulement par un robot. À surveiller en priorité :
+  fog à 2,625 (visibilité ~15 m, peut-être trop court à ton goût) · vitesse de
+  perte de chaleur par biome · fréquence des effondrements · nombre de cachettes
+  (16 sur 1 632 m — peu, volontairement).
+
+### Ce qui n'est pas fait
+
+- **Le rendu n'a pas été vu.** WebGL est simulé dans le test ; les shaders
+  compilent en théorie mais personne n'a regardé l'écran. À faire au premier
+  lancement : yeux visibles de loin, godrays rouges, interstices qui s'éteignent
+  en poursuite.
+- **Pas d'audio réellement écouté.** Le graphe se construit sans erreur, mais la
+  nappe n'a pas été entendue. Les niveaux peuvent demander un ajustement.
+- Les cartes PNG dessinées dans RELEVÉ ne reçoivent ni gouffres ni falaises
+  marquées (par choix : ton relief reste le tien), mais elles reçoivent ponts et
+  cachettes.
+- `monde/relief.js` sait faire des éboulis, mais un effondrement ne perce pas
+  encore de nouveau passage — il ne fait que soulever le sol et poser des
+  gravats.
+
+---
+
+# Historique
+
+## v2 — moteur monofichier
+
+Archivée dans `archives/scoleopandre2-monofichier.html`. WebGL2 brut, 2 846
+lignes, 5 biomes, IA à croyance et directeur de pression, nappes ambient
+génératives, streaming de pavés, cartes à collectionner, éditeur de relevé.
+
+## v1
+
+Archivée dans `archives/scoleopandre.html`.
