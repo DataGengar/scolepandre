@@ -257,6 +257,165 @@ export function addProp(kind, x, z, i){
       }
       solid = false; break; }
 
+    /* ═══════════════ VESTIGES HUMAINS ═══════════════
+       « Ajouter des vestiges humains style anciennes maisons ou immeubles et
+       voitures détruites car tout le monde s'est fait bouffer. »
+
+       Trois règles pour que ça raconte quelque chose au lieu de meubler :
+         · rien n'est intact — un mur sur quatre est tombé, les toits sont
+           crevés, les voitures sont sur le flanc ;
+         · ça éclaire. Un lampadaire qui marche encore ou un plafonnier de
+           voiture, c'est un repère, et c'est ce qui manquait le plus ;
+         · c'est orienté au hasard mais posé d'aplomb : une maison de travers
+           lit comme un bug, pas comme une ruine.                            */
+
+    case 'maison': {
+      const larg = rf(3.2, 5.4), prof = rf(3.0, 5.0), haut = rf(2.4, 3.6);
+      const mur = [.19,.175,.16], bois = [.14,.12,.10];
+      const a = Math.round(rnd()*4) * 1.5708;      // d'aplomb, mais orientée
+      const cs = Math.cos(a), sn = Math.sin(a);
+      const loc = (u, v) => [wx + cs*u - sn*v, 0, wz + sn*u + cs*v];
+
+      // quatre murs, dont un ou deux effondrés
+      const cotes = [[0,-prof/2, larg, 0], [0, prof/2, larg, 0],
+                     [-larg/2, 0, 0, prof], [larg/2, 0, 0, prof]];
+      const tombe = ri(0,3);
+      cotes.forEach(([ux, uz, lx, lz], k) => {
+        const p = loc(ux, uz);
+        if(k === tombe){
+          // le mur tombé : un tas de moellons en travers
+          for(let q=0;q<Math.round(5*D);q++)
+            eclat(parts, p[0]+rf(-lx/2,lx/2)+rf(-0.6,0.6),
+                  h, p[2]+rf(-lz/2,lz/2)+rf(-0.6,0.6), rf(.30,.62), mur);
+          return;
+        }
+        const hm = haut * rf(0.55, 1.0);           // arasé à hauteurs inégales
+        parts.push(bloc(p[0], h + hm/2, p[2],
+                        lx ? lx*Math.abs(cs)+0.3 : 0.3 + lz*Math.abs(sn)*0,
+                        hm,
+                        lz ? lz*Math.abs(cs)+0.3 : 0.3 + lx*Math.abs(sn)*0, mur, a));
+      });
+
+      // une charpente crevée : trois pannes en travers, pas de toit
+      if(D >= 1) for(let q=0;q<Math.round(3*D);q++){
+        const v = (q/Math.max(1,Math.round(3*D)-1) - 0.5) * prof * 0.8;
+        const p0 = loc(-larg/2, v), p1 = loc(larg/2, v);
+        if(rnd() < 0.3) continue;                  // certaines sont tombées
+        parts.push(colonne([p0[0], h+haut*rf(0.9,1.1), p0[2]], .10,
+                           [p1[0], h+haut*rf(0.9,1.1), p1[2]], .09, bois));
+      }
+
+      /* Une lueur dans l'encadrement : quelqu'un a laissé quelque chose
+         allumé, ou c'est du lichen. On ne dit pas lequel. */
+      if(rnd() < 0.55 && lights.length < SETUP.decor.maxLumieres){
+        const p = loc(0, 0);
+        parts.push(bloc(p[0], h+0.5, p[2], .5, .9, .5, [1.5,0.9,0.35], a, 1));
+        lights.push({x:p[0], y:h+1.0, z:p[2], c:[1.5,0.85,0.32], ph:rnd()*6.28});
+      }
+      solid = false; break; }
+
+    case 'carcasse': {
+      // une voiture, sur le flanc ou sur le toit. Jamais à l'endroit.
+      const L = rf(3.6, 4.6), W = rf(1.6, 1.9), H = rf(1.2, 1.5);
+      const a = rnd()*6.283;
+      const cs = Math.cos(a), sn = Math.sin(a);
+      const roule = rnd() < 0.5 ? 1.5708 : rf(-0.5, 0.5);   // sur le flanc, ou penchée
+      const tole = [.13,.115,.105], rouille = [.20,.11,.07];
+      const c1 = rnd() < 0.4 ? rouille : tole;
+
+      // caisse
+      parts.push({x:wx, y:h + (roule > 1 ? W/2 : H/2), z:wz,
+                  sx:L, sy:(roule > 1 ? W : H), sz:(roule > 1 ? H : W),
+                  c:c1, r:roule*0.35});
+      // pavillon, écrasé
+      parts.push({x:wx - cs*L*0.10, y:h + (roule > 1 ? W*0.55 : H*0.92), z:wz - sn*L*0.10,
+                  sx:L*0.52, sy:H*0.40, sz:W*0.86, c:[c1[0]*.8,c1[1]*.8,c1[2]*.8], r:roule*0.35});
+      // roues : celles qui restent
+      for(const [ox, oz] of [[L*0.34,W*0.5],[L*0.34,-W*0.5],[-L*0.34,W*0.5],[-L*0.34,-W*0.5]]){
+        if(rnd() < 0.28) continue;                 // il en manque toujours une
+        const px = wx + cs*ox - sn*oz, pz = wz + sn*ox + cs*oz;
+        parts.push(colonne([px, h+0.32, pz], .30, [px+cs*0.16, h+0.32, pz+sn*0.16], .30,
+                           [.055,.05,.05]));
+      }
+      // vitres brisées : quelques éclats au sol
+      for(let q=0;q<Math.round(4*D);q++)
+        parts.push(bloc(wx+rf(-L*0.6,L*0.6), h+0.03, wz+rf(-W,W),
+                        .10,.02,.10, [.30,.36,.36], rnd()*3, 0.15));
+      // le plafonnier tient encore, une fois sur trois
+      if(rnd() < 0.34 && lights.length < SETUP.decor.maxLumieres){
+        parts.push(bloc(wx, h+H*0.7, wz, .18,.06,.18, [2.0,1.9,1.5], 0, 1));
+        lights.push({x:wx, y:h+H*0.8, z:wz, c:[0.9,0.85,0.62], ph:rnd()*6.28});
+      }
+      colliders.push({x:wx, z:wz, r:Math.min(L*0.4, 1.4)});
+      solid = false; break; }
+
+    case 'lampadaire': {
+      const ht = rf(4.5, 7.0);
+      parts.push(colonne([wx,h,wz], .13, [wx,h+ht,wz], .09, [.17,.17,.18]));
+      // la crosse
+      const a = rnd()*6.283, cs = Math.cos(a), sn = Math.sin(a);
+      parts.push(colonne([wx,h+ht,wz], .09,
+                         [wx+cs*0.9, h+ht+0.22, wz+sn*0.9], .07, [.17,.17,.18]));
+      /* Deux sur trois marchent encore. C'est invraisemblable et c'est voulu :
+         un monde entièrement éteint est un monde qu'on ne peut pas parcourir. */
+      if(rnd() < 0.66){
+        const chaud = rnd() < 0.5 ? [2.4,1.7,0.7] : [1.5,1.9,2.2];
+        parts.push(bloc(wx+cs*1.0, h+ht+0.10, wz+sn*1.0, .34,.16,.34, chaud, 0, 1));
+        if(lights.length < SETUP.decor.maxLumieres)
+          lights.push({x:wx+cs*1.0, y:h+ht-0.1, z:wz+sn*1.0,
+                       c:[chaud[0]*0.75, chaud[1]*0.75, chaud[2]*0.75],
+                       ph:rnd()*6.28});
+      }
+      break; }
+
+    case 'pylone': {
+      const ht = rf(11, 22), br = rf(1.4, 2.4);
+      const mont = [.14,.135,.13];
+      // quatre montants qui convergent
+      const pied = [[br,br],[br,-br],[-br,br],[-br,-br]];
+      pied.forEach(([ox,oz]) => {
+        parts.push(colonne([wx+ox, h, wz+oz], .10,
+                           [wx+ox*0.22, h+ht, wz+oz*0.22], .07, mont));
+      });
+      // les croisillons
+      const N = Math.max(3, Math.round(6*D));
+      for(let k=0;k<N;k++){
+        const t0 = k/N, t1 = (k+1)/N;
+        const y0 = h+ht*t0, y1 = h+ht*t1;
+        const r0 = br*(1-t0*0.78), r1 = br*(1-t1*0.78);
+        for(let q=0;q<4;q++){
+          const a0 = q*1.5708, a1 = (q+1)*1.5708;
+          parts.push(colonne([wx+Math.cos(a0)*r0*1.41, y0, wz+Math.sin(a0)*r0*1.41], .04,
+                             [wx+Math.cos(a1)*r1*1.41, y1, wz+Math.sin(a1)*r1*1.41], .04, mont));
+        }
+      }
+      // la traverse du haut, et des câbles qui pendent
+      parts.push(colonne([wx-br*1.6, h+ht*0.92, wz], .07, [wx+br*1.6, h+ht*0.92, wz], .07, mont));
+      for(const sd of [1,-1])
+        parts.push(colonne([wx+sd*br*1.5, h+ht*0.92, wz], .03,
+                           [wx+sd*br*1.9, h+ht*rf(0.35,0.7), wz+rf(-1,1)], .02, [.09,.09,.09]));
+      break; }
+
+    /* ═══ CHAMPIGNONS LUMINESCENTS ═══
+       Le souterrain n'avait que des cristaux pour s'éclairer, et à 4× moins
+       dense qu'en v2 ça ne suffisait pas du tout. Ceux-ci poussent en touffes,
+       au sol et sur les parois, et donnent une lumière verte froide très
+       différente de l'orange des cristaux : on lit tout de suite où on est. */
+    case 'champignon': {
+      const n = ri(4, Math.round(9*D));
+      const vert = [0.30, 1.15, 0.62];
+      for(let k=0;k<n;k++){
+        const bx = wx+rf(-1.3,1.3), bz = wz+rf(-1.3,1.3);
+        const ht = rf(0.14, 0.52), br = rf(.05,.13);
+        parts.push(colonne([bx,h,bz], br, [bx,h+ht,bz], br*0.75, [.30,.28,.24]));
+        // le chapeau, émissif
+        parts.push({tube:[[bx,h+ht,bz], br*2.6, [bx,h+ht+ht*0.34,bz], br*0.5, 7],
+                    c:[vert[0]*1.5, vert[1]*1.5, vert[2]*1.5], emis:1});
+      }
+      if(lights.length < SETUP.decor.maxLumieres)
+        lights.push({x:wx, y:h+0.5, z:wz, c:vert, ph:rnd()*6.28});
+      solid = false; break; }
+
     case 'crane': {
       const co = [.76,.73,.64], a = rf(0,6.283);
       const cx2 = Math.cos(a), cz2 = Math.sin(a);
