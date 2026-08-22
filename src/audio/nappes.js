@@ -25,7 +25,7 @@
    glacière EST le geste.                                                    */
 
 import {SETUP} from '../setup.js';
-import {A, dbG, bruitBuffer, ping} from './contexte.js';
+import {A, dbG, bruitBuffer, bruitBrunBuffer, ping} from './contexte.js';
 
 /* ─────────────── modes ─────────────── */
 /* En demi-tons depuis la tonique. Ce sont tous des modes mineurs sombres. */
@@ -91,6 +91,7 @@ const N = {
   src:null, fb1:null, fb2:null, gb:null,
   horloge:null, horlogeEvt:null, horlogeAccord:null, retourMaree:null,
   accord:0, dernierDegre:null,
+  grondement:null,
   enTransition:false,
 };
 
@@ -142,36 +143,60 @@ function planifierMelodie(){
   }
   N.dernierDegre = i;
 
-  // 3 à 5 octaves au-dessus de la tonique : la mélodie plane loin au-dessus
-  // du grave, comme une voix dans une cathédrale vide.
-  const octave = 36 + [0,0,12,12,24][Math.floor(Math.random()*5)];
+  /* La mélodie plane au-dessus du grave — mais deux octaves plus bas qu'en
+     v3.0, où elle montait jusqu'à +60 demi-tons (660 Hz). À cette hauteur
+     elle sonnait « joli », pas menaçant. Entre +24 et +36, soit 80 à 220 Hz,
+     elle reste dans le registre sombre et se mêle aux pédales. */
+  const octave = 24 + [0,0,0,12,12][Math.floor(Math.random()*5)];
   const f = hz(d.racine, notes[i] + octave);
-  const db = -8 - i*2.5 - (octave > 40 ? 6 : 0);
+  const db = -7 - i*2.5 - (octave > 30 ? 4 : 0);
 
   jouerNote(f, db, d.duree * (0.8 + Math.random()*0.5), SETUP.audio.gainNote);
   N.horloge = setTimeout(planifierMelodie, d.ecart * (0.7 + Math.random()*0.8) * 1000);
 }
 
 /**
- * Les pédales : tonique et quinte, tenues, très graves, avec un LFO lent sur
- * le gain. Elles ne changent pas d'accord — elles sont le sol.
+ * Les pédales — le sol de la nappe.
+ *
+ * ── POURQUOI ÇA NE SONNAIT PAS « GRAVE » (v3.0) ────────────────────────────
+ * Retour de test : « ça doit être beaucoup plus grave et flippant ».
+ * Paradoxalement, c'était parce que c'était TROP bas. Les fondamentales
+ * étaient à 16–27 Hz : sous le seuil d'audition, et carrément absentes de
+ * n'importe quel haut-parleur d'ordinateur. On n'entendait donc pas un grave,
+ * on n'entendait RIEN, et il ne restait que la voix aiguë.
+ *
+ * Quatre voix maintenant, dont une seule est un vrai sub :
+ *   −12 dt   le SUB à la fréquence réelle du drone : on le sent, on ne
+ *            l'entend pas. Il donne le poids.
+ *     0      la tonique remontée d'une octave — 33 à 55 Hz, LE grave audible
+ *    +7      la quinte, même octave
+ *   +13      la neuvième mineure, très en retrait : c'est l'intervalle qui
+ *            gratte. Le « flippant » ne vient pas de la hauteur, il vient de
+ *            la dissonance tenue.
  */
 function monterPedale(d){
   const ctx = A.ctx, t = ctx.currentTime;
-  const voix = [[0, -5.0], [7, -9.5]];       // tonique, quinte juste
-  N.pedales = voix.map(([demi, db], i) => {
+  //            demi-tons, dB, type d'onde
+  const voix = [
+    [-12, -3.0, 'sine'],      // sub : le poids
+    [ 12, -5.5, 'sine'],      // tonique audible
+    [ 19, -11.0,'sine'],      // quinte
+    [ 25, -19.0,'triangle'],  // neuvième mineure : la dissonance qui gratte
+  ];
+  N.pedales = voix.map(([demi, db, type], i) => {
     const f = hz(d.racine, demi);
     const g = ctx.createGain(), cible = dbG(db) * SETUP.audio.gainPedale;
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(cible, t + 11);
     g.connect(A.pan);
-    const oscs = [-3,3].map(c => {
+    // deux oscillateurs désaccordés : ils battent, et le battement respire
+    const oscs = [-4, 4].map(c => {
       const o = ctx.createOscillator();
-      o.type = 'sine'; o.frequency.value = f; o.detune.value = c;
+      o.type = type; o.frequency.value = f; o.detune.value = c;
       o.connect(g); o.start(t); return o;
     });
     const lfo = ctx.createOscillator(); lfo.frequency.value = 0.043 + i*0.017;
-    const prof = ctx.createGain(); prof.gain.value = cible*0.22;
+    const prof = ctx.createGain(); prof.gain.value = cible*0.26;
     lfo.connect(prof).connect(g.gain); lfo.start(t);
     return {g, oscs, lfo};
   });
@@ -192,7 +217,8 @@ function monterMediane(d){
   g.connect(A.pan);
   const oscs = [-4, 4].map(c => {
     const o = ctx.createOscillator();
-    o.type = 'sine'; o.frequency.value = hz(d.racine, notes[1] + 24);
+    o.type = 'triangle';                 // un peu d'harmoniques : moins lisse
+    o.frequency.value = hz(d.racine, notes[1] + 12);
     o.detune.value = c; o.connect(g); o.start(t); return o;
   });
   N.mediane = {g, oscs};
@@ -209,7 +235,7 @@ function avancerAccord(){
   N.accord = (N.accord + 1) % d.progression.length;
   const notes = accordDe(d.mode, d.progression[N.accord]);
   if(N.mediane){
-    const t = A.ctx.currentTime, f = hz(d.racine, notes[1] + 24);
+    const t = A.ctx.currentTime, f = hz(d.racine, notes[1] + 12);
     N.mediane.oscs.forEach(o =>
       o.frequency.setTargetAtTime(f, t, SETUP.audio.accordFondu/3));
   }
@@ -244,7 +270,7 @@ function evtCloche(){
   const d = N.drone;
   const notes = accordDe(d.mode, d.progression[N.accord]);
   const n = notes[Math.floor(Math.random()*notes.length)];
-  jouerNote(hz(d.racine, n + 60), -24, 4, SETUP.audio.gainNote, {attaque:6, relache:12});
+  jouerNote(hz(d.racine, n + 48), -22, 4, SETUP.audio.gainNote, {attaque:6, relache:12});
 }
 
 /* La marée : la coupure du lit de bruit s'ouvre lentement puis se referme.
@@ -292,10 +318,35 @@ function planifierEvt(premier){
 
 /* ─────────────── montage / démontage ─────────────── */
 
+/**
+ * LE GRONDEMENT — nouveau en v3.1.
+ * Un bruit brun passé dans un passe-bas très résonant qui balaie lentement
+ * entre 40 et 110 Hz. Ce n'est pas une note : c'est une masse qui bouge sous
+ * le sol. C'est ce qui manquait pour que la nappe soit inquiétante en
+ * permanence plutôt que seulement triste.
+ */
+function monterGrondement(d){
+  const ctx = A.ctx, t = ctx.currentTime;
+  const src = ctx.createBufferSource();
+  src.buffer = bruitBrunBuffer(ctx, 11); src.loop = true;
+  const f1 = ctx.createBiquadFilter();
+  f1.type = 'lowpass'; f1.frequency.value = 70; f1.Q.value = 9;
+  const g = ctx.createGain(); g.gain.value = 0.0001;
+  g.gain.exponentialRampToValueAtTime(0.34, t + 9);
+  src.connect(f1).connect(g).connect(A.pan);
+  // balayage très lent : le sol respire
+  const lfo = ctx.createOscillator(); lfo.frequency.value = 0.023;
+  const prof = ctx.createGain(); prof.gain.value = 34;
+  lfo.connect(prof).connect(f1.frequency); lfo.start(t);
+  src.start();
+  N.grondement = {src, g, lfo, f1};
+}
+
 function monterDrone(d){
   N.drone = d; N.id = d.id; N.dernierDegre = null; N.accord = 0;
   monterPedale(d);
   monterMediane(d);
+  monterGrondement(d);
   construireBruit(d);
   planifierMelodie();
   planifierEvt(true);
@@ -327,7 +378,15 @@ function descendreDrone(apres){
     N.src.stop(t + rel + 0.3);
   }catch(e){} }
 
-  N.pedales = []; N.mediane = null;
+  if(N.grondement){ try{
+    N.grondement.g.gain.cancelScheduledValues(t);
+    N.grondement.g.gain.setValueAtTime(N.grondement.g.gain.value, t);
+    N.grondement.g.gain.linearRampToValueAtTime(0.0001, t + rel);
+    N.grondement.src.stop(t + rel + 0.3);
+    N.grondement.lfo.stop(t + rel + 0.3);
+  }catch(e){} }
+
+  N.pedales = []; N.mediane = null; N.grondement = null;
   N.src = N.gb = N.fb1 = N.fb2 = null;
   if(apres) setTimeout(apres, (rel + 0.4) * 1000);
 }

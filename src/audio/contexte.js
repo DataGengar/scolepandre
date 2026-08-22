@@ -20,8 +20,18 @@
 
 import {SETUP, abonner} from '../setup.js';
 
+/** Courbe tanh pour le WaveShaper : douce jusqu'à ~0.7, ferme ensuite. */
+function courbeEcreteur(k){
+  const n = 4096, c = new Float32Array(n);
+  for(let i=0;i<n;i++){
+    const x = (i/(n-1))*2 - 1;
+    c[i] = Math.tanh(x * k) / Math.tanh(k);
+  }
+  return c;
+}
+
 export const A = {
-  ctx:null, master:null, lim:null, bus:null, pan:null,
+  ctx:null, master:null, lim:null, ecreteur:null, bus:null, pan:null,
   conv:null, wet:null, dry:null, delai:null, retour:null, lfo:null,
   // filtre appliqué quand on est dans une cachette : le monde s'éloigne
   mur:null,
@@ -94,7 +104,15 @@ export function construire(){
   A.lim.ratio.value     = SETUP.audio.limiteurRatio;
   A.lim.attack.value    = 0.05;
   A.lim.release.value   = 0.7;
-  A.lim.connect(ctx.destination);
+  /* ÉCRÊTEUR DOUX en toute fin de chaîne. Le compresseur seul ne suffisait
+     pas : au-delà de son seuil il compresse, mais rien n'empêche la somme des
+     voix de dépasser 1 et de claquer numériquement. Une courbe en tangente
+     hyperbolique arrondit les crêtes au lieu de les couper — c'est la
+     différence entre « ça sature » et « ça pousse ». */
+  A.ecreteur = ctx.createWaveShaper();
+  A.ecreteur.curve = courbeEcreteur(SETUP.audio.ecreteurDoux);
+  A.ecreteur.oversample = '2x';
+  A.lim.connect(A.ecreteur).connect(ctx.destination);
 
   A.master = ctx.createGain(); A.master.gain.value = 0.0001;
   A.master.connect(A.lim);
@@ -176,11 +194,17 @@ export function ping(freq, dur, gain, type, dest){
 }
 
 /** Un panner HRTF prêt à l'emploi, branché sur le bus. */
-export function panner(distanceMax, rolloff){
+/**
+ * Un panner HRTF. `refDistance` est le rayon dans lequel il n'atténue pas du
+ * tout : le mettre grand fait du panner un pur outil de DIRECTION, et laisse
+ * l'appelant gérer l'éloignement avec sa propre courbe. C'est ce qu'il faut
+ * pour la créature, dont la double atténuation la rendait inaudible.
+ */
+export function panner(distanceMax, rolloff, refDistance = 2){
   const p = A.ctx.createPanner();
   p.panningModel = 'HRTF';
   p.distanceModel = 'inverse';
-  p.refDistance = 2;
+  p.refDistance = refDistance;
   p.maxDistance = distanceMax;
   p.rolloffFactor = rolloff;
   p.connect(A.bus);

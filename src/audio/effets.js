@@ -22,13 +22,22 @@ export function ramasse(){
   setTimeout(() => ping(1050, 0.10, 0.10, 'sine'), 55);
 }
 
-/** Ramassage d'une carte. Le rang décide de la hauteur : on entend la rareté. */
+/** Ramassage d'une carte. Le rang décide de la hauteur : on entend la rareté.
+    Relevé en v3.1 — le son existait mais disparaissait sous la saturation
+    générale, qui est corrigée par ailleurs (écrêteur doux dans contexte.js). */
 export function carte(rang){
-  ping(520 + rang*260, 0.30, 0.24, 'triangle');
-  setTimeout(() => ping(780 + rang*360, 0.40, 0.21, 'sine'), 90);
-  setTimeout(() => ping(1170 + rang*450, 0.50, 0.15, 'sine'), 190);
-  if(rang >= 2)   // légendaire : une quatrième voix, très haute
-    setTimeout(() => ping(2340, 0.90, 0.10, 'sine'), 320);
+  const f = 520 + rang*260;
+  ping(f,        0.34, 0.40, 'triangle');
+  setTimeout(() => ping(f*1.5,  0.44, 0.34, 'sine'), 85);
+  setTimeout(() => ping(f*2.0,  0.55, 0.26, 'sine'), 175);
+  setTimeout(() => ping(f*3.0,  0.70, 0.16, 'sine'), 265);
+  // une nappe brève par-dessous : la prise a du corps
+  souffleFiltre(0.9, f*0.6, 0.10);
+  if(rang >= 2){
+    // légendaire : une quinte qui monte et tient
+    setTimeout(() => ping(f*4.0, 1.20, 0.13, 'sine'), 360);
+    setTimeout(() => ping(f*6.0, 1.60, 0.08, 'sine'), 520);
+  }
 }
 
 export const lance  = () => ping(300, 0.09, 0.11, 'triangle');
@@ -67,6 +76,35 @@ function souffleFiltre(duree, freq, gain){
   s.connect(f).connect(g).connect(A.bus);
   s.start(t); s.stop(t + duree + 0.05);
   s.onended = () => { try{ g.disconnect(); }catch(e){} };
+}
+
+/** Un feu qui prend : le frottement, puis le souffle qui s'installe. */
+export function feu(){
+  souffleFiltre(0.45, 900, 0.13);
+  setTimeout(() => souffleFiltre(1.6, 240, 0.16), 220);
+  setTimeout(() => ping(70, 0.5, 0.09, 'triangle'), 260);
+}
+
+/** Une fusée qu'on amorce : le crachement sec, puis la combustion. */
+export function fusee(){
+  souffleFiltre(0.14, 2400, 0.22);
+  setTimeout(() => souffleFiltre(1.1, 1300, 0.15), 90);
+  ping(880, 0.10, 0.14, 'square');
+}
+
+/** Une trousse médicale : deux notes montantes, franches. Le seul son
+    franchement positif du jeu — il doit s'entendre comme un soulagement. */
+export function soin(){
+  ping(520, 0.16, 0.19, 'sine');
+  setTimeout(() => ping(784, 0.22, 0.17, 'sine'), 110);
+  setTimeout(() => ping(1046, 0.34, 0.12, 'sine'), 220);
+}
+
+/** Une morsure de jeune : impact mat, craquement, et un cri étouffé. */
+export function morsure(){
+  ping(120, 0.10, 0.26, 'square');
+  souffleFiltre(0.22, 620, 0.20);
+  setTimeout(() => souffleFiltre(0.5, 340, 0.13), 120);
 }
 
 /** Battement de cœur en hypothermie. Deux coups, comme il se doit. */
