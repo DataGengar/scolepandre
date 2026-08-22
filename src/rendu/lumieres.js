@@ -17,6 +17,12 @@ import {CH, CHW, CHH, w2c} from '../monde/grille.js';
 import {lampesParPave} from '../monde/maillage.js';
 import {lumieresTemporaires} from '../creatures/geometrie.js';
 
+/* Lumières dynamiques hors créatures : feux de camp, fusées, loupiotes de
+   pancartes. jeu.js les remplit à chaque image, avant le rendu. Elles passent
+   AVANT le décor dans le choix des sources — un feu qu'on vient d'allumer doit
+   éclairer, même s'il y a des cristaux plus près. */
+export const lumieresDynamiques = [];
+
 export const lpArr = new Float32Array(NLIGHT*3);
 export const lcArr = new Float32Array(NLIGHT*3);
 
@@ -46,6 +52,9 @@ export function choisirLumieres(px, pz, temps){
     if(forcees++ >= 4) break;
     inserer(L, ((L.x-px)**2 + (L.z-pz)**2) * 0.06);
   }
+  // feux, fusées, pancartes : prioritaires eux aussi, mais moins que les yeux
+  for(const L of lumieresDynamiques)
+    inserer(L, ((L.x-px)**2 + (L.z-pz)**2) * 0.30);
 
   const cx = (w2c(px)/CH)|0, cz = (w2c(pz)/CH)|0;
   for(let dz=-1;dz<=1;dz++) for(let dx=-1;dx<=1;dx++){

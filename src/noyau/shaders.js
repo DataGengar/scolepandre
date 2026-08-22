@@ -2,15 +2,29 @@
    Les quatre sources GLSL du jeu, isolées ici pour qu'on puisse les lire sans
    dérouler le pipeline.
 
-     VS  / FS   passe monde : décor, décor cuit, créature
+     VS  / FS   passe monde : décor, décor cuit, créature, lune
      VSP / FSP  passe écran : godrays, tramage, grain, vignette, neige, froid
 
-   Deux évolutions par rapport à la v2 :
-     · NLIGHT passe de 6 à 10. Les yeux de la créature occupent deux emplacements
-       et il ne fallait pas qu'ils évincent les repères du décor.
-     · FSP reçoit uVision et uFroid : le rétrécissement du champ et la
-       désaturation sont les effets visibles des paliers de froid. Sans eux la
-       règle du froid resterait un nombre dans un coin du HUD.                */
+   ── CE QUI A CHANGÉ EN v3.1, ET POURQUOI ───────────────────────────────────
+   Retour de test : « on ne voit absolument rien, genre rien ». Mesuré, c'était
+   vrai — trois causes dans ce fichier :
+
+   1. LA « TORCHE » N'EN ÉTAIT PAS UNE. Un cône mou en pow(cos,3) et une
+      atténuation exp(-d×0.085), soit 18 % à 20 m. Remplacée par une vraie
+      LAMPE DE POCHE : cœur net, bord franc via smoothstep, nappe faible
+      autour, portée de plusieurs dizaines de mètres. Tous les paramètres
+      viennent de SETUP.lampe.
+
+   2. LES LUMIÈRES DU DÉCOR MOURAIENT À 5 M. L'atténuation
+      1/(1+0.22d+0.16d²) ne laissait que 16 % à 5 m : cristaux, fenêtres et
+      braseros n'éclairaient plus rien. Les coefficients sont désormais des
+      uniformes (SETUP.lumiereDecor).
+
+   3. LA VIGNETTE MANGEAIT 92 % DES BORDS. Réglable, 55 % par défaut.
+
+   Plus deux ajouts : uEmit est maintenant TEINTÉ (les cartes retrouvent leur
+   halo coloré) et le monde extérieur a une LUNE BRISÉE, dessinée comme un
+   fond de ciel avec uCiel.                                                  */
 
 export const NLIGHT = 10;
 
@@ -31,30 +45,52 @@ precision highp float;
 in vec3 vN,vC,vW;
 uniform vec3 uCam,uFwd,uFog,uTint;
 uniform float uFogD,uEmit,uLampGain,uAmb;
+uniform float uConeIn,uConeOut,uFaisceau,uHalo,uPortee;
+uniform float uAttLin,uAttQuad,uGainPt;
+uniform float uCiel;                       // 1 = fond de ciel : ni fog ni lumière
 uniform vec3 uLP[${NLIGHT}],uLC[${NLIGHT}];
 uniform int uLN;
 out vec4 frag;
+
 void main(){
-  vec3 toCam=uCam-vW; float d=length(toCam);
-  vec3 L=toCam/max(d,1e-4), N=normalize(vN);
-
-  // lampe frontale : un cône serré posé sur une faible diffusion
-  float cone=pow(max(dot(-L,uFwd),0.0),3.0);
-  float lamp=max(dot(N,L),0.0)*exp(-d*0.085)*(0.28+1.30*cone)*uLampGain;
-
-  // sources fixes du décor : les seuls repères dans le fog.
-  // Les yeux de la créature entrent par ce même tableau — c'est ce qui les
-  // rend visibles de très loin sans code de rendu dédié.
-  vec3 pt=vec3(0.0);
-  for(int i=0;i<${NLIGHT};i++){
-    if(i>=uLN) break;
-    vec3 dl=uLP[i]-vW; float dd=length(dl);
-    pt += uLC[i]*max(dot(N,dl/max(dd,1e-4)),0.0)/(1.0+0.22*dd+0.16*dd*dd);
+  /* FOND DE CIEL — la lune. Aucun éclairage, aucune brume : elle est à
+     260 m et n'importe quelle brume l'effacerait. On sort tout de suite. */
+  if(uCiel > 0.5){
+    frag = vec4(vC * uTint * uEmit, 1.0);
+    return;
   }
 
-  vec3 col=vC*uTint*(uAmb+lamp)+vC*uTint*pt+vC*uEmit;
-  float f=exp(-pow(max(d-0.6,0.0)*uFogD*0.01,2.0));
-  frag=vec4(mix(uFog,col,clamp(f,0.0,1.0)),1.0);
+  vec3 toCam = uCam - vW;
+  float d = length(toCam);
+  vec3 L = toCam / max(d, 1e-4), N = normalize(vN);
+
+  /* ── LAMPE DE POCHE ──
+     ang est le cosinus de l'angle entre l'axe du regard et la direction du
+     point éclairé. smoothstep entre le bord et le cœur donne un vrai disque
+     de lumière avec une frange, là où pow(cos,3) donnait une bouillie. */
+  float ang = max(dot(-L, uFwd), 0.0);
+  float faisceau = smoothstep(uConeOut, uConeIn, ang);
+  float portee = exp(-d * uPortee);
+  float lamp = max(dot(N, L), 0.0) * portee * (uHalo + uFaisceau * faisceau) * uLampGain;
+
+  /* Sources fixes du décor : les seuls repères dans la brume quand la lampe
+     est éteinte. Les yeux de la créature entrent par ce même tableau — c'est
+     ce qui les rend visibles de très loin sans code de rendu dédié. */
+  vec3 pt = vec3(0.0);
+  for(int i=0;i<${NLIGHT};i++){
+    if(i >= uLN) break;
+    vec3 dl = uLP[i] - vW;
+    float dd = length(dl);
+    pt += uLC[i] * max(dot(N, dl/max(dd,1e-4)), 0.0)
+          / (1.0 + uAttLin*dd + uAttQuad*dd*dd);
+  }
+  pt *= uGainPt;
+
+  // uEmit est TEINTÉ : sans ça le halo d'une carte rare sortait blanc.
+  vec3 col = vC*uTint*(uAmb + lamp) + vC*uTint*pt + vC*uTint*uEmit;
+
+  float f = exp(-pow(max(d-0.6,0.0)*uFogD*0.01, 2.0));
+  frag = vec4(mix(uFog, col, clamp(f,0.0,1.0)), 1.0);
 }`;
 
 export const VSP = `#version 300 es
@@ -69,7 +105,7 @@ precision highp float;
 in vec2 vUv; out vec4 frag;
 uniform sampler2D uTex;
 uniform vec2 uRes;
-uniform float uTime,uGrain,uDread,uSnow,uRays,uWind,uVision,uFroid,uCoeur;
+uniform float uTime,uGrain,uDread,uSnow,uRays,uWind,uVision,uFroid,uCoeur,uVign;
 uniform vec2 uSun[3];
 uniform vec3 uSunC[3];
 uniform int uSunN;
@@ -83,7 +119,7 @@ void main(){
      pixel vers la source lumineuse en accumulant ce qui brille sur le trajet :
      là où le décor coupe le rayon, l'accumulation s'arrête, et les colonnes de
      lumière se découpent dans le fog. Les yeux de la créature sont éligibles
-     comme sources : deux traits rouges dans la brume, bien avant sa silhouette. */
+     comme sources : deux traits rouges dans la brume, avant sa silhouette. */
   if(uRays>0.01){
     for(int L=0;L<3;L++){
       if(L>=uSunN) break;
@@ -110,11 +146,11 @@ void main(){
   float n=rnd(px+vec2(fract(uTime*37.0)*91.0,fract(uTime*23.0)*57.0))-0.5;
   c+=n*uGrain*(0.55+0.9*(1.0-length(c)));
 
-  /* VIGNETTE — c'est elle qui porte le rétrécissement du champ dû au froid.
-     uVision vaut 1 quand on va bien, 0.68 en hypothermie : le cercle se
-     referme, on voit littéralement moins. */
+  /* VIGNETTE — elle porte aussi le rétrécissement du champ dû au froid.
+     uVign valait 0.92 en dur : les bords de l'écran étaient noirs et on
+     jouait dans un trou de serrure. */
   float r=length(vUv-0.5)*1.42/max(uVision,0.30);
-  c*=1.0-0.92*pow(clamp(r,0.0,1.0),2.3);
+  c*=1.0-uVign*pow(clamp(r,0.0,1.0),2.3);
 
   // battement de cœur en hypothermie : la vignette pulse
   if(uCoeur>0.001){
@@ -132,8 +168,9 @@ void main(){
     c=mix(c,vec3(g*0.78,g*0.90,g*1.16),uFroid);
   }
 
-  // neige : trois nappes de profondeurs différentes, tombant à des vitesses
-  // différentes. Presque gratuit à 360 px de haut, et ça fait le dehors.
+  /* NEIGE — uniquement à ciel ouvert. En v3.0 elle suivait le biome, et la
+     glacière étant SOUTERRAINE, il neigeait dans les grottes. Le pilote est
+     maintenant l'ouverture réelle du ciel au-dessus du joueur. */
   if(uSnow>0.01){
     float n2=0.0;
     for(int L=0;L<3;L++){
@@ -152,7 +189,9 @@ void main(){
 /** Noms des uniformes, pour unis(). Tenus à côté des sources exprès : ajouter
     un uniforme sans l'ajouter ici est l'erreur classique. */
 export const UNIS_MONDE = ['uProj','uView','uModel','uCam','uFwd','uFog','uFogD',
-  'uTint','uEmit','uLampGain','uAmb','uLP','uLC','uLN'];
+  'uTint','uEmit','uLampGain','uAmb','uLP','uLC','uLN',
+  'uConeIn','uConeOut','uFaisceau','uHalo','uPortee',
+  'uAttLin','uAttQuad','uGainPt','uCiel'];
 
 export const UNIS_POST = ['uTex','uRes','uTime','uGrain','uDread','uSnow','uRays',
-  'uWind','uVision','uFroid','uCoeur','uSun','uSunC','uSunN'];
+  'uWind','uVision','uFroid','uCoeur','uVign','uSun','uSunC','uSunN'];

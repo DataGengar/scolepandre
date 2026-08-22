@@ -65,6 +65,10 @@ export const SETUP = {
     gouffreLargMin:9,
     gouffreLargMax:28,
 
+    /* Rampes d'éboulis : elles FRANCHISSENT une falaise, au lieu des
+       plateformes flottantes de la v3.0 qui ne reliaient rien. */
+    nbRampes:420,
+
     nbPonts:260,
     pontLongMin:14,
     pontLongMax:46,
@@ -85,15 +89,58 @@ export const SETUP = {
     // une seule valeur, lue par le seul module qui applique la règle du froid.
   },
 
-  /* ─────────────── IMAGE ─────────────── */
+  /* ─────────────── IMAGE ───────────────
+     La v3.0 mettait fog et godrays à 75 % du maximum, littéralement. Mesuré
+     ensuite : à 10 m on ne voyait plus que 2 % d'un objet dans la glacière,
+     16 % dans le souterrain. Ce n'était pas oppressant, c'était noir.
+     Ramené à un niveau où l'on distingue le relief à 20 m et où la brume
+     avale à 35 m. Les curseurs restent là pour durcir si tu veux.          */
   image:{
-    // 75 % du maximum du curseur, comme demandé. Épais et oppressant.
-    fog:2.625,   fogMax:3.5,
-    rays:2.25,   raysMax:3.0,
+    fog:1.05,    fogMax:3.5,
+    rays:1.35,   raysMax:3.0,
+    ambiance:1.0,        // multiplicateur global de la lumière ambiante
+    vignette:0.55,       // 0.92 en v3.0 : les bords de l'écran étaient noirs
     grain:0.115,
     res:360,             // hauteur du tampon interne, en pixels
     detail:1.0,          // multiplicateur de polycount du décor
     fov:1.30,
+  },
+
+  /* ─────────────── LAMPE DE POCHE ───────────────
+     La v3.0 avait « une torche » : un cône mou en pow(cos,3) qui s'éteignait
+     en exp(-d*0.085), soit 18 % à 20 m. On n'éclairait rien.
+     Ici c'est une vraie lampe de poche : un cœur net, un bord franc, une
+     nappe faible autour, et une portée de plusieurs dizaines de mètres.     */
+  lampe:{
+    coneInterieur:0.955,  // cos de l'angle du cœur    (~17°)
+    coneExterieur:0.74,   // cos de l'angle du bord    (~42°)
+    intensite:5.4,        // le faisceau
+    halo:0.20,            // ce qui déborde autour, très faible
+    portee:0.028,         // atténuation par mètre : exp(-d × portee)
+    gainEteinte:0.05,     // lampe éteinte : il reste un rien
+  },
+
+  /* ─────────────── LUMIÈRES DU DÉCOR ───────────────
+     Cristaux, fenêtres, braseros, lèvres de gouffre. En v3.0 leur atténuation
+     1/(1+0.22d+0.16d²) les tuait à 5 m : elles ne servaient plus à rien.     */
+  lumiereDecor:{
+    attenLin:0.07,
+    attenQuad:0.020,
+    gain:2.2,
+  },
+
+  /* ─────────────── LUNE BRISÉE ───────────────
+     Dehors seulement. Éclate en fragments dérivants, façon lune fracturée.
+     Elle n'éclaire presque pas : c'est l'ambiante du biome qui porte la
+     clarté, la lune donne la direction et le motif.                         */
+  lune:{
+    distance:260,
+    rayon:26,
+    fragments:11,
+    couleur:[0.62,0.68,0.86],
+    eclat:1.15,
+    hauteur:0.42,        // hauteur dans le ciel, 0 = horizon, 1 = zénith
+    azimut:2.3,
   },
 
   /* ─────────────── CAMÉRA : tremblement sismique ─────────────── */
@@ -129,11 +176,16 @@ export const SETUP = {
   froid:{
     depart:100,
 
-    // base par biome, dans l'ordre exact de la table BIOMES
-    base:[0.35, 1.6, 0.50, 2.2, 0.60],
+    /* base par biome, dans l'ordre exact de la table BIOMES.
+       v3.0 : [0.35, 1.6, 0.50, 2.2, 0.60] — sur la surface gelée on passait
+       de 100 à 0 en 45 secondes, moins avec le vent. Impossible de trouver un
+       brasero à temps, et il n'y en avait que trois sur 1 632 m.
+       Divisé par ~4, et le nombre de sources de chaleur multiplié par 5. */
+    base:[0.09, 0.30, 0.12, 0.42, 0.14],
     //   souterrain glacière barrage surface ville
+    //   ~18 min     5,5 min  14 min  4 min   12 min
 
-    exposVent:1.4,       // exposition = 1 + exposVent × force_du_vent
+    exposVent:0.8,       // exposition = 1 + exposVent × force_du_vent (1.4 en v3.0)
     exposPlafondBas:0.5, // sous un plafond bas, on est abrité
     exposCachette:0.0,   // à l'abri, aucune perte
 
@@ -147,6 +199,7 @@ export const SETUP = {
 
     gainBrasero:14,
     gainCachette:3.5,
+    gainFeu:9,           // feu de camp allumé avec du bois ramassé
 
     // Les quatre paliers. Franchir un seuil affiche un message.
     paliers:[
@@ -160,10 +213,10 @@ export const SETUP = {
 
   /* ─────────────── TORCHE ─────────────── */
   torche:{
-    conso:0.0125,        // fraction par seconde
+    conso:0.0085,        // fraction par seconde (0.0125 en v3.0)
     recharge:0.34,       // par combustible ramassé
     rechargeBrasero:0.22,
-    nbCombustibles:260,
+    nbCombustibles:900,  // 260 — même remise à l'échelle que le décor
   },
 
   /* ─────────────── TRACES ET PERCEPTION ─────────────── */
@@ -204,9 +257,17 @@ export const SETUP = {
   /* ─────────────── JEUNES ─────────────── */
   jeunes:{
     maxParProfondeur:9,
-    vitesseErrance:1.7,
-    vitesseCharge:4.2,
-    porteeCharge:13,
+    vitesseErrance:1.3,
+    /* 4.2 en v3.0, contre 3.2 en marche pour le joueur : ils rattrapaient
+       quelqu'un qui marche, et rien ne les détournait. Ils sont maintenant
+       plus lents que la marche, s'essoufflent, et un leurre les fixe. */
+    vitesseCharge:2.9,
+    endurance:7,         // secondes de charge avant de renoncer
+    repos:6,             // secondes avant de pouvoir recharger
+    porteeLeurre:26,     // un leurre qui tombe les attire de loin
+    fixationLeurre:7,    // secondes pendant lesquelles ils l'étudient
+    peurDuFeu:9,         // mètres : ils fuient une torche brandie ou un feu
+    porteeCharge:11,
     budgetAStar:2000,
     repath:0.8,
     // Détecteur de blocage — c'était le bug : ils restaient plantés dans un mur
@@ -219,15 +280,19 @@ export const SETUP = {
 
   /* ─────────────── AUDIO ─────────────── */
   audio:{
-    volume:90,           // 82 en v2 — la nappe était trop faible
-    // gainMaitre = (v/100)^courbe × facteur
-    courbeVolume:1.20,   // 1.55 en v2 : écrasait le bas du curseur
-    facteurVolume:1.60,  // 1.05 en v2
+    volume:82,
+    /* gainMaitre = (v/100)^courbe × facteur.
+       v3.0 : facteur 1.60 → un gain maître de 1.41 à volume 90, soit bien
+       au-dessus de 1. Ça saturait en permanence, vent ou pas. Ramené sous 1,
+       et un écrêteur doux (WaveShaper) est ajouté en bout de chaîne pour que
+       les crêtes s'arrondissent au lieu de claquer. */
+    courbeVolume:1.20,
+    facteurVolume:0.82,
+    ecreteurDoux:2.4,    // dureté de la courbe tanh de fin de chaîne
 
-    // Le limiteur écrasait la nappe. Desserré.
-    limiteurSeuil:-8,    // −12 en v2
-    limiteurRatio:6,     // 12 en v2
-    limiteurKnee:10,
+    limiteurSeuil:-10,
+    limiteurRatio:8,
+    limiteurKnee:12,
 
     gainNote:0.52,       // 0.30 en v2
     gainPedale:0.34,     // 0.26 en v2
@@ -239,16 +304,90 @@ export const SETUP = {
     reverbCourte:3.5,    // boyau exigu
     reverbLongue:16,     // grande salle
 
-    // Portée de la créature — très augmentée
-    creatureDistanceMax:110,   // 40 en v2
-    creatureRolloff:0.75,      // 1.1 en v2
-    creaturePorteeMenace:95,   // 34 en v2
-    creaturePorteeInfra:150,   // NOUVEAU : on la sent avant de l'entendre
-    jeunesPortee:55,           // 22 en v2
+    /* ─── PORTÉE DE LA CRÉATURE ───
+       LE BUG DE LA v3.0 : le panner HRTF atténuait avec la distance, ET une
+       courbe explicite atténuait encore par-dessus. Mesuré, il ne restait que
+       1 % du signal à 30 m et 0,01 % à 80 m : on ne l'entendait littéralement
+       jamais. Le panner ne sert plus qu'à DONNER LA DIRECTION — refDistance
+       très grand et rolloff quasi nul — et c'est la courbe qui porte seule
+       l'éloignement. */
+    creatureDistanceMax:400,   // le panner ne coupe plus rien
+    creatureRefDistance:30,
+    creatureRolloff:0.15,
+    creaturePorteeMenace:105,
+    creatureCourbe:1.4,        // exposant : plus bas = s'entend de plus loin
+    creatureGain:0.62,         // en approche
+    creatureGainChasse:0.95,   // en poursuite
+    creaturePorteeInfra:170,   // on la sent avant de l'entendre
+    creaturePorteePanique:14,  // en deçà : la couche « elle est SUR toi »
+    jeunesPortee:70,
+    jeunesRefDistance:18,
 
     vent:{gain:0.55, dureeRafale:[4,12], ecartRafale:[9,34]},
     gouttes:{tauxMin:0.15, tauxMax:1.4, portee:26},
     effondrement:{intervalle:[60,180], portee:60, secousse:0.8, duree:3},
+  },
+
+  /* ─────────────── VILLAGES ENGLOUTIS ───────────────
+     « Placer des zones d'anciens villages dépeuplés car tous mangés, mais qui
+     ont une safe zone et des trousses médicales épuisables. »
+     Un village est un amas de maisons, de carcasses et de lampadaires autour
+     d'une place barricadée. Rare, mais on le voit de loin à ses lumières. */
+  villages:{
+    nombre:22,
+    rayon:26,            // mètres
+    maisons:[6,14],
+    carcasses:[3,9],
+    lampadaires:[2,6],
+    ecartMin:190,
+    trousses:[1,3],      // par village, épuisables
+    boisParVillage:[3,7],
+    /* La place barricadée : la créature refuse d'y entrer, les jeunes aussi.
+       Ce n'est pas magique — c'est un cercle de feux et de ferraille. */
+    safeRayon:9,
+    safeChaleur:11,      // on s'y réchauffe presque comme à un brasero
+  },
+
+  /* ─────────────── SANTÉ ───────────────
+     Il n'y avait aucun point de vie en v3.0 : on mourait d'un coup. Les
+     trousses médicales demandées impliquaient de pouvoir être blessé. */
+  sante:{
+    max:100,
+    degatsJeune:22,      // une morsure de jeune
+    degatsChute:9,       // par mètre au-delà du seuil de dégât
+    degatsFroid:3.5,     // par seconde à zéro de chaleur
+    invulnerabilite:1.1, // secondes après un coup
+    regen:0.35,          // par seconde, très lent, seulement au repos
+    seuilRepos:12,       // ne régénère qu'après ce délai sans blessure
+    soinTrousse:45,
+  },
+
+  /* ─────────────── FEU : BOIS, FEUX DE CAMP, FUSÉES ───────────────
+     « Trouver du bois pour se réchauffer » et « donner au joueur le moyen
+     d'avoir une arme ou un objet pour se défendre ». */
+  feu:{
+    nbBois:700,          // fagots au sol
+    maxBoisPorte:6,
+    dureeFeu:150,        // secondes de combustion d'un feu de camp
+    rayonFeu:6,          // mètres où l'on se réchauffe
+    portéeRepulsion:9,   // mètres : les jeunes n'approchent pas
+
+    nbFusees:180,        // fusées de détresse au sol
+    maxFuseesPortees:4,
+    dureeFusee:26,
+    rayonFusee:14,       // elles éclairent LARGE : c'est leur intérêt premier
+    /* Brandir la lampe : les jeunes reculent, mais ça consomme le jus vite.
+       C'est la défense de dernier recours, pas une arme. */
+    brandirConso:0.06,
+  },
+
+  /* ─────────────── PANCARTES ───────────────
+     « Laisser des pancartes avec possibilité d'écrire des messages et une
+     petite loupiotte qui clignote pour dire que je suis déjà passé ici. » */
+  pancartes:{
+    maxPosees:60,
+    porteeLecture:4,
+    clignotement:1.6,    // période en secondes
   },
 
   /* ─────────────── CARTES À COLLECTIONNER ───────────────
@@ -259,13 +398,17 @@ export const SETUP = {
     essaisPlacement:48000,
   },
 
-  /* ─────────────── DÉCOR ─────────────── */
+  /* ─────────────── DÉCOR ───────────────
+     LA RÉGRESSION LA PLUS VISIBLE DE LA v3.0 : la grille est passée de 544² à
+     1088², soit quatre fois plus de cellules, et ces compteurs n'ont pas
+     bougé. Le décor et les lumières étaient donc QUATRE FOIS moins denses
+     qu'en v2 — d'où un monde vide et noir. Tout est remis à l'échelle.      */
   decor:{
-    semis:26000,
-    ossuaires:260,
-    maxLumieres:3200,
-    nbLeurres:600,
-    nbRefuges:3,
+    semis:104000,        // 26 000 en v3.0
+    ossuaires:1000,      // 260
+    maxLumieres:13000,   // 3 200
+    nbLeurres:1400,      // 600
+    nbRefuges:14,        // 3 — trois braseros sur 1 632 m, c'était introuvable
   },
 };
 
@@ -279,6 +422,11 @@ export const CURSEURS = [
   // peuvent donc pas se désynchroniser d'un curseur écrit à la main.
   {chemin:'image.fog',    nom:'Densité du fog',     min:0.4,max:SETUP.image.fogMax,  pas:0.05, fmt:v=>'×'+v.toFixed(2)},
   {chemin:'image.rays',   nom:'Godrays',            min:0,  max:SETUP.image.raysMax, pas:0.05, fmt:v=>'×'+v.toFixed(2)},
+  {chemin:'image.ambiance',nom:'Lumière ambiante',  min:0.2,max:2.5, pas:0.05, fmt:v=>'×'+v.toFixed(2)},
+  {chemin:'image.vignette',nom:'Vignette',          min:0,  max:0.95,pas:0.05, fmt:v=>(v*100).toFixed(0)+' %'},
+  {chemin:'lampe.intensite',nom:'Puissance de la lampe',min:1,max:12,pas:0.2, fmt:v=>'×'+v.toFixed(1)},
+  {chemin:'lampe.portee',  nom:'Portée de la lampe', min:0.010,max:0.09,pas:0.002,
+   fmt:v=>(Math.log(0.15)/-v).toFixed(0)+' m'},
   {chemin:'image.grain',  nom:'Grain',              min:0,  max:0.3, pas:0.005,fmt:v=>v.toFixed(3)},
   {chemin:'image.res',    nom:'Résolution interne', min:140,max:900, pas:10,   fmt:v=>v.toFixed(0)+' p'},
   {chemin:'image.detail', nom:'Détail du décor',    min:0.5,max:2,   pas:0.1,  fmt:v=>'×'+v.toFixed(1)},
