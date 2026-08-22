@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════════════════════
-   SCOLÉOPANDRE v3 — ASSEMBLAGE ET BOUCLE
+   SCOLOPANDRE v3 — ASSEMBLAGE ET BOUCLE
    ──────────────────────────────────────────────────────────────────────────
    Ce fichier ne contient aucune règle de jeu. Il branche les modules les uns
    aux autres et fait tourner la boucle. Si tu cherches un comportement, il
@@ -32,6 +32,10 @@ import {addProp} from './monde/props.js';
 import {majPaves, indexerProps, libererTousLesPaves, paves} from './monde/maillage.js';
 import {placerSortie, atteinte, objectif} from './monde/sortie.js';
 import {lireCartePNG} from './monde/import-png.js';
+import {villages, trousses, bois, fusees, dansSafe} from './monde/villages.js';
+import {pancartes, chargerPancartes, poser as poserPancarte,
+        pancarteProche, retirer as retirerPancarte,
+        lumieresPancartes} from './monde/pancartes.js';
 
 import {RANGS} from './carte/rangs.js';
 import {sonderStacks, identite} from './carte/catalogue.js';
@@ -41,7 +45,8 @@ import {possede, ajouter, charger as chargerCollection, majAffichage} from './ca
 import {ST} from './creatures/etats.js';
 import {directeur} from './creatures/directeur.js';
 import {creature, spawnCreature, updateCreature, brancherCri} from './creatures/mere.js';
-import {jeunes, majPopulation, updateJeunes, viderJeunes, brancherStridulation} from './creatures/jeunes.js';
+import {jeunes, majPopulation, updateJeunes, viderJeunes, brancherStridulation,
+        brancherFeu, attirerJeunes} from './creatures/jeunes.js';
 import {creerCreature} from './creatures/geometrie.js';
 
 import {
@@ -57,10 +62,17 @@ import {
 import {
   leurres, placerLeurres, reprendreTous, ramasserLeurres, lancer, updateVol,
 } from './joueur/leurres.js';
+import {sante, reinitialiserSante, blesser, ramasserTrousse, updateSante,
+        gravite} from './joueur/sante.js';
+import {
+  feux, fuseesActives, inventaire, reinitialiserFeu, ramasser as ramasserFeu,
+  allumerFeu, lancerFusee, updateFeu, feuProche, lumieresDuFeu, chaleurDuFeu,
+} from './joueur/feu.js';
 
 import * as Audio from './audio/index.js';
 import {proj, view, cam, majTremblement, construireVue} from './rendu/camera.js';
 import {rendre, resize, visuel, tampon} from './rendu/pipeline.js';
+import {lumieresDynamiques} from './rendu/lumieres.js';
 import {dessinerScope, basculer as basculerScope} from './rendu/sismographe.js';
 import {construireMenu, ouvrirChargement, majChargement, fermerChargement,
         afficherVoile, messageMenu} from './ui/menu.js';
@@ -74,6 +86,7 @@ const jeu = {
   attrapeT:0, causeMort:'',
   biome:0,
   ventX:0, ventZ:0, ventForce:0,
+  cielOuvert:0,          // 1 quand rien ne nous sépare du ciel : neige et lune
   secousseEvt:0,
   meshCarte:null,
   pret:false,
@@ -120,7 +133,10 @@ async function genererMonde(nouvelleGraine){
   reinitialiserFroid();
   reinitialiserTorche();
   reinitialiserChute();
+  reinitialiserSante();
+  reinitialiserFeu();
   reprendreTous();
+  chargerPancartes(graine());
   joueur.held = 1;
 
   jeu.biome = biomeAt(joueur.x, joueur.z);
@@ -154,8 +170,12 @@ function brancherEntrees(){
   });
 
   addEventListener('mousedown', e => {
-    if(jeu.enCours && e.button === 0) lancerLeurre();
+    if(!jeu.enCours) return;
+    if(e.button === 0) lancerLeurre();
+    // clic droit maintenu : brandir la lampe. Les jeunes reculent, le jus fond.
+    if(e.button === 2) inventaire.brandit = true;
   });
+  addEventListener('mouseup', e => { if(e.button === 2) inventaire.brandit = false; });
 
   const inv = document.getElementById('inv');
 
@@ -185,6 +205,9 @@ function brancherEntrees(){
     if(!jeu.enCours) return;
 
     if(e.code === 'Space'){ e.preventDefault(); lancerLeurre(); }
+    if(e.code === 'KeyG'){ e.preventDefault(); allumerFeuIci(); }
+    if(e.code === 'KeyV'){ e.preventDefault(); tirerFusee(); }
+    if(e.code === 'KeyB'){ e.preventDefault(); gererPancarte(); }
     if(e.code === 'KeyE'){ e.preventDefault(); actionContextuelle(); }
     if(e.code === 'CapsLock') basculerRampe();
     if(e.code === 'KeyF') basculerTorche();
@@ -212,6 +235,48 @@ function brancherEntrees(){
     };
     img.src = URL.createObjectURL(f);
   });
+}
+
+/** G — allumer un feu de camp avec un fagot. */
+function allumerFeuIci(){
+  if(joueur.prone > 0 || joueur.abrite) return;
+  const f = allumerFeu(joueur);
+  if(f){ Audio.effets.feu(); flash('FEU ALLUMÉ · ' + inventaire.bois + ' FAGOT(S)'); }
+  else flash('PAS DE BOIS');
+}
+
+/** V — lancer une fusée de détresse. La seule façon de VOIR une salle entière. */
+function tirerFusee(){
+  if(joueur.prone > 0 || joueur.abrite) return;
+  const f = lancerFusee(joueur);
+  if(f){ Audio.effets.fusee(); }
+  else flash('PLUS DE FUSÉE');
+}
+
+/** B — poser une pancarte, ou lire / retirer celle qui est là. */
+function gererPancarte(){
+  if(joueur.prone > 0) return;
+  const p = pancarteProche(joueur.x, joueur.z);
+  if(p){
+    // déjà une pancarte ici : on la lit, et MAJ+B la retire
+    if(touches['ShiftLeft'] || touches['ShiftRight']){
+      retirerPancarte(joueur.x, joueur.z);
+      flash('PANCARTE RETIRÉE');
+    } else {
+      flash(p.texte ? '« ' + p.texte + ' »' : 'PANCARTE VIERGE', 4);
+    }
+    return;
+  }
+  /* On relâche le pointeur pour écrire : sans ça le prompt ne reçoit pas les
+     touches, et on se retrouve à taper dans le vide. */
+  document.exitPointerLock();
+  setTimeout(() => {
+    const txt = prompt('Message à laisser ici (48 caractères) :', '');
+    if(txt !== null){
+      poserPancarte(joueur, txt);
+      flash('PANCARTE POSÉE');
+    }
+  }, 60);
 }
 
 function lancerLeurre(){
@@ -392,21 +457,45 @@ function simuler(dt){
     const r = Math.max(g.rx, g.rz)*CELL + 25;
     if(d < r){ prochesGouffre = Math.max(prochesGouffre, 1 - d/r); }
   }
+  /* Le ciel au-dessus de MOI, pas le biome de la salle : c'est ce qui décide
+     s'il neige et si la lune se voit. Lissé, sinon passer sous un surplomb
+     ferait clignoter la neige. */
+  const cielIci = (isFloor(ci,cz) && !joueur.abrite) ? sky[idx(ci,cz)] : 0;
+  jeu.cielOuvert = lerp(jeu.cielOuvert, cielIci, 1 - Math.exp(-2.2*dt));
+
   jeu.ventForce = Audio.souffler(ciel, ouvert, prochesGouffre, joueur.abrite);
   jeu.ventX = Math.cos(vent.angle)*vent.freq*jeu.ventForce;
   jeu.ventZ = Math.sin(vent.angle)*vent.freq*jeu.ventForce;
 
+  /* ── feu, santé, ramassages ── */
+  updateFeu(dt, joueur, {});
+  updateSante(dt);
+  const pris = ramasserFeu(joueur);
+  if(pris.bois || pris.fusees) Audio.effets.ramasse();
+  if(ramasserTrousse(joueur.x, joueur.gy, joueur.z)){
+    Audio.effets.soin(); flash('TROUSSE UTILISÉE');
+  }
+  // brandir la lampe coûte cher : c'est ce qui l'empêche d'être une solution
+  if(inventaire.brandit && torche.on)
+    torche.jus = Math.max(0, torche.jus - dt*SETUP.feu.brandirConso);
+
   /* ── froid ── */
   joueur.torcheAllumee = torche.on;
   const brasero = refugeProche(joueur.x, joueur.gy, joueur.z);
-  const F = updateFroid(dt, joueur, jeu.ventForce, !!brasero, {
+  const safe = dansSafe(joueur.x, joueur.z);
+  const gainFeu = chaleurDuFeu(joueur.x, joueur.z);
+  const auChaud = !!brasero || !!safe || gainFeu > 0;
+  const F = updateFroid(dt, joueur, jeu.ventForce, auChaud, {
     souffle: i => Audio.effets.souffle(i),
     coeur:   i => Audio.effets.coeur(i),
   });
   joueur.derive = F.derive;
   if(F.souffleRayon > 0 && !joueur.abrite)
     emettreSon(joueur.x, joueur.z, F.souffleRayon, false);
-  if(F.mort){ mourir('froid'); return; }
+  /* Le froid ne tue plus d'un coup : il ronge la santé. C'est ce qui rend les
+     trousses médicales utiles et laisse une chance d'atteindre un feu. */
+  if(froid.chaleur <= 0.01) blesser(SETUP.sante.degatsFroid*dt, true);
+  if(sante.mort){ mourir('froid'); return; }
 
   /* ── joueur ── */
   updateJoueur(dt, F.vitesse, {
@@ -414,7 +503,11 @@ function simuler(dt){
     impactSol: (hauteur) => {
       const r = impactSol(hauteur);
       if(r === CHUTE.MORT_HAUTEUR) mourir(CHUTE.MORT_HAUTEUR);
-      else if(r === CHUTE.SONNE) Audio.effets.chute(clamp(hauteur/14, 0.3, 1));
+      else if(r === CHUTE.SONNE){
+        Audio.effets.chute(clamp(hauteur/14, 0.3, 1));
+        blesser((hauteur - SETUP.relief.degatChute) * SETUP.sante.degatsChute);
+        if(sante.mort) mourir(CHUTE.MORT_HAUTEUR);
+      }
     },
   });
   // le vent emporte l'odeur, la neige l'efface — un seul appel par image
@@ -430,7 +523,12 @@ function simuler(dt){
   updateTorche(dt, joueur, !!brasero) && Audio.effets.ramasse();
   ramasserLeurres(joueur) && Audio.effets.ramasse();
   updateVol(dt, {
-    impact: (x,y,z) => { emettreSon(x, z, 30, true); Audio.effets.impact(); },
+    impact: (x,y,z) => {
+      emettreSon(x, z, 30, true);
+      Audio.effets.impact();
+      // les jeunes aussi vont l'étudier : c'était « impossibles à leurrer »
+      attirerJeunes(x, z);
+    },
   });
 
   const prise = ramasser(joueur.x, joueur.gy, joueur.z);
@@ -465,9 +563,18 @@ function simuler(dt){
     flash('TU AS PERDU L\'ÉQUILIBRE');
   }
 
-  /* ── mort ── */
-  if(dP < 1.15 && !joueur.abrite) mourir('creature');
-  if(J.mort && !joueur.abrite) mourir('jeunes');
+  /* ── mort et blessures ── */
+  // LA MÈRE tue. Toujours, quoi qu'il reste de santé. Elle n'est pas un
+  // adversaire, elle est une fin — lui opposer une barre de vie la banaliserait.
+  if(dP < 1.15 && !joueur.abrite && !safe) mourir('creature');
+  // les jeunes MORDENT. On peut survivre, saigner, et fuir vers un village.
+  if(J.mort && !joueur.abrite && !safe){
+    if(blesser(SETUP.sante.degatsJeune)){
+      Audio.effets.morsure();
+      joueur.shake = Math.max(joueur.shake, 0.7);
+    }
+    if(sante.mort) mourir('jeunes');
+  }
 
   /* ── victoire ── */
   if(atteinte(joueur)) jeu.gagne = true;
@@ -492,6 +599,31 @@ function majAudioSpatial(dt, dP){
 }
 
 function dessinerImage(dt, dP){
+  /* Les lumières que le joueur a créées lui-même : feux, fusées, loupiotes.
+     Reconstruites à chaque image parce qu'elles bougent, s'éteignent et
+     clignotent — les cuire dans un pavé n'aurait aucun sens. */
+  lumieresDynamiques.length = 0;
+  lumieresDuFeu(lumieresDynamiques, jeu.temps);
+  lumieresPancartes(lumieresDynamiques, jeu.temps);
+
+  /* La carte non ramassée la plus proche éclaire vraiment. Une seule : c'est
+     assez pour qu'on la repère dans la brume, et ça ne vole pas tous les
+     emplacements de lumière au décor. */
+  {
+    let pc = null, pd = 1600;
+    for(const k of cartes){
+      if(k.prise) continue;
+      const d = (k.x-joueur.x)**2 + (k.z-joueur.z)**2;
+      if(d < pd){ pd = d; pc = k; }
+    }
+    if(pc){
+      const c = RANGS[pc.rang].couleur;
+      const p = 0.8 + 0.2*Math.sin(jeu.temps*2.4 + pc.id*1.7);
+      lumieresDynamiques.push({x:pc.x, y:pc.y+0.3, z:pc.z,
+                               c:[c[0]*2.2*p, c[1]*2.2*p, c[2]*2.2*p]});
+    }
+  }
+
   const P = SETUP.froid.paliers[froid.palier];
   construireVue(joueur, jeu.temps, tampon.w/tampon.h, P.vision, joueur.derive);
 
@@ -502,9 +634,13 @@ function dessinerImage(dt, dP){
   rendre({
     joueur, jeunes, temps: jeu.temps, dread: jeu.dread,
     vision: P.vision, froidVis: intensiteVisuelle(),
-    coeur: froid.palier === 3 ? 1 - froid.chaleur/15 : 0,
+    // le battement de cœur suit maintenant la SANTÉ autant que le froid
+    coeur: Math.max(froid.palier === 3 ? 1 - froid.chaleur/15 : 0,
+                    gravite() > 0.6 ? (gravite()-0.6)/0.4 : 0),
     gainLampe, cartes, combustibles, leurres,
     meshCarte: jeu.meshCarte, ventX: jeu.ventX, rangs: RANGS,
+    cielOuvert: jeu.cielOuvert,
+    monde: {bois, fusees, trousses, feux, fuseesActives, pancartes},
   });
   dessinerScope(joueur, sons, odeur, dP);
 }
@@ -522,6 +658,9 @@ async function demarrer(){
 
   brancherCri(() => { Audio.cri(); Audio.accroc(); });
   brancherStridulation(() => Audio.stridulation());
+  /* Les jeunes n'ont pas à connaître la torche ni les feux : on leur donne une
+     fonction qui répond « y a-t-il du feu près de toi ? ». */
+  brancherFeu(j => feuProche(j.x, j.z, joueur, torche.on));
 
   construireMenu(() => {
     // pendant la génération il n'y a rien à verrouiller

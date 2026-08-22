@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SCOLÉOPANDRE — v3</title>
+<title>SCOLOPANDRE — v3</title>
 <!--
   Cette page ne contient QUE le markup et le style. Toute la logique vit dans
   src/. Les valeurs par défaut des curseurs ne sont plus écrites ici : le
@@ -61,7 +61,17 @@
   /* ═══ JAUGE DE CHALEUR ═══
      En v2 la chaleur était noyée dans une ligne de texte, ce qui explique en
      partie pourquoi « le froid ne faisait rien » : on ne le voyait pas. */
-  #chaleur{position:fixed;left:14px;top:46px;width:186px;padding:6px 8px;
+  #sante{position:fixed;left:14px;top:46px;width:186px;padding:6px 8px;
+    background:rgba(7,8,10,.8);border:1px solid var(--rule);font-size:9px;letter-spacing:.12em}
+  #santeRail{height:3px;background:#15161a;margin-top:5px;overflow:hidden}
+  #santeBarre{height:100%;width:100%;background:var(--signal);transition:width .2s linear,background .4s}
+  #santeTxt{color:var(--dim)}
+  #sante.critique{animation:battre 0.8s ease-in-out infinite}
+  #sac{position:fixed;left:14px;top:150px;width:186px;padding:5px 8px;
+    background:rgba(7,8,10,.8);border:1px solid var(--rule);
+    font-size:9px;letter-spacing:.1em;color:var(--dim)}
+  #sac b{color:var(--bone);font-weight:400}
+  #chaleur{position:fixed;left:14px;top:98px;width:186px;padding:6px 8px;
     background:rgba(7,8,10,.8);border:1px solid var(--rule);font-size:9px;letter-spacing:.12em}
   #chaleurRail{height:3px;background:#15161a;margin-top:5px;overflow:hidden}
   #chaleurBarre{height:100%;width:100%;background:var(--signal);transition:width .2s linear,background .4s}
@@ -130,10 +140,11 @@
 <div id="tune"></div>
 
 <div id="bar">
-  <div id="keys"><b>ZQSD</b> avancer · <b>MAJ</b> courir · <b>F</b> torche &middot;
-    <b>C</b> ramper <b>(MAJ.VERR</b> bascule<b>)</b> · <b>E</b> cachette / échelle ·
-    <b>CLIC</b>/<b>ESPACE</b> lancer · <b>R</b> nouveau monde ·
-    <b>TAB</b> sismographe · <b>I</b> collection · <b>P</b> réglages</div>
+  <div id="keys"><b>ZQSD</b> avancer · <b>MAJ</b> courir · <b>C</b> ramper ·
+    <b>F</b> lampe · <b>CLIC DROIT</b> brandir · <b>E</b> cachette / échelle ·
+    <b>CLIC</b>/<b>ESPACE</b> leurre · <b>G</b> feu de camp · <b>V</b> fusée ·
+    <b>B</b> pancarte · <b>TAB</b> sismographe · <b>I</b> collection ·
+    <b>P</b> réglages · <b>R</b> nouveau monde</div>
   <div id="right">
     <div id="lures">—</div>
     <div id="place">—</div>
@@ -141,10 +152,15 @@
   </div>
 </div>
 
+<div id="sante">
+  SANTÉ <span id="santeTxt">100%</span>
+  <div id="santeRail"><div id="santeBarre"></div></div>
+</div>
 <div id="chaleur">
   CHALEUR <span id="chaleurTxt">100%</span>
   <div id="chaleurRail"><div id="chaleurBarre"></div></div>
 </div>
+<div id="sac">—</div>
 <div id="alerte"></div>
 
 <div id="caught"><span>ELLE T'A TROUVÉ</span></div>
@@ -158,13 +174,16 @@
 </div></div>
 
 <div id="veil"><div class="in" id="menuIn">
-  <h1>SCOLÉOPANDRE</h1>
+  <h1>SCOLOPANDRE</h1>
   <p id="mBrief">Elle est aveugle. Elle ne connaît que le <em>sol qui tremble</em> et
      l'<em>odeur que tu laisses</em>. <em>Ramper n'imprime aucune trace.</em><br>
-     Ses <em>yeux rouges</em> percent le fog : s'ils grossissent et virent à l'orange,
-     elle t'a.<br>
-     Le <em>froid</em> te tue en surface — <em>descendre réchauffe</em>.
-     Cherche les <em>trous</em> pour disparaître.<br>
+     Ses <em>yeux rouges</em> percent la brume : s'ils grossissent et virent à
+     l'orange, elle t'a. On ne la combat pas.<br>
+     Ses <em>petits</em>, si. Le <em>feu</em> les tient à distance — ramasse du
+     <em>bois</em>, allume un camp, lance une <em>fusée</em>.<br>
+     Le <em>froid</em> te ronge en surface : <em>descendre réchauffe</em>.
+     Les <em>villages</em> ont des braseros et des trousses ; les <em>trous</em>
+     te rendent invisible.<br>
      Trouve la <em>sortie</em>. Ramasse les <em>cartes</em> : les plus rares sont au fond.</p>
   <div id="menuOnglets">
     <button class="mo" data-vue="jouer" aria-pressed="true">Descendre</button>

@@ -10,6 +10,8 @@ import {SETUP} from '../setup.js';
 import {BIOMES} from '../monde/biomes.js';
 import {froid} from '../joueur/froid.js';
 import {torche} from '../joueur/torche.js';
+import {sante} from '../joueur/sante.js';
+import {inventaire} from '../joueur/feu.js';
 import {possede} from '../carte/collection.js';
 import {total} from '../carte/catalogue.js';
 
@@ -46,11 +48,18 @@ export function majHUD(ctx){
   const oc = el('oCartes');
   if(oc) oc.textContent = possede.size + '/' + total();
   const op = el('oProf');
-  if(op) op.textContent = joueur.gy.toFixed(0) + ' m  ·  torche '
+  if(op) op.textContent = joueur.gy.toFixed(0) + ' m  ·  lampe '
     + (torche.on ? (torche.jus*100).toFixed(0) + '%' : 'éteinte');
 
-  // ── jauge de chaleur
+  // sac : bois et fusées, les deux objets qu'on compte vraiment
+  const sac = el('sac');
+  if(sac) sac.innerHTML =
+    '<b>' + inventaire.bois + '</b> bois &nbsp; <b>' + inventaire.fusees + '</b> fusée'
+    + (inventaire.fusees > 1 ? 's' : '');
+
+  // ── jauges
   majJauge();
+  majSante();
 }
 
 function majJauge(){
@@ -72,6 +81,19 @@ function majJauge(){
     m.textContent = froid.message || '';
     m.style.opacity = froid.message ? '1' : '0';
   } else if(!froid.message) m.style.opacity = '0';
+}
+
+/* La santé n'existait pas en v3.0 : on mourait d'un coup. Sa jauge est
+   volontairement au-dessus de celle du froid — c'est celle qu'on regarde
+   quand ça va mal. */
+function majSante(){
+  const barre = el('santeBarre'), txt = el('santeTxt'), boite = el('sante');
+  if(!barre) return;
+  const p = sante.pv;
+  barre.style.width = p.toFixed(1) + '%';
+  barre.style.background = p > 60 ? '#8fa88c' : p > 30 ? '#b8a25f' : '#b4553f';
+  if(txt) txt.textContent = p.toFixed(0) + '%';
+  if(boite) boite.classList.toggle('critique', p < 30);
 }
 
 /** Message ponctuel au centre bas (entrée en cachette, effondrement…). */
