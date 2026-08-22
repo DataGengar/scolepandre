@@ -391,6 +391,41 @@ Plus deux corrections trouvées à la relecture : une file d'attente qui débord
 silencieusement (écriture hors bornes d'un `Int32Array`, ignorée par JavaScript)
 et des gouffres convertis deux fois en cellules, qui sortaient à 17 × 7 m.
 
+## 3bis. CORRECTIONS APRÈS RETOUR
+
+### Le menu de départ ne se laissait pas cliquer
+
+Signalé : « le clic pour ouvrir le jeu ne fonctionne pas depuis le menu ».
+Diagnostiqué avec `elementFromPoint` sur la page réelle en headless, plutôt que
+deviné. **Deux défauts distincts**, tous deux confirmés :
+
+1. **Le clic droit ne faisait rien.** Un événement `click` n'est jamais émis
+   pour le bouton secondaire — il faut écouter `contextmenu`.
+2. **Le clic gauche ne marchait que sur `#mJouer`.** Le relevé donnait, au
+   centre exact de l'écran, `button.mo` : le milieu de la page — l'endroit où
+   l'on clique naturellement — est occupé par la rangée d'onglets. Cliquer « au
+   milieu » changeait donc d'onglet au lieu de lancer. Et le voile porte
+   `cursor:pointer` sur toute sa surface : il promettait d'être cliquable
+   partout sans l'être.
+
+Corrigé : tout le voile lance la partie, au clic gauche comme au clic droit, et
+`Entrée` ou `Espace` aussi. Les onglets et les panneaux Réglages / Collection
+sont exclus, et on ne lance que depuis l'onglet « Descendre » — sinon relâcher
+un curseur hors de sa piste démarrerait la partie. Le menu contextuel du clic
+droit est supprimé, en jeu comme au menu.
+
+Deux défauts trouvés en passant :
+
+- `requestPointerLock` peut légitimement échouer (le navigateur impose un délai
+  après un `exitPointerLock`). Le rejet n'était pas traité : promesse rejetée
+  dans la console et menu qui a l'air cassé. C'est désormais annoncé à l'écran.
+- **Les touches de jeu agissaient depuis le menu.** `Espace` y lançait un
+  leurre dans un monde qu'on ne regarde pas — et c'est précisément la touche qui
+  doit démarrer la partie. `R` reste volontairement accessible depuis le menu.
+
+Vérifié en headless : les 8 gestes qui doivent lancer lancent, les 4 qui ne
+doivent rien faire ne font rien.
+
 ## 4. À FAIRE
 
 ### De ton côté
