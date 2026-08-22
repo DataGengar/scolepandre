@@ -20,10 +20,10 @@
 import {SETUP} from '../setup.js';
 import {lerp, clamp} from '../noyau/math.js';
 import {rnd, ri} from '../noyau/rng.js';
-import {BIOMES} from './biomes.js';
+import {BIOMES, biomePourAltitude} from './biomes.js';
 import {
   GW, GH, CELL, WALL, FLOOR, STEPUP,
-  grid, floorH, ceilH, openN, biome, platform, sky, falaise, vide,
+  grid, floorH, ceilH, openN, biome, platform, sky, falaise, vide, pont,
   idx, inB, isFloor, calculerOuverture, majBornes,
 } from './grille.js';
 
@@ -33,20 +33,27 @@ export const epine = new Uint8Array(GW * GH);
 
 /* ─────────────── creusement ─────────────── */
 
-export function carveRect(x0,z0,w,h,e,b){
+/* Le biome n'est JAMAIS passé en paramètre : il se déduit de l'altitude et de
+   la position, via monde/biomes.js. C'est ce qui garantit qu'on ne peut pas
+   avoir deux biomes différents à la même profondeur au même endroit. */
+export function carveRect(x0,z0,w,h,e){
   for(let z=z0; z<z0+h; z++) for(let x=x0; x<x0+w; x++)
-    if(inB(x,z)){ const i=idx(x,z); grid[i]=FLOOR; floorH[i]=e; biome[i]=b; }
+    if(inB(x,z)){
+      const i = idx(x,z);
+      grid[i] = FLOOR; floorH[i] = e; biome[i] = biomePourAltitude(e, x, z);
+    }
 }
 
-export function carveBlob(cx,cz,steps,e,b){
+export function carveBlob(cx,cz,steps,e){
   let x=cx, z=cz;
   for(let i=0;i<steps;i++){
     for(let dz=-1;dz<=1;dz++) for(let dx=-1;dx<=1;dx++) if(inB(x+dx,z+dz)){
       const k = idx(x+dx, z+dz);
       grid[k] = FLOOR;
       // relief doux dans les cavernes : jamais de falaise en travers du passage
-      floorH[k] = e + Math.sin(x*0.31)*0.28 + Math.cos(z*0.27)*0.28;
-      biome[k] = b;
+      const h = e + Math.sin(x*0.31)*0.28 + Math.cos(z*0.27)*0.28;
+      floorH[k] = h;
+      biome[k] = biomePourAltitude(h, x+dx, z+dz);
     }
     const d = ri(0,3);
     x += d===0?1 : d===1?-1 : 0;
@@ -66,10 +73,10 @@ function corridor(a,b,wdt){
   const M = SETUP.relief.epineMarge;
   pts.forEach(([x,z],i)=>{
     const t = i / Math.max(1, pts.length-1);
-    const e = lerp(a.e, b.e, t), bi = t<0.5 ? a.b : b.b;
+    const e = lerp(a.e, b.e, t);
     for(let i2=0;i2<wdt;i2++) for(let j=0;j<wdt;j++) if(inB(x+i2,z+j)){
       const k = idx(x+i2, z+j);
-      grid[k]=FLOOR; floorH[k]=e; biome[k]=bi;
+      grid[k]=FLOOR; floorH[k]=e; biome[k]=biomePourAltitude(e, x+i2, z+j);
     }
     // marge d'épine autour du tracé : la relaxation a de quoi lisser la rampe
     for(let dz=-M; dz<=M+wdt; dz++) for(let dx=-M; dx<=M+wdt; dx++)
@@ -184,27 +191,84 @@ export function marquerFalaises(){
 
 /* ─────────────── plateformes ─────────────── */
 
-/* La verticalité intéressante n'est pas le dénivelé : c'est ce qu'elle
-   franchit et pas toi. Ces blocs montent au-dessus de ta marche mais sous sa
-   limite d'escalade. Jamais sur un passage : uniquement au milieu de salles
-   assez dégagées pour qu'on en fasse le tour. Elle t'arrive dessus par le haut. */
-export function placerPlateformes(lights){
-  const BAS = STEPUP * 1.4, HAUT = SETUP.creature.escalade * 0.8;
-  for(const r of salles){
-    if(rnd() > 0.5) continue;
-    const w = ri(3,6), h = ri(3,6), ox = r.x + ri(-5,4), oz = r.z + ri(-5,4);
-    let ok = true;
-    for(let z=oz-1; z<=oz+h && ok; z++) for(let x=ox-1; x<=ox+w && ok; x++)
-      if(!isFloor(x,z) || openN[idx(x,z)] < 0.78 || platform[idx(x,z)]) ok = false;
-    if(!ok) continue;
-    const base = floorH[idx(ox,oz)], up = BAS + rnd()*(HAUT-BAS);
-    for(let z=oz; z<oz+h; z++) for(let x=ox; x<ox+w; x++){
-      const i = idx(x,z); floorH[i] = base + up; platform[i] = 1;
+/* ═══ RAMPES DE FALAISE ═══
+   Retour de test : « les plateformes flottent juste dans l'air, ça n'a aucun
+   sens. Je voulais relier des parties de la carte séparées par des falaises,
+   pas des plateformes placées en masse et n'importe comment. »
+
+   C'était exact : la v3.0 posait des blocs surélevés au MILIEU des salles
+   dégagées, sans rien relier. Ils ne servaient qu'à donner à la créature un
+   angle d'attaque par le haut, ce qui ne se lit pas quand on joue.
+
+   Ici on ne pose plus rien au hasard. On CHERCHE les falaises — une arête où
+   le sol tombe de plus d'une enjambée — et on y taille un escalier d'éboulis
+   qui remonte, marche par marche, chacune franchissable. Le résultat se lit
+   comme un pan de paroi effondré, et il RELIE deux niveaux qui étaient coupés.
+
+   On ne creuse jamais dans la roche : on RELÈVE des cellules de sol déjà
+   praticables du côté bas. La rampe ne peut donc pas ouvrir un passage qui
+   n'existait pas dans le plan.                                              */
+export function placerRampes(lights, props){
+  const MAX = STEPUP - 0.06;              // hauteur d'une marche
+  const NB = [[1,0],[-1,0],[0,1],[0,-1]];
+  let posees = 0;
+
+  for(let essai=0; essai<26000 && posees < SETUP.relief.nbRampes; essai++){
+    const x = ri(6, GW-7), z = ri(6, GH-7);
+    const i = idx(x,z);
+    if(grid[i] !== FLOOR) continue;
+
+    // trouver un voisin nettement plus bas : c'est le pied de la falaise
+    let dir = null, bas = 0;
+    for(const [dx,dz] of NB){
+      if(!isFloor(x+dx, z+dz)) continue;
+      const n = idx(x+dx, z+dz);
+      const chute = floorH[i] - floorH[n];
+      if(chute > MAX*1.6 && chute < 9){ dir = [dx,dz]; bas = n; break; }
     }
-    // un repère lumineux : dans le fog, une plateforme invisible n'existe pas
-    lights.push({x:(ox+0.5)*CELL, y:base+up+0.6, z:(oz+0.5)*CELL,
-                 c:BIOMES[r.b].lum, ph:rnd()*6.28});
+    if(!dir) continue;
+
+    const chute = floorH[i] - floorH[bas];
+    const marches = Math.ceil(chute / MAX);
+    const [dx,dz] = dir;
+
+    /* Le couloir de la rampe part du bas et remonte vers la falaise. Toutes
+       les cellules traversées doivent déjà être du sol : on ne perce rien. */
+    let ok = true;
+    for(let k=1; k<=marches && ok; k++)
+      for(let s2=-1; s2<=1 && ok; s2++){
+        const px = x + dx*k + (dz ? s2 : 0), pz = z + dz*k + (dx ? s2 : 0);
+        if(!isFloor(px,pz) || pont[idx(px,pz)]) ok = false;
+      }
+    if(!ok) continue;
+
+    // les marches, de la plus haute (contre la falaise) à la plus basse
+    const base = floorH[bas];
+    for(let k=1; k<=marches; k++){
+      const y = floorH[i] - (chute * k / (marches + 1));
+      for(let s2=-1; s2<=1; s2++){
+        const px = x + dx*k + (dz ? s2 : 0), pz = z + dz*k + (dx ? s2 : 0);
+        const pi = idx(px,pz);
+        if(floorH[pi] >= y) continue;      // déjà plus haut : on ne creuse pas
+        floorH[pi] = y;
+        platform[pi] = 1;
+      }
+    }
+
+    /* Une rampe invisible dans la brume est une rampe qu'on ne trouvera
+       jamais. Deux repères lumineux au pied et au sommet : c'est le seul
+       moyen honnête de signaler un franchissement. */
+    const teinte = BIOMES[biome[i]].lum;
+    for(const [cx2, cz2, cy] of [[x, z, floorH[i]], [x+dx*marches, z+dz*marches, base]]){
+      if(lights.length >= SETUP.decor.maxLumieres) break;
+      lights.push({
+        x:(cx2+0.5)*CELL, y:cy+0.7, z:(cz2+0.5)*CELL,
+        c:[teinte[0]*1.5, teinte[1]*1.1, teinte[2]*0.8], ph:rnd()*6.28,
+      });
+    }
+    posees++;
   }
+  return posees;
 }
 
 /* ─────────────── plan du monde ─────────────── */
@@ -221,12 +285,14 @@ export function creuserPlan(){
 
   const {altBasse, altHaute, nbSalles, nbCavernes, nbRaccourcis} = SETUP.monde;
 
+  /* Le plan ne porte plus que des ALTITUDES. Le biome n'est plus une donnée
+     du plan : il se déduit de l'altitude au moment du creusement. C'est la
+     correction du « biomes placés au bol » — il devient impossible qu'une
+     salle à −100 m soit autre chose que du barrage. */
   const PLAN = [];
   for(let k=0; k<nbSalles; k++){
     const t = k / (nbSalles - 1);
-    const e = lerp(altBasse, altHaute, t) + ri(-6,6);
-    const b = t < 0.14 ? 2 : t < 0.30 ? 1 : t < 0.80 ? 0 : 3;
-    PLAN.push({ b: (t>0.34 && t<0.68) ? 4 : b, e });
+    PLAN.push({ e: lerp(altBasse, altHaute, t) + ri(-6,6) });
   }
 
   PLAN.forEach((P,i)=>{
@@ -234,23 +300,23 @@ export function creuserPlan(){
     // diagonale + dispersion : les extrêmes se retrouvent aux deux bouts
     const cx = Math.round(lerp(18, GW-19, t) + ri(-14,14));
     const cz = Math.round(lerp(GH-19, 18, t) + ri(-14,14));
-    const grand = P.b === 3 || P.b === 2;
+    const b = biomePourAltitude(P.e, cx, cz);
+    const grand = b === 3 || b === 2;          // dehors et le barrage sont vastes
     const w = grand ? ri(26,40) : ri(14,26), h = grand ? ri(26,40) : ri(14,26);
     const x = clamp(cx - (w>>1), 2, GW-w-3), z = clamp(cz - (h>>1), 2, GH-h-3);
-    carveRect(x, z, w, h, P.e, P.b);
-    salles.push({x: x + (w>>1), z: z + (h>>1), e: P.e, b: P.b});
+    carveRect(x, z, w, h, P.e);
+    salles.push({x: x + (w>>1), z: z + (h>>1), e: P.e, b});
   });
 
-  // cavernes : une profonde, une haute, plusieurs médianes
+  // cavernes : réparties sur toute la hauteur, biome déduit comme le reste
   for(let k=0; k<nbCavernes; k++){
     const t = k / (nbCavernes - 1);
     const e = lerp(altBasse+4, altHaute-4, t) + ri(-8,8);
-    const b = t < 0.2 ? 1 : t > 0.82 ? 3 : (t > 0.36 && t < 0.66 ? 4 : 0);
     const tt = (e - altBasse) / (altHaute - altBasse);
     const cx = clamp(Math.round(lerp(20, GW-21, tt) + ri(-12,12)), 18, GW-19);
     const cz = clamp(Math.round(lerp(GH-21, 20, tt) + ri(-12,12)), 18, GH-19);
-    carveBlob(cx, cz, ri(1400,3000), e, b);
-    salles.push({x:cx, z:cz, e, b});
+    carveBlob(cx, cz, ri(1400,3000), e);
+    salles.push({x:cx, z:cz, e, b: biomePourAltitude(e, cx, cz)});
   }
 
   // la chaîne suit l'ordre du plan : on ne saute jamais 60 m d'un coup

@@ -16,18 +16,20 @@ import {
   idx, viderGrille, calculerOuverture, majBornes, rebuildNavCost, bornes,
 } from './grille.js';
 import {
-  creuserPlan, relaxerEpine, placerPlateformes, finaliserRelief, poserPlafonds, salles,
+  creuserPlan, relaxerEpine, placerRampes, finaliserRelief, poserPlafonds, salles,
 } from './generation.js';
 import {creuserGouffres, gouffres} from './relief.js';
 import {placerPonts} from './ponts.js';
 import {placerCachettes, cachettes} from './cachettes.js';
 import {placerProps, viderDecor, props, lights, colliders} from './props.js';
+import {placerVillages, placerBoisEtFusees, viderVillages, villages} from './villages.js';
 import {indexerProps, libererTousLesPaves} from './maillage.js';
 import {importee} from './import-png.js';
 
 export {props, lights, colliders} from './props.js';
 export {cachettes} from './cachettes.js';
 export {gouffres} from './relief.js';
+export {villages, trousses, bois, fusees, dansSafe} from './villages.js';
 
 /* Les objets posés dans le monde. Remplis par les modules qui les possèdent
    (carte/placement.js, joueur/leurres.js…) mais listés ici pour que l'ordre
@@ -48,7 +50,7 @@ export function* construireMonde(hooks){
   chrono.debut = performance.now();
 
   yield {nom:'remise à zéro', part:0.02};
-  viderGrille(); viderDecor(); libererTousLesPaves();
+  viderGrille(); viderDecor(); viderVillages(); libererTousLesPaves();
   monde.refuges.length = 0; monde.combustibles.length = 0;
   monde.leurres.length = 0; monde.sortie = null;
 
@@ -70,8 +72,8 @@ export function* construireMonde(hooks){
     yield {nom:'ouverture des volumes', part:0.55};
     calculerOuverture();
 
-    yield {nom:'plateformes', part:0.58};
-    placerPlateformes(lights);
+    yield {nom:'rampes de franchissement', part:0.58};
+    chrono.rampes = placerRampes(lights, props);
 
     yield {nom:'gouffres et précipices', part:0.64};
     creuserGouffres(lights);
@@ -86,8 +88,14 @@ export function* construireMonde(hooks){
   yield {nom:'cachettes', part:0.77};
   placerCachettes(props);
 
+  yield {nom:'villages engloutis', part:0.82};
+  chrono.villages = placerVillages();
+
   yield {nom:'décor', part:0.90};
   placerProps();
+
+  yield {nom:'bois et fusées', part:0.93};
+  placerBoisEtFusees();
 
   yield {nom:'objets et objectifs', part:0.96};
   if(H.placerObjets) H.placerObjets();
@@ -101,7 +109,7 @@ export function* construireMonde(hooks){
 }
 
 /** Compteurs remplis pendant la génération. */
-const chrono = {debut:0, duree:0, ponts:0};
+const chrono = {debut:0, duree:0, ponts:0, rampes:0, villages:0};
 
 /* ─────────────── carte importée ─────────────── */
 
@@ -130,6 +138,8 @@ export function rapportMonde(){
     duree: chrono.duree.toFixed(1) + ' s',
     salles: salles.length,
     gouffres: gouffres.length,
+    rampes: chrono.rampes,
+    villages: chrono.villages,
     ponts: chrono.ponts,
     cachettes: cachettes.length,
     elements: props.length,
