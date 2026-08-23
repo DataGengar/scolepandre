@@ -16,6 +16,8 @@ import {
   GW, GH, CELL, FLOOR, grid, blocked, floorH, vide, pont, idx, w2c, groundAt,
 } from '../monde/grille.js';
 import {cachettes} from '../monde/cachettes.js';
+import {pancartes} from '../monde/pancartes.js';
+import {villages} from '../monde/villages.js';
 import {creature, sampleBody} from '../creatures/mere.js';
 import {jeunes} from '../creatures/jeunes.js';
 import {directeur} from '../creatures/directeur.js';
@@ -92,6 +94,37 @@ export function dessinerScope(joueur, sons, odeur, dP){
     dc.beginPath();
     dc.moveTo(px, pz-r); dc.lineTo(px+r, pz); dc.lineTo(px, pz+r); dc.lineTo(px-r, pz);
     dc.closePath(); dc.stroke();
+  }
+
+  /* ── LES VILLAGES DÉJÀ VISITÉS ──
+     Rien tant qu'on n'y est pas entré : un village doit se trouver, pas se
+     lire sur une carte. Une fois découvert, il reste marqué pour de bon — un
+     cercle plein, la seule tache franchement chaude du sismographe. */
+  for(const v of villages){
+    if(!v.vu) continue;
+    const px = X(v.x), pz = Z(v.z);
+    dc.fillStyle = 'rgba(255,168,72,.22)';
+    dc.beginPath(); dc.arc(px, pz, v.safe*k, 0, 6.283); dc.fill();
+    dc.strokeStyle = 'rgba(255,168,72,.85)'; dc.lineWidth = 1.4;
+    dc.beginPath(); dc.arc(px, pz, v.safe*k, 0, 6.283); dc.stroke();
+    dc.fillStyle = 'rgba(255,196,120,.95)';
+    dc.beginPath(); dc.arc(px, pz, 2.6, 0, 6.283); dc.fill();
+  }
+
+  /* ── TES PANCARTES ──
+     Elles apparaissent à TOUTE distance, contrairement aux cachettes : c'est
+     tout leur intérêt. Un petit carré cyan qui clignote au même rythme que la
+     loupiote du panneau — on fait le lien tout de suite entre ce qu'on voit
+     dans le monde et ce qu'on voit sur la carte. */
+  {
+    const ph = (Date.now()/1600) % 1;
+    const on = ph < 0.24 ? 1 : 0.32;
+    for(const p of pancartes){
+      dc.fillStyle = `rgba(64,215,180,${on})`;
+      dc.fillRect(X(p.x)-2, Z(p.z)-2, 4, 4);
+      dc.strokeStyle = `rgba(64,215,180,${on*0.45})`; dc.lineWidth = 1;
+      dc.strokeRect(X(p.x)-4.5, Z(p.z)-4.5, 9, 9);
+    }
   }
 
   // ── ta piste odorante

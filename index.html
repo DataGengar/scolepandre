@@ -80,6 +80,20 @@
   @keyframes battre{0%,100%{border-color:var(--rule)}50%{border-color:var(--alarm)}}
   @media (prefers-reduced-motion:reduce){#chaleur.critique{animation:none;border-color:var(--alarm)}}
 
+  /* ═══ LECTURE D'UNE PANCARTE ═══
+     Affiché en permanence tant qu'on est à portée. Un message fugace ne se lit
+     pas — et c'était précisément le défaut : le flash était en plus effacé au
+     bout de 200 ms par la mise à jour du HUD. */
+  #pancarte{position:fixed;left:50%;transform:translateX(-50%);bottom:104px;
+    max-width:min(560px,80vw);padding:10px 16px;text-align:center;
+    background:rgba(7,8,10,.88);border:1px solid var(--rule);
+    border-left:2px solid var(--signal);
+    font-size:12px;line-height:1.7;letter-spacing:.06em;color:var(--bone);
+    opacity:0;transition:opacity .3s;pointer-events:none}
+  #pancarte i{font-style:normal;color:var(--dim)}
+  #pancarte u{display:block;margin-top:6px;text-decoration:none;
+    font-size:9px;letter-spacing:.16em;color:var(--dim)}
+
   /* ligne d'alerte : paliers de froid, cachettes, effondrements */
   #alerte{position:fixed;left:0;right:0;bottom:64px;text-align:center;font-size:11px;
     letter-spacing:.34em;color:var(--alarm);opacity:0;transition:opacity .45s;pointer-events:none}
@@ -142,9 +156,9 @@
 <div id="bar">
   <div id="keys"><b>ZQSD</b> avancer · <b>MAJ</b> courir · <b>C</b> ramper ·
     <b>F</b> lampe · <b>CLIC DROIT</b> brandir · <b>E</b> cachette / échelle ·
-    <b>CLIC</b>/<b>ESPACE</b> leurre · <b>G</b> feu de camp · <b>V</b> fusée ·
-    <b>B</b> pancarte · <b>TAB</b> sismographe · <b>I</b> collection ·
-    <b>P</b> réglages · <b>R</b> nouveau monde</div>
+    <b>ESPACE</b> sauter · <b>CLIC</b> leurre · <b>G</b> feu · <b>V</b> fusée ·
+    <b>B</b> pancarte · <b>D</b> se dégager · <b>TAB</b> sismographe ·
+    <b>I</b> collection · <b>P</b> réglages · <b>R</b> nouveau monde</div>
   <div id="right">
     <div id="lures">—</div>
     <div id="place">—</div>
@@ -162,6 +176,7 @@
 </div>
 <div id="sac">—</div>
 <div id="alerte"></div>
+<div id="pancarte"></div>
 
 <div id="caught"><span>ELLE T'A TROUVÉ</span></div>
 <div id="objectif">SORTIE <b id="oDist">—</b> · CARTES <b id="oCartes">0</b> · <b id="oProf">0 m</b></div>

@@ -19,7 +19,6 @@ const el = id => document.getElementById(id);
 
 const COULEUR_PALIER = ['#8fa88c', '#b8a25f', '#6f9fc0', '#b4553f'];
 
-let dernierMessage = null;
 
 export function majHUD(ctx){
   const {joueur, biome, nappe, pavesVus, pavesTotal, graine, sortie, monde} = ctx;
@@ -73,14 +72,33 @@ function majJauge(){
     : froid.nomPalier + ' · ' + c.toFixed(0) + '%';
   if(boite) boite.classList.toggle('critique', froid.palier === 3);
 
-  // message de franchissement de palier
+  // le message de palier passe par le même canal que le reste : voir majAlerte()
+}
+
+/* ═══ LE CANAL DES MESSAGES ═══
+   BUG CORRIGÉ ICI. flash() et le message de froid écrivaient tous les deux
+   dans #alerte sans se concerter. Comme la mise à jour du HUD tourne cinq fois
+   par seconde et que flash() posait son texte dans `dernierMessage`, la
+   comparaison `froid.message !== dernierMessage` était vraie à l'itération
+   suivante — et le HUD effaçait le flash au bout de 200 ms.
+
+   Conséquence : AUCUN message transitoire n'était lisible. Ni le texte d'une
+   pancarte, ni « À L'ABRI », ni « FEU ALLUMÉ », ni « EFFONDREMENT ».
+
+   Un seul écrivain désormais, avec une priorité explicite :
+     1. le flash, tant qu'il lui reste du temps ;
+     2. sinon le palier de froid ;
+     3. sinon rien.                                                          */
+let texteAffiche = null;
+
+function majAlerte(){
   const m = el('alerte');
   if(!m) return;
-  if(froid.message !== dernierMessage){
-    dernierMessage = froid.message;
-    m.textContent = froid.message || '';
-    m.style.opacity = froid.message ? '1' : '0';
-  } else if(!froid.message) m.style.opacity = '0';
+  const voulu = flashT > 0 ? flashTexte : (froid.message || null);
+  if(voulu === texteAffiche) return;
+  texteAffiche = voulu;
+  m.textContent = voulu || '';
+  m.style.opacity = voulu ? '1' : '0';
 }
 
 /* La santé n'existait pas en v3.0 : on mourait d'un coup. Sa jauge est
@@ -97,21 +115,39 @@ function majSante(){
 }
 
 /** Message ponctuel au centre bas (entrée en cachette, effondrement…). */
-let flashT = 0;
-export function flash(texte, duree = 2.2){
-  const m = el('alerte');
-  if(!m) return;
-  m.textContent = texte;
-  m.style.opacity = '1';
+let flashT = 0, flashTexte = '';
+
+export function flash(texte, duree = 2.6){
+  flashTexte = texte;
   flashT = duree;
-  dernierMessage = texte;
+  majAlerte();
 }
 
+/** Appelé à chaque image : c'est lui qui fait vivre le canal des messages. */
 export function majFlash(dt){
-  if(flashT <= 0) return;
-  flashT -= dt;
-  if(flashT <= 0){
-    const m = el('alerte');
-    if(m && !froid.message){ m.style.opacity = '0'; dernierMessage = null; }
-  }
+  if(flashT > 0) flashT -= dt;
+  majAlerte();
 }
+
+/* ═══ LE PANNEAU DE LECTURE DES PANCARTES ═══
+   Un flash de deux secondes ne convient pas à un panneau : on veut le lire, et
+   surtout le RELIRE en s'approchant. Le panneau reste donc affiché tant qu'on
+   est à portée, sans appuyer sur quoi que ce soit. C'est aussi ce qui rend la
+   touche B utile pour autre chose : écrire, pas déchiffrer. */
+let pancarteAffichee = null;
+
+export function majPancarte(p){
+  const el2 = el('pancarte');
+  if(!el2) return;
+  if(p === pancarteAffichee) return;
+  pancarteAffichee = p;
+  if(!p){ el2.style.opacity = '0'; return; }
+  el2.innerHTML = p.texte
+    ? '<i>« </i>' + echapper(p.texte) + '<i> »</i>'
+      + '<u>B pour réécrire · MAJ+B pour retirer</u>'
+    : '<i>pancarte vierge</i><u>B pour y écrire</u>';
+  el2.style.opacity = '1';
+}
+
+const echapper = t => String(t)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
