@@ -5,6 +5,135 @@ Suivi de l'évolution du projet. Trois sections : **demandé**, **implémenté**
 
 ---
 
+# v3.2 — 23 août 2026 · lisibilité, connexité, greedy meshing
+
+Le fichier jouable est **`dist/scolopandre.html`**, présent sur le dépôt.
+
+## LE BUG QUI RENDAIT LES PANCARTES ILLISIBLES
+
+« Je ne peux pas lire les pancartes ! »
+
+`flash()` et le message de palier de froid écrivaient tous les deux dans
+`#alerte`, **sans arbitrage**. Comme `flash()` déposait son texte dans
+`dernierMessage` et que la mise à jour du HUD tourne cinq fois par seconde, la
+comparaison `froid.message !== dernierMessage` était vraie à l'itération
+suivante — et le HUD effaçait le flash au bout de **200 ms**.
+
+Ça ne touchait pas que les pancartes : *aucun* message transitoire n'était
+lisible. Ni « À L'ABRI », ni « FEU ALLUMÉ », ni « EFFONDREMENT ».
+
+Un seul écrivain désormais, avec une priorité explicite (flash > palier > rien).
+Et surtout : **la lecture d'une pancarte est passive**. Un panneau dédié
+s'affiche dès qu'on est à portée et y reste. `B` ne sert plus qu'à écrire.
+Chaque pancarte pose aussi **un point cyan clignotant sur le sismographe**, à
+toute distance — c'était l'intérêt même de la mécanique.
+
+## LES RAMPES NE RELIAIENT RIEN
+
+« Les plateformes ne fonctionnent pas, elles sont un peu placées au hasard, sont
+inaccessibles et ne mènent nulle part. »
+
+C'était littéral. L'ancienne fonction tirait **une cellule au hasard**, regardait
+si elle avait par chance un voisin plus bas, et y bâtissait un escalier. Elle ne
+se demandait jamais si cette falaise séparait quoi que ce soit.
+
+Nouveau module **`src/monde/connexite.js`** :
+
+1. calcul des **composantes connexes** du sol praticable, avec la vraie règle du
+   joueur — deux cellules ne sont reliées que si la marche passe **dans les deux
+   sens**. Une corniche d'où l'on saute sans pouvoir remonter ne relie rien ;
+2. pour chaque morceau isolé qui compte, on cherche la frontière où le
+   franchissement est le **moins cher** ;
+3. on y taille un escalier d'éboulis, et on recommence.
+
+Mesuré : **176 morceaux → 1 seul morceau significatif isolé**, avec **21 rampes**
+au lieu de 140. Beaucoup moins nombreuses, et chacune relie deux régions qui
+étaient réellement coupées.
+
+## GREEDY MESHING — ET SON RÉSULTAT RÉEL
+
+Implémenté sur les trois surfaces : fusion 2D des sols et plafonds, fusion 1D
+des parois. Les mesures, honnêtement :
+
+| | avant | après |
+|---|---|---|
+| sols + plafonds | — | **−15 % de quads** |
+| parois | — | −4 % |
+| cellules à sol plan | 21 % | 36 % |
+
+Deux constats en cours de route, tous deux mesurés :
+
+- **La moucheture bloquait tout.** Elle était tirée par cellule via `hash2(x,z)`
+  et quantifiée en cinq paliers : deux voisines partageaient leur palier une
+  fois sur cinq, la plage fusionnable moyenne tombait à 1,25 cellule. Même une
+  salle parfaitement plate ne pouvait pas fusionner, **uniquement à cause de la
+  couleur**. Elle est maintenant tirée par bloc de 4 × 4 cellules.
+- **Je m'attaquais au mauvais tiers.** Les parois représentaient **61 %** de la
+  géométrie (45 786 quads contre 29 064) et n'étaient pas fusionnées du tout.
+
+**Pourquoi le gain reste modeste, et c'est structurel :** le greedy meshing paie
+énormément sur un monde de voxels, où tout est plan par construction. Ici le
+terrain est un **champ de hauteur lissé** — les cavernes portent un bruit par
+cellule, les couloirs interpolent leur altitude, la relaxation crée des pentes.
+Seules 36 % des cellules ont un sol réellement plan, et `cornerH` biseaute les
+coins dès qu'un voisin diffère. Aller plus loin voudrait dire changer la nature
+du terrain, ce qui est une décision d'esthétique, pas une optimisation.
+
+Ce qui a été fait dans ce sens : `SETUP.monde.quantifierRelief` arrondit les
+altitudes à 25 cm. Le lissage de `cornerH` le rend presque invisible, le pas
+reste cinq fois inférieur à la marche du joueur, et les cellules planes passent
+de 21 % à 36 %. Mets-le à `0` pour le désactiver.
+
+## LE RESTE
+
+**Saut** — `ESPACE`. Le monde était devenu trop vertical pour s'en passer. Apex
+0,96 m, ce qui permet de se hisser à 2,21 m ; **elle en franchit 2,90**, donc
+l'asymétrie verticale — un pilier du jeu — est préservée avec 0,7 m de marge.
+Sauter fait du bruit. Le leurre passe au clic gauche seul.
+
+**Se dégager** — `D`. Le moteur bâtit son terrain par champ de hauteur : il
+finira toujours par coincer quelqu'un quelque part, et ce n'est pas la faute du
+joueur. La touche cherche une cellule d'accueil en spirale, **jamais un
+gouffre**, la plus proche possible, et fait du bruit en le faisant.
+
+**Visibilité divisée par deux** — la v3.1 avait sur-corrigé : on voyait à 40 m,
+ce qui vide la brume de son intérêt. Fog 1,05 → 2,10, godrays 1,35 → 0,65.
+
+**Cartes** — nouveau programme de rendu **texturé** (`src/rendu/carte-rendu.js`),
+avec son propre quad et ses UV. Les illustrations s'affichent vraiment dans le
+monde, découpées par leur canal alpha. Cadre ramené à un liseré de 1,8 cm au
+lieu d'une bordure de 12 cm, flottement abaissé de 1,10 m à 0,62 m et amplitude
+réduite de moitié, son de ramassage relevé d'environ 50 %.
+
+`python outils/gabarit_carte.py` génère neuf cartes d'essai au format 3:4 avec
+liseré de découpe et coins arrondis. **Les rangs passent en PNG** : le GIF n'a
+qu'un bit de transparence et déchiquette les coins arrondis.
+
+**Objets au sol** — le bois devient trois branches croisées, la fusée un tube
+avec sa coiffe, la trousse une mallette plate à croix, le leurre deux éclats de
+pierre. C'étaient des cubes de 40 à 55 cm.
+
+**Villages** — rien sur la carte au départ, comme demandé. On entre une fois
+dans la place barricadée, le village est **marqué pour de bon** (sauvegardé par
+graine). Chacun a maintenant une **cabane** où chaleur et santé remontent au
+maximum, sans consommer de ressource : le prix, c'est le trajet.
+
+## COMMANDES À JOUR
+
+`ESPACE` sauter · `CLIC` leurre · `CLIC DROIT` brandir la lampe · `F` lampe ·
+`C` ramper · `E` cachette / échelle · `G` feu de camp · `V` fusée ·
+`B` écrire sur une pancarte (`MAJ+B` la retirer) · **`D` se dégager** ·
+`TAB` sismographe · `I` collection · `P` réglages · `R` nouveau monde
+
+## CE QUI RESTE
+
+- **Le rendu n'a toujours pas été vu, ni l'audio écouté.** WebGL est simulé dans
+  le test ; tous les chiffres de lumière et de géométrie sont calculés.
+- La mère ne monte pas sur les passerelles (navigation à un seul étage).
+- Monolithe et tour à fenêtres sont encore des boîtes.
+
+---
+
 # v3.1 — 22 août 2026 · « on ne voit rien »
 
 Deuxième passe de test. Vingt-deux retours, dont plusieurs régressions

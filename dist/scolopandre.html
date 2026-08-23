@@ -80,6 +80,20 @@
   @keyframes battre{0%,100%{border-color:var(--rule)}50%{border-color:var(--alarm)}}
   @media (prefers-reduced-motion:reduce){#chaleur.critique{animation:none;border-color:var(--alarm)}}
 
+  /* ═══ LECTURE D'UNE PANCARTE ═══
+     Affiché en permanence tant qu'on est à portée. Un message fugace ne se lit
+     pas — et c'était précisément le défaut : le flash était en plus effacé au
+     bout de 200 ms par la mise à jour du HUD. */
+  #pancarte{position:fixed;left:50%;transform:translateX(-50%);bottom:104px;
+    max-width:min(560px,80vw);padding:10px 16px;text-align:center;
+    background:rgba(7,8,10,.88);border:1px solid var(--rule);
+    border-left:2px solid var(--signal);
+    font-size:12px;line-height:1.7;letter-spacing:.06em;color:var(--bone);
+    opacity:0;transition:opacity .3s;pointer-events:none}
+  #pancarte i{font-style:normal;color:var(--dim)}
+  #pancarte u{display:block;margin-top:6px;text-decoration:none;
+    font-size:9px;letter-spacing:.16em;color:var(--dim)}
+
   /* ligne d'alerte : paliers de froid, cachettes, effondrements */
   #alerte{position:fixed;left:0;right:0;bottom:64px;text-align:center;font-size:11px;
     letter-spacing:.34em;color:var(--alarm);opacity:0;transition:opacity .45s;pointer-events:none}
@@ -142,9 +156,9 @@
 <div id="bar">
   <div id="keys"><b>ZQSD</b> avancer · <b>MAJ</b> courir · <b>C</b> ramper ·
     <b>F</b> lampe · <b>CLIC DROIT</b> brandir · <b>E</b> cachette / échelle ·
-    <b>CLIC</b>/<b>ESPACE</b> leurre · <b>G</b> feu de camp · <b>V</b> fusée ·
-    <b>B</b> pancarte · <b>TAB</b> sismographe · <b>I</b> collection ·
-    <b>P</b> réglages · <b>R</b> nouveau monde</div>
+    <b>ESPACE</b> sauter · <b>CLIC</b> leurre · <b>G</b> feu · <b>V</b> fusée ·
+    <b>B</b> pancarte · <b>D</b> se dégager · <b>TAB</b> sismographe ·
+    <b>I</b> collection · <b>P</b> réglages · <b>R</b> nouveau monde</div>
   <div id="right">
     <div id="lures">—</div>
     <div id="place">—</div>
@@ -162,6 +176,7 @@
 </div>
 <div id="sac">—</div>
 <div id="alerte"></div>
+<div id="pancarte"></div>
 
 <div id="caught"><span>ELLE T'A TROUVÉ</span></div>
 <div id="objectif">SORTIE <b id="oDist">—</b> · CARTES <b id="oCartes">0</b> · <b id="oProf">0 m</b></div>
@@ -252,6 +267,18 @@ const SETUP = {
     plafondCiel:26,
     plafondRampe:1.30,   // en dessous, il faut ramper
 
+    /* ─── QUANTIFICATION DU RELIEF ───
+        Arrondit toutes les altitudes à ce pas, en mètres. 0 = désactivé.
+
+        Ce n'est pas qu'une optimisation : ça change le LOOK. Le sol devient une
+        succession de plateaux, comme des strates de roche, au lieu d'une pente
+        continue. Le greedy meshing y gagne énormément — un sol plan fusionne,
+        un sol bruité non — et le rendu bas de gamme du jeu s'y prête.
+
+        Le pas doit rester très inférieur à la marche du joueur (1,25 m) pour
+        qu'aucune strate ne devienne infranchissable. */
+    quantifierRelief:0.25,
+
     bordVide:14,         // cellules de vide tout autour de la planche
     marcheJoueur:1.25,   // STEPUP — ce que le joueur enjambe
     corniche:1.1,        // LEDGE — au-delà, l'arête reste franche
@@ -274,9 +301,15 @@ const SETUP = {
     gouffreLargMin:9,
     gouffreLargMax:28,
 
-    /* Rampes d'éboulis : elles FRANCHISSENT une falaise, au lieu des
-       plateformes flottantes de la v3.0 qui ne reliaient rien. */
-    nbRampes:420,
+    /* ─── RAMPES D'ÉBOULIS ───
+        Elles ne sont plus tirées au hasard : monde/connexite.js calcule les
+        morceaux du monde qui sont réellement COUPÉS les uns des autres, et ne
+        pose une rampe qu'à la frontière la moins chère entre deux d'entre eux.
+        D'où un nombre bien plus faible qu'en v3.1 — et chacune sert. */
+    nbRampes:120,
+    rampeChuteMax:11,      // au-delà, un escalier n'est plus plausible
+    rampePasses:4,         // on recommence tant que ça relie encore
+    rampeTailleMin:260,    // cellules : en dessous, c'est une miette
 
     nbPonts:260,
     pontLongMin:14,
@@ -305,8 +338,12 @@ const SETUP = {
      Ramené à un niveau où l'on distingue le relief à 20 m et où la brume
      avale à 35 m. Les curseurs restent là pour durcir si tu veux.          */
   image:{
-    fog:1.05,    fogMax:3.5,
-    rays:1.35,   raysMax:3.0,
+    /* v3.1 avait sur-corrigé : on voyait à 40 m, ce qui vide la brume de tout
+       son intérêt. Densité doublée — la portée est donc divisée par deux,
+       ~20 m au lieu de ~40. Et les godrays étaient trop appuyés : ils
+       écrasaient le reste de l'image dès qu'une source entrait dans le champ. */
+    fog:2.10,    fogMax:3.5,
+    rays:0.65,   raysMax:3.0,
     ambiance:1.0,        // multiplicateur global de la lumière ambiante
     vignette:0.55,       // 0.92 en v3.0 : les bords de l'écran étaient noirs
     grain:0.115,
@@ -371,6 +408,20 @@ const SETUP = {
     hauteurRampe:1.02,
     rayon:0.30,
     gravite:24,
+
+    /* ─── LE SAUT ───
+       Le monde est devenu très vertical : sans saut, une corniche de 1,60 m
+       oblige à contourner sur cinquante mètres. Mais L'ASYMÉTRIE VERTICALE EST
+       UN PILIER DU JEU — elle grimpe 2,90 m, pas toi — et un saut trop haut la
+       détruirait.
+
+       Le calcul : apex = v² / (2g) = 6.8² / 48 = 0,96 m. Comme la collision
+       compare la marche à l'altitude COURANTE, on peut donc se hisser jusqu'à
+       0,96 + 1,25 = 2,21 m en sautant. Elle en franchit 2,90. La marge de
+       0,7 m est ce qui garantit qu'il reste des endroits où elle va et pas toi. */
+    forceSaut:6.8,
+    bruitSaut:5,         // décoller n'est pas discret
+    delaiSaut:0.22,      // anti-rebond : on ne mitraille pas la barre d'espace
 
     // Chute provoquée par les secousses
     seuilChute:0.55,     // au-delà de ce tremblement, on peut tomber
@@ -605,6 +656,20 @@ const SETUP = {
   cartes:{
     nombreDansLeMonde:420,
     essaisPlacement:48000,
+
+    /* ─── APPARENCE DANS LE MONDE ───
+       Retour de test : « cadre trop gros / vulgaire, les rendre plus fines et
+       plus esthétiques, et volant un peu moins haut ».
+       Le rapport 3:4 est celui d'une carte à collectionner ; garde-le si tu
+       changes les dimensions, sinon les illustrations seront déformées. */
+    largeur:0.52,
+    hauteur:0.69,              // 0.52 × 4/3
+    cadre:0.018,               // liseré : un trait, pas une bordure
+    hauteurFlottement:0.62,    // au-dessus du sol (1.10 en v3.1 : trop haut)
+    amplitudeFlottement:0.055, // le balancement (0.12 : trop agité)
+    vitesseRotation:0.85,
+    eclatIllustration:1.30,    // l'image doit rester lisible dans la brume
+    porteeRendu:58,            // mètres
   },
 
   /* ─────────────── DÉCOR ───────────────
@@ -1423,85 +1488,10 @@ function marquerFalaises(){
 
 /* ─────────────── plateformes ─────────────── */
 
-/* ═══ RAMPES DE FALAISE ═══
-   Retour de test : « les plateformes flottent juste dans l'air, ça n'a aucun
-   sens. Je voulais relier des parties de la carte séparées par des falaises,
-   pas des plateformes placées en masse et n'importe comment. »
-
-   C'était exact : la v3.0 posait des blocs surélevés au MILIEU des salles
-   dégagées, sans rien relier. Ils ne servaient qu'à donner à la créature un
-   angle d'attaque par le haut, ce qui ne se lit pas quand on joue.
-
-   Ici on ne pose plus rien au hasard. On CHERCHE les falaises — une arête où
-   le sol tombe de plus d'une enjambée — et on y taille un escalier d'éboulis
-   qui remonte, marche par marche, chacune franchissable. Le résultat se lit
-   comme un pan de paroi effondré, et il RELIE deux niveaux qui étaient coupés.
-
-   On ne creuse jamais dans la roche : on RELÈVE des cellules de sol déjà
-   praticables du côté bas. La rampe ne peut donc pas ouvrir un passage qui
-   n'existait pas dans le plan.                                              */
-function placerRampes(lights, props){
-  const MAX = STEPUP - 0.06;              // hauteur d'une marche
-  const NB = [[1,0],[-1,0],[0,1],[0,-1]];
-  let posees = 0;
-
-  for(let essai=0; essai<26000 && posees < SETUP.relief.nbRampes; essai++){
-    const x = ri(6, GW-7), z = ri(6, GH-7);
-    const i = idx(x,z);
-    if(grid[i] !== FLOOR) continue;
-
-    // trouver un voisin nettement plus bas : c'est le pied de la falaise
-    let dir = null, bas = 0;
-    for(const [dx,dz] of NB){
-      if(!isFloor(x+dx, z+dz)) continue;
-      const n = idx(x+dx, z+dz);
-      const chute = floorH[i] - floorH[n];
-      if(chute > MAX*1.6 && chute < 9){ dir = [dx,dz]; bas = n; break; }
-    }
-    if(!dir) continue;
-
-    const chute = floorH[i] - floorH[bas];
-    const marches = Math.ceil(chute / MAX);
-    const [dx,dz] = dir;
-
-    /* Le couloir de la rampe part du bas et remonte vers la falaise. Toutes
-       les cellules traversées doivent déjà être du sol : on ne perce rien. */
-    let ok = true;
-    for(let k=1; k<=marches && ok; k++)
-      for(let s2=-1; s2<=1 && ok; s2++){
-        const px = x + dx*k + (dz ? s2 : 0), pz = z + dz*k + (dx ? s2 : 0);
-        if(!isFloor(px,pz) || pont[idx(px,pz)]) ok = false;
-      }
-    if(!ok) continue;
-
-    // les marches, de la plus haute (contre la falaise) à la plus basse
-    const base = floorH[bas];
-    for(let k=1; k<=marches; k++){
-      const y = floorH[i] - (chute * k / (marches + 1));
-      for(let s2=-1; s2<=1; s2++){
-        const px = x + dx*k + (dz ? s2 : 0), pz = z + dz*k + (dx ? s2 : 0);
-        const pi = idx(px,pz);
-        if(floorH[pi] >= y) continue;      // déjà plus haut : on ne creuse pas
-        floorH[pi] = y;
-        platform[pi] = 1;
-      }
-    }
-
-    /* Une rampe invisible dans la brume est une rampe qu'on ne trouvera
-       jamais. Deux repères lumineux au pied et au sommet : c'est le seul
-       moyen honnête de signaler un franchissement. */
-    const teinte = BIOMES[biome[i]].lum;
-    for(const [cx2, cz2, cy] of [[x, z, floorH[i]], [x+dx*marches, z+dz*marches, base]]){
-      if(lights.length >= SETUP.decor.maxLumieres) break;
-      lights.push({
-        x:(cx2+0.5)*CELL, y:cy+0.7, z:(cz2+0.5)*CELL,
-        c:[teinte[0]*1.5, teinte[1]*1.1, teinte[2]*0.8], ph:rnd()*6.28,
-      });
-    }
-    posees++;
-  }
-  return posees;
-}
+/* Les rampes de franchissement ont déménagé dans monde/connexite.js : elles
+   ne relèvent plus du décor mais de la TOPOLOGIE. Voir l'explication là-bas —
+   en résumé, les poser au hasard produisait des escaliers qui ne reliaient
+   rien, ce qui était exactement le reproche fait à la version d'avant.      */
 
 /* ─────────────── plan du monde ─────────────── */
 
@@ -1592,15 +1582,32 @@ function poserPlafonds(){
   }
 }
 
+/**
+ * Arrondit le champ de hauteur à un pas fixe. Voir SETUP.monde.quantifierRelief.
+ * Appelé APRÈS la relaxation : quantifier avant reviendrait à quantifier, puis
+ * à tout réétaler, et il ne resterait rien de plan.
+ */
+function quantifierRelief(){
+  const pas = SETUP.monde.quantifierRelief;
+  if(!pas) return;
+  const inv = 1/pas;
+  for(let i=0;i<GW*GH;i++){
+    if(grid[i] !== FLOOR) continue;
+    floorH[i] = Math.round(floorH[i]*inv)*pas;
+    ceilH[i]  = Math.round(ceilH[i]*inv)*pas;
+  }
+}
+
 /** Recalcule ouverture, bornes et falaises après une modification du relief. */
 function finaliserRelief(){
+  quantifierRelief();
   calculerOuverture();
   poserPlafonds();
   marquerFalaises();
   majBornes();
 }
 
-  return { carveBlob, carveRect, corridorLong, creuserPlan, epine, finaliserRelief, marquerFalaises, placerRampes, poserPlafonds, relaxerEpine, salles };
+  return { carveBlob, carveRect, corridorLong, creuserPlan, epine, finaliserRelief, marquerFalaises, poserPlafonds, quantifierRelief, relaxerEpine, salles };
 })();
 
 /* ─── src/monde/relief.js ─── */
@@ -1732,6 +1739,263 @@ function effondrerZone(cx, cz, rayon){
 }
 
   return { creuserGouffres, effondrerZone, gouffres };
+})();
+
+/* ─── src/monde/connexite.js ─── */
+__M['M_monde_connexite'] = (function(){
+  const { SETUP } = __M['M_setup'];
+  const { rnd, ri, rf } = __M['M_noyau_rng'];
+  const { BIOMES } = __M['M_monde_biomes'];
+  const { GW, GH, CELL, FLOOR, STEPUP, grid, floorH, blocked, vide, platform, falaise, biome, pont, idx, isFloor } = __M['M_monde_grille'];
+/* ═══ MONDE / CONNEXITÉ ═══
+   Trouve les morceaux du monde qui sont COUPÉS les uns des autres, et n'y
+   place des rampes que là où elles servent réellement à quelque chose.
+
+   ── POURQUOI LES RAMPES NE MARCHAIENT PAS ──────────────────────────────────
+   Retour de test : « les plateformes sont un peu placées au hasard, elles sont
+   inaccessibles et ne mènent nulle part ».
+
+   C'était littéralement le cas. La version précédente tirait une cellule AU
+   HASARD, regardait si elle avait par chance un voisin plus bas, et y bâtissait
+   un escalier. Elle ne se demandait jamais si cette falaise SÉPARAIT quoi que
+   ce soit. Sur ~140 rampes posées, la quasi-totalité tombait donc sur des
+   arêtes déjà contournables — un escalier au milieu de nulle part, montant vers
+   un endroit qu'on pouvait déjà atteindre par le côté.
+
+   ── CE QU'ON FAIT À LA PLACE ───────────────────────────────────────────────
+   1. On calcule les COMPOSANTES CONNEXES du sol praticable, avec la vraie règle
+      du joueur : on ne relie deux cellules voisines que si la marche entre
+      elles est franchissable DANS LES DEUX SENS. Une corniche dont on peut
+      sauter mais pas remonter n'est donc PAS une liaison.
+   2. On trie les composantes par taille. La plus grande est le continent.
+   3. Pour chaque autre composante d'une taille qui compte, on cherche le point
+      de sa frontière où la marche vers une composante déjà reliée est la PLUS
+      FAIBLE — le franchissement le moins cher.
+   4. On y taille un escalier d'éboulis, et on fusionne les deux composantes.
+
+   Résultat : chaque rampe RELIE deux morceaux du monde qui étaient coupés, et
+   il n'y en a aucune qui ne mène nulle part. Il y en a beaucoup moins qu'avant
+   — trente ou quarante au lieu de cent quarante — et c'est exactement le but.
+
+   Le même calcul sert à repérer les morceaux séparés par du VIDE, que seul un
+   pont peut atteindre : monde/ponts.js s'en sert pour prioriser ses tronçons. */
+
+
+
+
+
+
+const N = () => GW * GH;
+
+/** Numéro de composante par cellule, −1 si la cellule n'est pas praticable. */
+const composante = new Int32Array(GW * GH);
+
+/** [{id, taille, cellule}] trié par taille décroissante. */
+const morceaux = [];
+
+/* Praticable pour le JOUEUR : du sol, pas d'élément massif, pas de vide. */
+const praticable = i =>
+  grid[i] === FLOOR && !blocked[i] && !vide[i];
+
+/* Deux cellules voisines sont reliées si la marche passe DANS LES DEUX SENS.
+   C'est la nuance qui compte : une corniche d'où l'on saute sans pouvoir
+   remonter ne relie rien, et c'est précisément ce qu'une rampe doit réparer. */
+const relie = (a, b) => Math.abs(floorH[a] - floorH[b]) <= STEPUP;
+
+/**
+ * Étiquette toutes les composantes connexes. Parcours en largeur avec une file
+ * plate : sur 1,18 M de cellules une récursion exploserait la pile.
+ */
+function analyser(){
+  const n = N();
+  composante.fill(-1);
+  morceaux.length = 0;
+
+  const file = new Int32Array(n);
+  let id = 0;
+
+  for(let depart=0; depart<n; depart++){
+    if(composante[depart] !== -1 || !praticable(depart)) continue;
+
+    let tete = 0, queue = 0;
+    file[queue++] = depart;
+    composante[depart] = id;
+    let taille = 0;
+
+    while(tete < queue){
+      const i = file[tete++];
+      taille++;
+      const x = i % GW, z = (i / GW) | 0;
+      if(x < 1 || z < 1 || x >= GW-1 || z >= GH-1) continue;
+      for(const d of [1, -1, GW, -GW]){
+        const j = i + d;
+        if(composante[j] !== -1 || !praticable(j) || !relie(i, j)) continue;
+        composante[j] = id;
+        file[queue++] = j;
+      }
+    }
+    morceaux.push({id, taille, cellule: depart});
+    id++;
+  }
+
+  morceaux.sort((a, b) => b.taille - a.taille);
+  return morceaux;
+}
+
+/**
+ * Toutes les frontières entre deux composantes différentes : les endroits où
+ * une rampe aurait un sens. On ne garde que la marche la plus faible par paire
+ * de composantes — inutile de proposer dix passages au même endroit.
+ *
+ * @returns Map "a|b" -> {a, b, haut, bas, chute, dir}
+ */
+function frontieres(){
+  const best = new Map();
+  for(let z=2; z<GH-2; z++) for(let x=2; x<GW-2; x++){
+    const i = idx(x, z);
+    const ca = composante[i];
+    if(ca < 0) continue;
+    for(const [dx, dz] of [[1,0],[0,1]]){
+      const j = idx(x+dx, z+dz);
+      const cb = composante[j];
+      if(cb < 0 || cb === ca) continue;
+
+      const haut = floorH[i] >= floorH[j] ? i : j;
+      const bas  = haut === i ? j : i;
+      const chute = floorH[haut] - floorH[bas];
+      // trop haut pour un escalier : c'est un pont qu'il faudrait
+      if(chute > SETUP.relief.rampeChuteMax) continue;
+
+      const cle = ca < cb ? ca + '|' + cb : cb + '|' + ca;
+      const vieux = best.get(cle);
+      if(vieux && vieux.chute <= chute) continue;
+      // direction du haut vers le bas, en cardinal
+      const dir = haut === i ? [dx, dz] : [-dx, -dz];
+      best.set(cle, {a: ca, b: cb, haut, bas, chute, dir});
+    }
+  }
+  return best;
+}
+
+/**
+ * Taille un escalier d'éboulis depuis le pied de la falaise.
+ *
+ * On ne CREUSE jamais : on RELÈVE des cellules de sol déjà praticables du côté
+ * bas. Une rampe ne peut donc pas ouvrir un passage qui n'existait pas dans le
+ * plan, seulement rendre franchissable une marche qui ne l'était pas.
+ *
+ * @returns true si l'escalier a pu être bâti
+ */
+function tailler(f, lights, props){
+  const MARCHE = STEPUP - 0.08;
+  const marches = Math.max(1, Math.ceil(f.chute / MARCHE));
+  const [dx, dz] = f.dir;                    // du haut vers le bas
+  const hx = f.haut % GW, hz = (f.haut / GW) | 0;
+  const hHaut = floorH[f.haut];
+
+  // largeur perpendiculaire : une rampe d'une seule cellule est introuvable
+  const px = dz, pz = dx;
+  const DEMI = 1;
+
+  /* Toutes les cellules du couloir doivent déjà être du sol, libres de pont, et
+     appartenir au côté BAS. Sinon on renonce : mieux vaut pas de rampe qu'une
+     rampe qui traverse une paroi. */
+  for(let k=1; k<=marches; k++)
+    for(let s=-DEMI; s<=DEMI; s++){
+      const cx = hx + dx*k + px*s, cz = hz + dz*k + pz*s;
+      if(!isFloor(cx, cz)) return false;
+      const c = idx(cx, cz);
+      if(pont[c] || vide[c] || blocked[c]) return false;
+    }
+
+  // les marches, de la plus haute (contre la falaise) à la plus basse
+  const touchees = [];
+  for(let k=1; k<=marches; k++){
+    const y = hHaut - (f.chute * k / (marches + 1));
+    for(let s=-DEMI; s<=DEMI; s++){
+      const cx = hx + dx*k + px*s, cz = hz + dz*k + pz*s;
+      const c = idx(cx, cz);
+      if(floorH[c] >= y) continue;           // déjà plus haut : on n'abaisse pas
+      floorH[c] = y;
+      platform[c] = 1;
+      falaise[c] = 0;                        // ce n'est plus une arête franche
+      touchees.push({x:cx, z:cz, i:c, y});
+    }
+  }
+  if(!touchees.length) return false;
+
+  /* Ça doit SE LIRE comme un pan de paroi effondré, pas comme un escalier de
+     jardin. Des gravats sur les bords des marches, et deux repères lumineux —
+     une rampe qu'on ne voit pas dans la brume est une rampe inutile. */
+  const teinte = BIOMES[biome[f.haut]].lum;
+  const parts = [];
+  for(const t of touchees){
+    if(rnd() > 0.55) continue;
+    const wx = (t.x + 0.5)*CELL, wz = (t.z + 0.5)*CELL;
+    for(let q=0; q<2; q++){
+      const s = rf(0.18, 0.44);
+      parts.push({x: wx + rf(-0.6,0.6), y: t.y + s*0.4, z: wz + rf(-0.6,0.6),
+                  sx:s, sy:s*rf(0.5,0.9), sz:s*rf(0.7,1.1),
+                  c: BIOMES[biome[t.i]].wall, r: rf(0,3)});
+    }
+  }
+  if(parts.length) props.push({parts, cell: f.haut});
+
+  for(const [cx, cz, cy] of [
+        [hx, hz, hHaut],
+        [hx + dx*marches, hz + dz*marches, floorH[f.bas]]]){
+    if(lights.length >= SETUP.decor.maxLumieres) break;
+    lights.push({
+      x:(cx+0.5)*CELL, y:cy+0.8, z:(cz+0.5)*CELL,
+      c:[teinte[0]*1.8, teinte[1]*1.3, teinte[2]*0.9], ph:rnd()*6.28,
+    });
+  }
+  return true;
+}
+
+/**
+ * Le travail complet : analyser, relier, recommencer tant qu'on progresse.
+ *
+ * @returns {rampes, avant, apres, isoles} — de quoi juger si ça a marché
+ */
+function relierLeMonde(lights, props){
+  const S = SETUP.relief;
+  let rampes = 0;
+
+  analyser();
+  const avant = morceaux.length;
+
+  for(let passe = 0; passe < S.rampePasses; passe++){
+    const fr = frontieres();
+    if(!fr.size) break;
+
+    /* On traite les franchissements les moins chers d'abord : ils sont les plus
+       plausibles physiquement (un petit éboulis) et les plus sûrs à bâtir. */
+    const liste = [...fr.values()].sort((a, b) => a.chute - b.chute);
+
+    // taille de chaque composante, pour ignorer les miettes
+    const taille = new Map();
+    for(const m of morceaux) taille.set(m.id, m.taille);
+
+    let posees = 0;
+    for(const f of liste){
+      if(rampes >= S.nbRampes) break;
+      const ta = taille.get(f.a) || 0, tb = taille.get(f.b) || 0;
+      // relier deux cailloux entre eux n'intéresse personne
+      if(Math.max(ta, tb) < S.rampeTailleMin) continue;
+      if(Math.min(ta, tb) < S.rampeTailleMin && Math.min(ta, tb) < 40) continue;
+      if(tailler(f, lights, props)){ rampes++; posees++; }
+    }
+    if(!posees) break;
+    analyser();                              // la topologie a changé
+  }
+
+  const apres = morceaux.length;
+  const isoles = morceaux.filter(m => m.taille >= S.rampeTailleMin).length;
+  return {rampes, avant, apres, isoles};
+}
+
+  return { analyser, composante, morceaux, relierLeMonde };
 })();
 
 /* ─── src/monde/ponts.js ─── */
@@ -2576,7 +2840,8 @@ function placerVillages(){
     if(total === 0 || sol/total < 0.52) continue;
 
     const y = floorH[i0];
-    const v = {x:wx, z:wz, y, rayon:V.rayon, safe:V.safeRayon, cell:i0, trousses:[]};
+    const v = {x:wx, z:wz, y, rayon:V.rayon, safe:V.safeRayon, cell:i0,
+               trousses:[], vu:false};
 
     batirVillage(v, c, RC);
     villages.push(v);
@@ -2604,6 +2869,7 @@ function batirVillage(v, c, RC){
     }
   };
 
+  v.angleCabane = rnd()*6.283;
   poser('maison',     ri(...V.maisons),     0.40, 1.0);
   poser('carcasse',   ri(...V.carcasses),   0.30, 1.0);
   poser('lampadaire', ri(...V.lampadaires), 0.22, 0.9);
@@ -2645,6 +2911,42 @@ function batirVillage(v, c, RC){
   }
   props.push({parts, cell:v.cell});
 
+  /* ── LA CABANE ──
+     « Toujours une zone / cabane / maison où se restaurer complètement et en
+     sécurité. » Une baraque de tôle au centre de la place, porte ouverte. À
+     l'intérieur, la chaleur ET la santé remontent jusqu'au maximum — c'est le
+     seul endroit du monde où l'on récupère vraiment, sans consommer de
+     ressource. Elle est fixe : le prix, c'est le trajet. */
+  {
+    const cs = Math.cos(v.angleCabane), sn = Math.sin(v.angleCabane);
+    const cx2 = v.x + cs*v.safe*0.30, cz2 = v.z + sn*v.safe*0.30;
+    v.cabane = {x:cx2, z:cz2, r:2.6};
+    const mur = [0.21,0.19,0.17], tole = [0.16,0.15,0.14];
+    const L2 = 4.0, P2 = 3.4, H2 = 2.5;
+    // trois murs pleins, le quatrième percé d'une porte
+    for(let k=0;k<4;k++){
+      const a = k*1.5708 + v.angleCabane;
+      const px = cx2 + Math.cos(a)*P2*0.5, pz = cz2 + Math.sin(a)*P2*0.5;
+      if(k === 0){                       // la façade : deux jambages
+        for(const sd of [1,-1])
+          parts.push({x:px + Math.cos(a+1.5708)*1.3*sd, y:v.y+H2*0.5,
+                      z:pz + Math.sin(a+1.5708)*1.3*sd,
+                      sx:1.3, sy:H2, sz:0.22, c:mur, r:a});
+        parts.push({x:px, y:v.y+H2-0.25, z:pz, sx:L2, sy:0.5, sz:0.22, c:mur, r:a});
+      } else {
+        parts.push({x:px, y:v.y+H2*0.5, z:pz, sx:L2, sy:H2, sz:0.24, c:mur, r:a});
+      }
+    }
+    // le toit, en tôle, légèrement de travers
+    parts.push({x:cx2, y:v.y+H2+0.12, z:cz2, sx:L2+0.6, sy:0.22, sz:P2+0.6,
+                c:tole, r:v.angleCabane+0.05});
+    // une lanterne à l'intérieur : on doit la voir depuis la place
+    parts.push({x:cx2, y:v.y+H2-0.45, z:cz2, sx:0.26, sy:0.30, sz:0.26,
+                c:[2.6,2.2,1.3], emis:1});
+    if(lights.length < SETUP.decor.maxLumieres)
+      lights.push({x:cx2, y:v.y+1.5, z:cz2, c:[1.9,1.6,1.0], ph:rnd()*6.28});
+  }
+
   /* ── LES TROUSSES ──
      Sur la place, bien visibles, en nombre limité. Elles ne repoussent pas :
      c'est ce qui fait qu'on compte ses passages. */
@@ -2665,10 +2967,64 @@ function batirVillage(v, c, RC){
   }
 }
 
+/* ═══ DÉCOUVERTE ═══
+   « Les villages sont des zones mortes donc pas besoin de les voir, et il n'y a
+   aucune raison de savoir où ils sont initialement. Par contre une fois
+   découvert on peut faire qu'il y a un beacon pour le retrouver sur la carte. »
+
+   Exactement ça : rien sur le sismographe au départ. On entre une fois dans la
+   place barricadée, le village est marqué, et il le reste — sauvegardé par
+   graine de monde, comme les pancartes. Le repérage se mérite.               */
+
+const CLE_VUS = 'scolopandre.villages.v1';
+let graineCourante = 0;
+
+function chargerVillagesVus(graine){
+  graineCourante = graine >>> 0;
+  for(const v of villages) v.vu = false;
+  try{
+    const tout = JSON.parse(localStorage.getItem(CLE_VUS) || '{}');
+    const lot = tout[graineCourante] || [];
+    for(const [x, z] of lot){
+      const v = villages.find(w => Math.abs(w.x-x) < 2 && Math.abs(w.z-z) < 2);
+      if(v) v.vu = true;
+    }
+  }catch(e){}
+}
+
+function enregistrerVus(){
+  try{
+    const tout = JSON.parse(localStorage.getItem(CLE_VUS) || '{}');
+    tout[graineCourante] = villages.filter(v => v.vu)
+                                   .map(v => [Math.round(v.x), Math.round(v.z)]);
+    const cles = Object.keys(tout);
+    if(cles.length > 8) for(const k of cles.slice(0, cles.length-8)) delete tout[k];
+    localStorage.setItem(CLE_VUS, JSON.stringify(tout));
+  }catch(e){}
+}
+
+/**
+ * Appelé quand le joueur est dans une place. Renvoie le village s'il vient
+ * d'être découvert (donc une seule fois), null sinon.
+ */
+function marquerDecouvert(v){
+  if(!v || v.vu) return null;
+  v.vu = true;
+  enregistrerVus();
+  return v;
+}
+
 /** Es-tu dans la place barricadée d'un village ? Renvoie le village, ou null. */
 function dansSafe(x, z){
   for(const v of villages)
     if(Math.hypot(v.x - x, v.z - z) < v.safe) return v;
+  return null;
+}
+
+/** Es-tu DANS la cabane ? C'est là qu'on se restaure complètement. */
+function dansCabane(x, z){
+  for(const v of villages)
+    if(v.cabane && Math.hypot(v.cabane.x - x, v.cabane.z - z) < v.cabane.r) return v;
   return null;
 }
 
@@ -2694,7 +3050,7 @@ function viderVillages(){
   villages.length = 0; trousses.length = 0; bois.length = 0; fusees.length = 0;
 }
 
-  return { bois, dansSafe, fusees, placerBoisEtFusees, placerVillages, trousses, viderVillages, villages };
+  return { bois, chargerVillagesVus, dansCabane, dansSafe, fusees, marquerDecouvert, placerBoisEtFusees, placerVillages, trousses, viderVillages, villages };
 })();
 
 /* ─── src/monde/maillage.js ─── */
@@ -2817,9 +3173,59 @@ function cornerH(x,z,ox,oz,base,arr){
   return s/n;
 }
 
+/* ═══════════════ GREEDY MESHING ═══════════════
+   Le sol d'une salle carvée est plat sur des dizaines de cellules : en émettre
+   deux triangles par cellule est un gaspillage pur. Le greedy meshing fusionne
+   les cellules voisines qui portent EXACTEMENT la même chose en un seul grand
+   rectangle, avant de produire la géométrie.
+
+   ── LES DEUX CONDITIONS DE FUSION ──────────────────────────────────────────
+   1. La cellule doit être PLATE : ses quatre coins interpolés par cornerH()
+      valent sa propre hauteur, à epsilon près. Dès qu'un voisin est à une
+      altitude différente, cornerH biseaute le coin — et fusionner effacerait ce
+      biseau, donc les pentes douces et les corniches. Ces cellules-là restent
+      donc traitées une par une, exactement comme avant.
+   2. Elle doit partager sa clé avec sa voisine : même hauteur, même biome,
+      même NIVEAU DE TEINTE.
+
+   ── LA TEINTE, LE PIÈGE ────────────────────────────────────────────────────
+   Chaque cellule était mouchetée par hash2(x,z), une valeur continue : deux
+   cellules n'avaient donc JAMAIS la même couleur, et rien n'aurait pu
+   fusionner. On quantifie la moucheture en quelques paliers. On garde la
+   variation qui casse les grands aplats, on gagne la fusion — et le tramage du
+   post-process brouille de toute façon les frontières entre paliers.
+
+   ── LES PAROIS ─────────────────────────────────────────────────────────────
+   Fusion en une dimension seulement : le long d'un mur, les cellules
+   consécutives qui montent à la même hauteur donnent un seul quad. C'est le
+   cas de tous les périmètres de salle.                                       */
+
+const TEINTES = 5;               // paliers de moucheture
+const BLOC_TEINTE = 4;           // cellules : la moucheture varie par BLOC
+const PLAT = 0.012;              // tolérance pour juger une cellule plate
+
+/* ── POURQUOI LA MOUCHETURE EST PAR BLOC ──
+   Première tentative : hash2(x,z) par cellule, quantifié en cinq paliers. Deux
+   cellules voisines partageaient donc leur palier une fois sur cinq, et la
+   plage fusionnable moyenne tombait à 1,25 cellule — mesuré, 3 % de gain.
+   Même une salle parfaitement plate ne pouvait pas fusionner, uniquement à
+   cause de la couleur.
+
+   La moucheture est maintenant tirée par bloc de 4 × 4 cellules, soit 6 m. À
+   20 m de visibilité c'est encore une variation qu'on perçoit sur les grandes
+   surfaces, et les salles fusionnent enfin. */
+
+/** Compteurs du dernier pavé bâti. Lus par le rapport de génération. */
+const statsMaillage = {quadsBruts:0, quadsEmis:0, paves:0,
+                              plats:0, nonPlats:0,
+                              paroisBrutes:0, paroisEmises:0};
+
 function batirPave(k){
   const P=[], N=[], C=[];
   const kx0 = (k % CHW) * CH, kz0 = ((k / CHW) | 0) * CH;
+  const kx1 = Math.min(GW, kx0+CH), kz1 = Math.min(GH, kz0+CH);
+  const LX = kx1 - kx0, LZ = kz1 - kz0;
+  if(LX <= 0 || LZ <= 0) return null;
 
   const quad = (p,n,c) => {
     const push = (v,cc) => { P.push(v[0],v[1],v[2]); N.push(n[0],n[1],n[2]); C.push(cc[0],cc[1],cc[2]); };
@@ -2828,12 +3234,101 @@ function batirPave(k){
   };
   const h = CELL/2;
 
-  for(let z=kz0; z<Math.min(GH,kz0+CH); z++) for(let x=kx0; x<Math.min(GW,kx0+CH); x++){
+  const teinteDe = (x,z) => Math.floor(
+    hash2(Math.floor(x/BLOC_TEINTE), Math.floor(z/BLOC_TEINTE)) * TEINTES);
+
+  /** Un coin de cellule en coordonnées monde. sa/sb valent ±1 sur chaque axe. */
+  const coin = (x, z, s2) => [c2w(x) + s2[0]*h, c2w(z) + s2[1]*h];
+  const facteur  = niv => 0.88 + (niv + 0.5) / TEINTES * 0.24;
+
+  /* ── passe 1 : les clés ──
+     Pour chaque cellule du pavé, on note si elle est fusionnable et sous quelle
+     clé. Une clé nulle veut dire « à traiter individuellement ». */
+  const cleSol = new Float64Array(LX*LZ).fill(NaN);
+  const clePla = new Float64Array(LX*LZ).fill(NaN);
+  const vus    = new Uint8Array(LX*LZ);
+
+  for(let z=kz0; z<kz1; z++) for(let x=kx0; x<kx1; x++){
     const i = idx(x,z);
-    if(grid[i] !== FLOOR) continue;
-    if(vide[i]) continue;                       // un gouffre n'a pas de fond
+    if(grid[i] !== FLOOR || vide[i]) continue;
+    const l = (z-kz0)*LX + (x-kx0);
+    const f = floorH[i], ce = ceilH[i];
+
+    const platSol =
+      Math.abs(cornerH(x,z,-1,-1,f,floorH) - f) < PLAT &&
+      Math.abs(cornerH(x,z, 1,-1,f,floorH) - f) < PLAT &&
+      Math.abs(cornerH(x,z, 1, 1,f,floorH) - f) < PLAT &&
+      Math.abs(cornerH(x,z,-1, 1,f,floorH) - f) < PLAT;
+    const platPla = !sky[i] &&
+      Math.abs(cornerH(x,z,-1,-1,ce,ceilH) - ce) < PLAT &&
+      Math.abs(cornerH(x,z, 1,-1,ce,ceilH) - ce) < PLAT &&
+      Math.abs(cornerH(x,z, 1, 1,ce,ceilH) - ce) < PLAT &&
+      Math.abs(cornerH(x,z,-1, 1,ce,ceilH) - ce) < PLAT;
+
+    /* La clé encode hauteur (au centimètre), biome et teinte dans un seul
+       nombre : la comparaison de fusion devient un test d'égalité. */
+    const t = teinteDe(x,z);
+    if(platSol) statsMaillage.plats++; else statsMaillage.nonPlats++;
+    if(platSol) cleSol[l] = Math.round(f*100)*1000 + biome[i]*TEINTES + t;
+    if(platPla) clePla[l] = Math.round(ce*100)*1000 + biome[i]*TEINTES + t;
+  }
+
+  /* ── passe 2 : fusion gloutonne ──
+     Pour chaque cellule non encore vue, on étend le rectangle vers la droite
+     tant que la clé tient, puis vers le bas tant que TOUTE la rangée tient.
+     C'est l'algorithme classique, en O(cellules). */
+  const gloutonner = (cles, versLeHaut) => {
+    vus.fill(0);
+    for(let lz=0; lz<LZ; lz++) for(let lx=0; lx<LX; lx++){
+      const l = lz*LX + lx;
+      if(vus[l] || Number.isNaN(cles[l])) continue;
+      const cle = cles[l];
+
+      let w = 1;
+      while(lx+w < LX && !vus[l+w] && cles[l+w] === cle) w++;
+
+      let ht = 1;
+      croissance:
+      while(lz+ht < LZ){
+        const base = (lz+ht)*LX + lx;
+        for(let q=0; q<w; q++)
+          if(vus[base+q] || cles[base+q] !== cle) break croissance;
+        ht++;
+      }
+
+      for(let dz=0; dz<ht; dz++) for(let dx=0; dx<w; dx++) vus[(lz+dz)*LX + lx+dx] = 1;
+      statsMaillage.quadsBruts += w*ht;
+      statsMaillage.quadsEmis++;
+
+      // le rectangle en coordonnées monde
+      const x0 = kx0+lx, z0 = kz0+lz;
+      const i0 = idx(x0, z0);
+      const y  = versLeHaut ? floorH[i0] : ceilH[i0];
+      const ax = c2w(x0) - h,        az = c2w(z0) - h;
+      const bx = c2w(x0+w-1) + h,    bz = c2w(z0+ht-1) + h;
+      const v = facteur(teinteDe(x0, z0));
+      const base = versLeHaut ? BIOMES[biome[i0]].floor : BIOMES[biome[i0]].ceil;
+      const col = [base[0]*v, base[1]*v, base[2]*v];
+
+      if(versLeHaut)
+        quad([[ax,y,az],[bx,y,az],[bx,y,bz],[ax,y,bz]],[0,1,0],[col,col,col,col]);
+      else
+        quad([[ax,y,bz],[bx,y,bz],[bx,y,az],[ax,y,az]],[0,-1,0],[col,col,col,col]);
+    }
+  };
+
+  gloutonner(cleSol, true);
+  gloutonner(clePla, false);
+
+  /* ── passe 3 : le reste, cellule par cellule ──
+     Tout ce qui n'était pas plat : pentes, corniches, abords de gouffre. Plus
+     TOUTES les parois, traitées ensuite avec leur propre fusion 1D. */
+  for(let z=kz0; z<kz1; z++) for(let x=kx0; x<kx1; x++){
+    const i = idx(x,z);
+    if(grid[i] !== FLOOR || vide[i]) continue;
+    const l = (z-kz0)*LX + (x-kx0);
     const B = BIOMES[biome[i]], cx = c2w(x), cz = c2w(z), f = floorH[i], ce = ceilH[i];
-    const v = 0.88 + hash2(x,z)*0.24;
+    const v = facteur(teinteDe(x,z));
     const tint = a => [a[0]*v, a[1]*v, a[2]*v];
 
     const f00=cornerH(x,z,-1,-1,f,floorH), f10=cornerH(x,z,1,-1,f,floorH),
@@ -2843,33 +3338,158 @@ function batirPave(k){
     const cf=tint(B.floor), cc=tint(B.ceil), wt=tint(B.wall),
           wb=[wt[0]*0.42, wt[1]*0.42, wt[2]*0.42];
 
-    quad([[cx-h,f00,cz-h],[cx+h,f10,cz-h],[cx+h,f11,cz+h],[cx-h,f01,cz+h]],[0,1,0],[cf,cf,cf,cf]);
-    if(!sky[i])
-      quad([[cx-h,c01,cz+h],[cx+h,c11,cz+h],[cx+h,c10,cz-h],[cx-h,c00,cz-h]],[0,-1,0],[cc,cc,cc,cc]);
+    // sol et plafond : uniquement s'ils n'ont pas été fusionnés
+    if(Number.isNaN(cleSol[l])){
+      statsMaillage.quadsBruts++; statsMaillage.quadsEmis++;
+      quad([[cx-h,f00,cz-h],[cx+h,f10,cz-h],[cx+h,f11,cz+h],[cx-h,f01,cz+h]],
+           [0,1,0],[cf,cf,cf,cf]);
+    }
+    if(!sky[i] && Number.isNaN(clePla[l])){
+      statsMaillage.quadsBruts++; statsMaillage.quadsEmis++;
+      quad([[cx-h,c01,cz+h],[cx+h,c11,cz+h],[cx+h,c10,cz-h],[cx-h,c00,cz-h]],
+           [0,-1,0],[cc,cc,cc,cc]);
+    }
 
-    /* Parois et corniches. Le cas `vide` est nouveau : au bord d'un gouffre on
-       descend la paroi de 40 m pour que le trou se lise comme un puits sans
-       fond et non comme une flaque noire. */
-    const edge = (nx,nz,ax,az,bx,bz,ha,hb,ca,cb) => {
-      const pxc = x-nx, pzc = z-nz;
-      if(!isFloor(pxc,pzc)){
-        quad([[ax,ha,az],[bx,hb,bz],[bx,cb,bz],[ax,ca,az]],[nx,0,nz],[wb,wb,wt,wt]);
-      } else if(vide[idx(pxc,pzc)]){
-        const fond = Math.min(ha,hb) - 40;
-        const noir = [wb[0]*0.25, wb[1]*0.25, wb[2]*0.25];
-        quad([[ax,fond,az],[bx,fond,bz],[bx,hb,bz],[ax,ha,az]],[nx,0,nz],[[0,0,0],[0,0,0],noir,noir]);
-      } else {
-        const nf = floorH[idx(pxc,pzc)], nc = ceilH[idx(pxc,pzc)];
-        if(nf < Math.min(ha,hb)-0.05)          // corniche : falaise vers le voisin plus bas
-          quad([[ax,nf,az],[bx,nf,bz],[bx,hb,bz],[ax,ha,az]],[nx,0,nz],[wb,wb,wt,wt]);
-        if(nc < Math.max(ca,cb)-0.05)          // décrochement de plafond
-          quad([[ax,nc,az],[bx,nc,bz],[bx,cb,bz],[ax,ca,az]],[nx,0,nz],[wb,wb,wt,wt]);
+  }
+
+  /* ═══ PASSE 4 : LES PAROIS, FUSIONNÉES EN BANDES ═══
+     Mesuré : les parois représentaient 61 % de la géométrie d'un pavé (45 786
+     quads contre 29 064 pour les sols et plafonds réunis) et n'étaient pas
+     fusionnées du tout. C'est là qu'était le gisement, pas dans les sols dont
+     seuls 21 % sont réellement plans.
+
+     Fusion en UNE dimension : le long d'un mur, les cellules consécutives dont
+     le profil est identique donnent un seul quad. Un périmètre de salle ou une
+     paroi de gouffre, qui font des dizaines de cellules de long à hauteur
+     constante, passent ainsi de trente quads à un seul.
+
+     Condition de fusion : le quad doit être un vrai rectangle, donc ses deux
+     bords verticaux doivent être à la même hauteur (ha == hb et ca == cb). Dès
+     que la paroi est en biais — une corniche qui descend en pente — on retombe
+     sur l'émission cellule par cellule, qui reste exacte.                    */
+  const BORD = 0.02;
+
+  /* Les quatre côtés. Pour chacun : le voisin visé, l'axe de parcours, et les
+     deux coins du segment. On les décrit une fois pour ne pas écrire quatre
+     fois la même boucle. */
+  const COTES = [
+    {nx:0,  nz:1,  axe:'x', n:[0,0,1],  ca:'00', cb:'10', sa:[-1,-1], sb:[ 1,-1]},
+    {nx:0,  nz:-1, axe:'x', n:[0,0,-1], ca:'11', cb:'01', sa:[ 1, 1], sb:[-1, 1]},
+    {nx:1,  nz:0,  axe:'z', n:[1,0,0],  ca:'01', cb:'00', sa:[-1, 1], sb:[-1,-1]},
+    {nx:-1, nz:0,  axe:'z', n:[-1,0,0], ca:'10', cb:'11', sa:[ 1,-1], sb:[ 1, 1]},
+  ];
+
+  for(const C of COTES){
+    const longAxeX = C.axe === 'x';
+    const nLong = longAxeX ? LX : LZ;
+    const nTrav = longAxeX ? LZ : LX;
+
+    for(let t=0; t<nTrav; t++){
+      /* `courant` accumule la bande en cours. On la vide dès qu'une cellule ne
+         prolonge pas le même rectangle. */
+      let courant = null;
+
+      const vider = () => {
+        if(!courant) return;
+        const q = courant;
+        quad([[q.ax, q.y0, q.az], [q.bx, q.y0, q.bz],
+              [q.bx, q.y1, q.bz], [q.ax, q.y1, q.az]],
+             C.n, [q.cBas, q.cBas, q.cHaut, q.cHaut]);
+        statsMaillage.paroisEmises++;
+        courant = null;
+      };
+
+      for(let u=0; u<nLong; u++){
+        const x = kx0 + (longAxeX ? u : t), z = kz0 + (longAxeX ? t : u);
+        const i = idx(x,z);
+        if(grid[i] !== FLOOR || vide[i]){ vider(); continue; }
+
+        const pxc = x - C.nx, pzc = z - C.nz;
+        const f = floorH[i], ce = ceilH[i];
+        const co = {
+          '00': cornerH(x,z,-1,-1,f,floorH), '10': cornerH(x,z,1,-1,f,floorH),
+          '11': cornerH(x,z,1,1,f,floorH),   '01': cornerH(x,z,-1,1,f,floorH),
+        };
+        const ct = {
+          '00': cornerH(x,z,-1,-1,ce,ceilH), '10': cornerH(x,z,1,-1,ce,ceilH),
+          '11': cornerH(x,z,1,1,ce,ceilH),   '01': cornerH(x,z,-1,1,ce,ceilH),
+        };
+        const ha = co[C.ca], hb = co[C.cb], ca = ct[C.ca], cb = ct[C.cb];
+
+        const v = facteur(teinteDe(x,z));
+        const B = BIOMES[biome[i]];
+        const wt = [B.wall[0]*v, B.wall[1]*v, B.wall[2]*v];
+        const wb = [wt[0]*0.42, wt[1]*0.42, wt[2]*0.42];
+
+        /* Quelle sorte de paroi, et entre quelles hauteurs ? On n'en garde
+           qu'UNE par cellule pour la fusion — le second quad éventuel (un
+           décrochement de plafond en plus d'une corniche) est rare et sort
+           tout seul, sans fusion. */
+        let kind = 0, y0 = 0, y1 = 0, bas = wb, haut = wt, extra = null;
+
+        if(!isFloor(pxc,pzc)){
+          kind = 1; y0 = ha; y1 = ca;                    // mur plein
+        } else if(vide[idx(pxc,pzc)]){
+          kind = 2; y0 = Math.min(ha,hb) - 40; y1 = ha;  // paroi de gouffre
+          bas = [0,0,0]; haut = [wb[0]*0.25, wb[1]*0.25, wb[2]*0.25];
+        } else {
+          const nf = floorH[idx(pxc,pzc)], nc = ceilH[idx(pxc,pzc)];
+          if(nf < Math.min(ha,hb)-0.05){ kind = 3; y0 = nf; y1 = ha; }
+          if(nc < Math.max(ca,cb)-0.05)
+            extra = {y0:nc, y1:ca, y1b:cb};              // décrochement de plafond
+        }
+
+        // le décrochement de plafond, non fusionné : trop rare pour valoir la peine
+        if(extra){
+          statsMaillage.paroisBrutes++;
+          const A = coin(x, z, C.sa), Bp = coin(x, z, C.sb);
+          quad([[A[0], extra.y0, A[1]], [Bp[0], extra.y0, Bp[1]],
+                [Bp[0], extra.y1b, Bp[1]], [A[0], extra.y1, A[1]]],
+               C.n, [wb, wb, wt, wt]);
+          statsMaillage.paroisEmises++;
+        }
+
+        if(!kind){ vider(); continue; }
+        statsMaillage.paroisBrutes++;      // une paroi de plus, fusionnée ou non
+
+        // rectangle ? sinon on sort la cellule seule, en gardant le biais
+        const droit = Math.abs(ha - hb) < BORD &&
+                      (kind !== 1 || Math.abs(ca - cb) < BORD);
+        const A = coin(x, z, C.sa), Bp = coin(x, z, C.sb);
+
+        if(!droit){
+          vider();
+          const yb = kind === 1 ? ca : (kind === 2 ? ha : ha);
+          const y0a = kind === 1 ? ha : y0, y0b = kind === 1 ? hb : y0;
+          const yha = kind === 1 ? ca : ha, yhb = kind === 1 ? cb : hb;
+          quad([[A[0], y0a, A[1]], [Bp[0], y0b, Bp[1]],
+                [Bp[0], yhb, Bp[1]], [A[0], yha, A[1]]],
+               C.n, [bas, bas, haut, haut]);
+          statsMaillage.paroisEmises++;
+          continue;
+        }
+
+        /* La clé n'inclut PAS la moucheture. Mesuré : avec elle, une bande
+           cassait tous les quatre blocs et la fusion tombait à 2 %. Une paroi
+           prend donc la teinte de sa première cellule — sur une surface
+           verticale, presque toujours dans l'ombre, ça ne se voit pas, et ça
+           rend la fusion possible sur toute la longueur d'un mur.
+           Les hauteurs sont arrondies à 5 cm : en deçà, l'écart est invisible
+           sur une paroi et il empêchait toute bande de se former. */
+        const Q = 20;                                   // 1/20 m = 5 cm
+        const qy0 = Math.round(y0*Q)/Q, qy1 = Math.round(y1*Q)/Q;
+        const cle = kind + '|' + qy0 + '|' + qy1 + '|' + biome[i];
+        y0 = qy0; y1 = qy1;
+        if(courant && courant.cle === cle){
+          courant.bx = Bp[0]; courant.bz = Bp[1];        // on prolonge la bande
+        } else {
+          vider();
+          courant = {cle, y0, y1, cBas:bas, cHaut:haut,
+                     ax:A[0], az:A[1], bx:Bp[0], bz:Bp[1]};
+        }
       }
-    };
-    edge(0,1,  cx-h,cz-h,cx+h,cz-h, f00,f10,c00,c10);
-    edge(0,-1, cx+h,cz+h,cx-h,cz+h, f11,f01,c11,c01);
-    edge(1,0,  cx-h,cz+h,cx-h,cz-h, f01,f00,c01,c00);
-    edge(-1,0, cx+h,cz-h,cx+h,cz+h, f10,f11,c10,c11);
+      vider();
+    }
   }
 
   // éléments de décor cuits dans le même maillage
@@ -2891,6 +3511,7 @@ function batirPave(k){
     }
   }
 
+  statsMaillage.paves++;
   return P.length ? mesh(P,N,C) : null;
 }
 
@@ -2935,7 +3556,7 @@ function cuireTube(quad, q){
   for(let k=1;k<NC-1;k++) quad([B[0],B[k],B[k+1],B[0]],[0,1,0],[q.c,q.c,q.c,q.c]);
 }
 
-  return { batirPave, chOf, indexerProps, lampesParPave, libererPave, libererTousLesPaves, majPaves, paveCentre, paves };
+  return { batirPave, chOf, indexerProps, lampesParPave, libererPave, libererTousLesPaves, majPaves, paveCentre, paves, statsMaillage };
 })();
 
 /* ─── src/monde/import-png.js ─── */
@@ -3008,13 +3629,14 @@ __M['M_monde_index'] = (function(){
   const { ri } = __M['M_noyau_rng'];
   const { BIOMES } = __M['M_monde_biomes'];
   const { GW, GH, FLOOR, grid, floorH, ceilH, biome, sky, vide, idx, viderGrille, calculerOuverture, majBornes, rebuildNavCost, bornes } = __M['M_monde_grille'];
-  const { creuserPlan, relaxerEpine, placerRampes, finaliserRelief, poserPlafonds, salles } = __M['M_monde_generation'];
+  const { creuserPlan, relaxerEpine, finaliserRelief, poserPlafonds, quantifierRelief, salles } = __M['M_monde_generation'];
   const { creuserGouffres, gouffres } = __M['M_monde_relief'];
+  const { relierLeMonde } = __M['M_monde_connexite'];
   const { placerPonts } = __M['M_monde_ponts'];
   const { placerCachettes, cachettes } = __M['M_monde_cachettes'];
   const { placerProps, viderDecor, props, lights, colliders } = __M['M_monde_props'];
   const { placerVillages, placerBoisEtFusees, viderVillages, villages } = __M['M_monde_villages'];
-  const { indexerProps, libererTousLesPaves } = __M['M_monde_maillage'];
+  const { indexerProps, libererTousLesPaves, statsMaillage } = __M['M_monde_maillage'];
   const { importee } = __M['M_monde_import_png'];
   const trousses = __M['M_monde_villages']['trousses'];
   const bois = __M['M_monde_villages']['bois'];
@@ -3029,6 +3651,7 @@ __M['M_monde_index'] = (function(){
    la génération tient en ~1,4 s (mesuré), mais rendre la main reste utile :
    sans ça la page se fige, et sur une machine lente ça dure plusieurs
    secondes. Le rapport final donne la durée réelle.                        */
+
 
 
 
@@ -3077,6 +3700,7 @@ function* construireMonde(hooks){
     yield {nom:'ouverture des volumes', part:0.35};
     calculerOuverture();
     poserPlafonds();
+    quantifierRelief();
     majBornes();
     // pas de relaxation : ton relief reste le tien
   } else {
@@ -3089,8 +3713,6 @@ function* construireMonde(hooks){
     yield {nom:'ouverture des volumes', part:0.55};
     calculerOuverture();
 
-    yield {nom:'rampes de franchissement', part:0.58};
-    chrono.rampes = placerRampes(lights, props);
 
     yield {nom:'gouffres et précipices', part:0.64};
     creuserGouffres(lights);
@@ -3101,6 +3723,17 @@ function* construireMonde(hooks){
 
   yield {nom:'passerelles suspendues', part:0.74};
   chrono.ponts = placerPonts(props);
+
+  /* APRÈS les ponts : un pont relie déjà des morceaux, inutile d'y bâtir une
+     rampe en plus. On analyse donc la connexité une fois le monde complet, et
+     on ne comble que ce qui reste vraiment coupé. */
+  yield {nom:'liaison des morceaux isolés', part:0.79};
+  {
+    const r = relierLeMonde(lights, props);
+    chrono.rampes = r.rampes;
+    chrono.morceaux = r.avant + ' → ' + r.apres;
+    chrono.isoles = r.isoles;
+  }
 
   yield {nom:'cachettes', part:0.77};
   placerCachettes(props);
@@ -3126,7 +3759,8 @@ function* construireMonde(hooks){
 }
 
 /** Compteurs remplis pendant la génération. */
-const chrono = {debut:0, duree:0, ponts:0, rampes:0, villages:0};
+const chrono = {debut:0, duree:0, ponts:0, rampes:0, villages:0,
+                morceaux:'', isoles:0};
 
 /* ─────────────── carte importée ─────────────── */
 
@@ -3151,11 +3785,21 @@ function rapportMonde(){
     if(grid[i]===FLOOR) sol++;
     if(vide[i]) videN++;
   }
+  const g = statsMaillage.quadsBruts
+    ? (100 - statsMaillage.quadsEmis / statsMaillage.quadsBruts * 100).toFixed(0) + ' %'
+    : '—';
   return {
     duree: chrono.duree.toFixed(1) + ' s',
+    greedyGain: g + ' de quads en moins (sols+plafonds)',
+    cellulesPlates: statsMaillage.plats + ' / '
+      + (statsMaillage.plats + statsMaillage.nonPlats),
+    parois: statsMaillage.paroisBrutes + ' → ' + statsMaillage.paroisEmises,
+    quadsSolPlafond: statsMaillage.quadsEmis,
     salles: salles.length,
     gouffres: gouffres.length,
     rampes: chrono.rampes,
+    morceaux: chrono.morceaux,
+    isoles: chrono.isoles,
     villages: chrono.villages,
     ponts: chrono.ponts,
     cachettes: cachettes.length,
@@ -3402,7 +4046,7 @@ const RANGS = [
     id:'commune',
     nom:'Commune',
     chemin:'cartes/communes/',
-    ext:'gif',
+    ext:'png',
     couleur:[0.55,0.53,0.48],   // teinte de la carte au sol et de son cadre
     profondeurMin:0.00,
     poids:0.62,                 // part relative des tirages là où le rang est permis
@@ -3411,7 +4055,7 @@ const RANGS = [
     id:'rare',
     nom:'Rare',
     chemin:'cartes/rares/',
-    ext:'gif',
+    ext:'png',
     couleur:[0.35,0.62,0.75],
     profondeurMin:0.45,
     poids:0.28,
@@ -3420,7 +4064,7 @@ const RANGS = [
     id:'legendaire',
     nom:'Légendaire',
     chemin:'cartes/legendaires/',
-    ext:'gif',
+    ext:'png',
     couleur:[1.00,0.72,0.28],
     profondeurMin:0.78,
     poids:0.10,
@@ -3579,7 +4223,7 @@ function placerCartes(){
 
     const rang = RANGS.indexOf(choisi);
     cartes.push({
-      x: c2w(c.x), y: floorH[i] + 1.1, z: c2w(c.z),
+      x: c2w(c.x), y: floorH[i] + SETUP.cartes.hauteurFlottement, z: c2w(c.z),
       rang, id: tirerDansRang(rang, ri), prise:false,
     });
   }
@@ -5264,6 +5908,8 @@ const joueur = {
   abrite:false,           // dans une cachette
   cachette:null,
   prone:0,                // temps restant au sol après une chute
+  auSol:true,             // pour savoir si l'on a le droit de sauter
+  sautCd:0,               // anti-rebond
   derive:0,               // tremblement de main dû au froid
   chuteDepuis:null,       // altitude du début d'une chute libre
   vitesse:0,
@@ -5402,6 +6048,8 @@ function updateJoueur(dt, mult, hooks){
   const J = SETUP.joueur;
   const H = hooks || {};
 
+  joueur.sautCd = Math.max(0, joueur.sautCd - dt);
+
   // Au sol après une chute : aucun contrôle. C'est le prix de la secousse.
   if(joueur.prone > 0){
     joueur.prone -= dt;
@@ -5481,6 +6129,11 @@ function appliquerGravite(dt, H){
   }
   const gt = coteSol(joueur.x, joueur.z);
 
+  /* « Au sol » sert au saut. On le juge AVANT d'appliquer la gravité, et on
+     tolère un petit seuil : sur un sol légèrement irrégulier, gy oscille de
+     quelques centimètres et un test strict rendrait le saut capricieux. */
+  joueur.auSol = (joueur.gy <= gt + 0.14) && joueur.vy <= 0.01;
+
   if(joueur.gy > gt + 0.06){
     if(joueur.chuteDepuis === null) joueur.chuteDepuis = joueur.gy;
     joueur.vy -= SETUP.joueur.gravite*dt;
@@ -5492,10 +6145,31 @@ function appliquerGravite(dt, H){
       if(H.impactSol) H.impactSol(hauteur, -joueur.vy);
       joueur.vy = 0; joueur.chuteDepuis = null;
     }
+  } else if(joueur.vy > 0){
+    /* On MONTE : c'est un saut. Sans cette branche, le lissage vers le sol
+       ci-dessous annulait la vitesse ascendante à l'image suivante et le
+       personnage ne décollait jamais. */
+    joueur.vy -= SETUP.joueur.gravite*dt;
+    joueur.gy += joueur.vy*dt;
   } else {
     joueur.gy = lerp(joueur.gy, gt, 1 - Math.exp(-16*dt));
     joueur.vy = 0; joueur.chuteDepuis = null;
   }
+}
+
+/**
+ * Sauter. Rien ne se passe si l'on n'est pas au sol, à plat ventre, ou abrité.
+ * @returns true si le saut est parti
+ */
+function sauter(){
+  if(!joueur.auSol || joueur.sautCd > 0) return false;
+  if(joueur.prone > 0 || joueur.abrite) return false;
+  joueur.vy = SETUP.joueur.forceSaut;
+  joueur.auSol = false;
+  joueur.sautCd = SETUP.joueur.delaiSaut;
+  // décoller fait du bruit : c'est le prix de la verticalité
+  emettreSon(joueur.x, joueur.z, SETUP.joueur.bruitSaut, false);
+  return true;
 }
 
 /**
@@ -5516,12 +6190,63 @@ function decroitreTraces(dt, ventX = 0, ventZ = 0, effacement = 1){
   while(odeur.length && odeur[0].t * effacement > vie) odeur.shift();
 }
 
+/* ═══ DÉBLOCAGE ═══
+   Un moteur qui bâtit son terrain par champ de hauteur finit toujours par
+   coincer quelqu'un quelque part : un coin entre deux éléments de décor, une
+   marche qui s'est relevée sous les pieds après un effondrement, une cellule
+   condamnée par un pilier posé trop près. Ce n'est pas la faute du joueur, et
+   lui demander de recommencer sa partie pour ça serait grossier.
+
+   La touche D cherche donc une cellule d'accueil autour de lui, en spirale, et
+   l'y pose. Trois règles :
+     · JAMAIS dans le vide — on débloque, on ne tue pas ;
+     · le plus près possible, pour ne pas servir de téléportation gratuite ;
+     · ça fait du bruit. Se dégager n'est pas discret, et il n'y a aucune raison
+       que la bête n'entende rien.                                           */
+
+/**
+ * Repositionne le joueur sur une cellule praticable proche.
+ * @returns la distance parcourue, ou 0 si rien n'a été trouvé
+ */
+function debloquer(){
+  const depart = {x: joueur.x, z: joueur.z};
+  const cx = w2c(joueur.x), cz = w2c(joueur.z);
+
+  for(let r = 1; r <= 24; r++){
+    let meilleur = null, md = 1e9;
+    for(let dz = -r; dz <= r; dz++) for(let dx = -r; dx <= r; dx++){
+      // uniquement le pourtour du carré de rayon r : on s'éloigne par paliers
+      if(Math.abs(dx) !== r && Math.abs(dz) !== r) continue;
+      const x = cx + dx, z = cz + dz;
+      if(!isFree(x, z)) continue;
+      const i = idx(x, z);
+      if(vide[i]) continue;                       // surtout pas un gouffre
+      if(ceilH[i] - floorH[i] < 1.0) continue;    // ni un boyau où l'on rentre pas
+      const wx = c2w(x), wz = c2w(z);
+      if(bloqueA(wx, wz, floorH[i])) continue;    // ni un coin déjà encombré
+      const d = (wx - joueur.x)**2 + (wz - joueur.z)**2;
+      if(d < md){ md = d; meilleur = {x:wx, z:wz, y:floorH[i]}; }
+    }
+    if(meilleur){
+      joueur.x = meilleur.x; joueur.z = meilleur.z;
+      joueur.gy = meilleur.y; joueur.vy = 0;
+      joueur.vx = joueur.vz = 0;
+      joueur.chuteDepuis = null;
+      joueur.surPont = false;
+      // se dégager fait du bruit : elle a le droit de l'entendre
+      emettreSon(joueur.x, joueur.z, 14, false);
+      return Math.hypot(joueur.x - depart.x, joueur.z - depart.z);
+    }
+  }
+  return 0;
+}
+
 /** Es-tu tombé assez bas pour que ce soit fini ? */
 function tombeDansLeVide(){
   return joueur.gy < bornes.min - SETUP.relief.fondDuVide;
 }
 
-  return { basculerRampe, bloqueA, coteSol, decroitreTraces, echelleIci, emettreSon, emprunterEchelle, indexerColliders, joueur, odeur, sons, spawnJoueur, tombeDansLeVide, touches, updateJoueur, verrouRampe };
+  return { basculerRampe, bloqueA, coteSol, debloquer, decroitreTraces, echelleIci, emettreSon, emprunterEchelle, indexerColliders, joueur, odeur, sauter, sons, spawnJoueur, tombeDansLeVide, touches, updateJoueur, verrouRampe };
 })();
 
 /* ─── src/joueur/chute.js ─── */
@@ -7594,13 +8319,17 @@ function ramasse(){
     Relevé en v3.1 — le son existait mais disparaissait sous la saturation
     générale, qui est corrigée par ailleurs (écrêteur doux dans contexte.js). */
 function carte(rang){
+  /* Relevé une seconde fois : « augmenter le bruit lorsqu'on les ramasse car
+     il est stylé, pas trop fort non plus ». On monte les trois premières voix
+     d'environ moitié et on laisse les harmoniques hautes en retrait — c'est ce
+     qui donne du volume sans devenir criard. */
   const f = 520 + rang*260;
-  ping(f,        0.34, 0.40, 'triangle');
-  setTimeout(() => ping(f*1.5,  0.44, 0.34, 'sine'), 85);
-  setTimeout(() => ping(f*2.0,  0.55, 0.26, 'sine'), 175);
-  setTimeout(() => ping(f*3.0,  0.70, 0.16, 'sine'), 265);
+  ping(f,        0.36, 0.62, 'triangle');
+  setTimeout(() => ping(f*1.5,  0.46, 0.52, 'sine'), 85);
+  setTimeout(() => ping(f*2.0,  0.58, 0.38, 'sine'), 175);
+  setTimeout(() => ping(f*3.0,  0.72, 0.20, 'sine'), 265);
   // une nappe brève par-dessous : la prise a du corps
-  souffleFiltre(0.9, f*0.6, 0.10);
+  souffleFiltre(1.0, f*0.6, 0.16);
   if(rang >= 2){
     // légendaire : une quinte qui monte et tient
     setTimeout(() => ping(f*4.0, 1.20, 0.13, 'sine'), 360);
@@ -7646,6 +8375,11 @@ function souffleFiltre(duree, freq, gain){
   s.onended = () => { try{ g.disconnect(); }catch(e){} };
 }
 
+/** Le saut : une expiration brève. Discret, mais on doit sentir l'effort. */
+function saut(){
+  souffleFiltre(0.20, 420, 0.09);
+}
+
 /** Un feu qui prend : le frottement, puis le souffle qui s'installe. */
 function feu(){
   souffleFiltre(0.45, 900, 0.13);
@@ -7681,7 +8415,7 @@ function coeur(intensite){
   setTimeout(() => ping(38, 0.20, 0.09*intensite, 'sine'), 210);
 }
 
-  return { carte, chute, coeur, construireEffets, entrerCachette, feu, fusee, impact, lance, morsure, pas, ramasse, soin, sortirCachette, souffle };
+  return { carte, chute, coeur, construireEffets, entrerCachette, feu, fusee, impact, lance, morsure, pas, ramasse, saut, soin, sortirCachette, souffle };
 })();
 
 /* ─── src/audio/index.js ─── */
@@ -8341,6 +9075,199 @@ function directionLune(){
   return { creerLune, directionLune };
 })();
 
+/* ─── src/rendu/carte-rendu.js ─── */
+__M['M_rendu_carte_rendu'] = (function(){
+  const { gl, prog, unis } = __M['M_noyau_gl'];
+  const { SETUP } = __M['M_setup'];
+/* ═══ RENDU / CARTES TEXTURÉES ═══
+   Un programme à part, avec son propre quad et ses coordonnées de texture, pour
+   afficher les VRAIES illustrations des cartes dans le monde.
+
+   ── POURQUOI UN PROGRAMME SÉPARÉ ───────────────────────────────────────────
+   Le maillage général du jeu ne porte que trois attributs : position, normale,
+   couleur. Pas d'UV. Y ajouter un quatrième attribut obligerait à toucher
+   mesh(), la disposition des VAO et tous les tampons du monde — pour une seule
+   sorte d'objet qui, elle, n'a besoin ni de relief ni d'éclairage complexe.
+
+   Un programme dédié coûte deux shaders de vingt lignes et reste isolé. C'est
+   aussi la brique dont dépendra tout affichage d'image à venir : panneaux,
+   affiches, écrans.
+
+   ── CE QUE ÇA DONNE ────────────────────────────────────────────────────────
+   Une carte est trois plans superposés, du fond vers l'avant :
+     1. le HALO, très diffus, teinté par le rang — c'est lui qui perce la brume
+     2. le CADRE, un liseré fin, plus une fine tranche sombre pour l'épaisseur
+     3. l'ILLUSTRATION, texturée si le dossier de ce rang contient l'image
+
+   Sans illustration (dossiers vides), on retombe sur un aplat de la couleur du
+   rang : le jeu reste jouable et lisible.                                    */
+
+
+
+
+/* ─────────────── le programme ─────────────── */
+
+const VS = `#version 300 es
+layout(location=0) in vec2 aPos;      // −0.5 … +0.5
+uniform mat4 uProj, uView, uModel;
+out vec2 vUv;
+void main(){
+  vUv = vec2(aPos.x + 0.5, 0.5 - aPos.y);      // origine en haut à gauche
+  gl_Position = uProj * uView * uModel * vec4(aPos, 0.0, 1.0);
+}`;
+
+const FS = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 frag;
+uniform sampler2D uTex;
+uniform vec3 uTeinte, uFog;
+uniform float uAvecTex, uEclat, uFogD, uDist;
+
+void main(){
+  vec3 c;
+  if(uAvecTex > 0.5){
+    vec4 t = texture(uTex, vUv);
+    if(t.a < 0.15) discard;                    // les cartes découpées gardent leur forme
+    c = t.rgb * uEclat;
+  } else {
+    c = uTeinte * uEclat;
+  }
+  // la même brume que le reste du monde, sinon la carte flotte hors du décor
+  float f = exp(-pow(max(uDist - 0.6, 0.0) * uFogD * 0.01, 2.0));
+  frag = vec4(mix(uFog, c, clamp(f, 0.0, 1.0)), 1.0);
+}`;
+
+let P = null, U = null, vao = null;
+
+function initialiser(){
+  if(P) return;
+  P = prog(VS, FS);
+  U = unis(P, ['uProj','uView','uModel','uTex','uTeinte','uFog',
+               'uAvecTex','uEclat','uFogD','uDist']);
+  vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  const b = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, b);
+  // deux triangles, un quad unité centré
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    -0.5,-0.5,  0.5,-0.5,  0.5, 0.5,
+    -0.5,-0.5,  0.5, 0.5, -0.5, 0.5,
+  ]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  gl.bindVertexArray(null);
+}
+
+/* ─────────────── les textures ─────────────── */
+
+const textures = new WeakMap();   // HTMLImageElement -> WebGLTexture
+
+/**
+ * Envoie une image au GPU, une seule fois. Renvoie null tant que l'image n'est
+ * pas complètement chargée — le sondage des dossiers est asynchrone, on ne peut
+ * pas supposer qu'elle est prête.
+ */
+function texturePour(img){
+  if(!img || !img.complete || !img.naturalWidth) return null;
+  const dejaLa = textures.get(img);
+  if(dejaLa) return dejaLa;
+
+  initialiser();
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+  /* Mipmaps + filtrage linéaire : une carte vue de loin scintillerait
+     atrocement en NEAREST, et c'est le seul élément du jeu qui porte un dessin
+     fin. Le reste du rendu garde son aspect brut. */
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  textures.set(img, t);
+  return t;
+}
+
+/* ─────────────── le rendu ─────────────── */
+
+/**
+ * Dessine toutes les cartes à portée.
+ *
+ * @param ctx {proj, view, cam, cartes, rangs, identite, temps, fog, fogD}
+ */
+function dessinerCartes(ctx){
+  const {proj, view, cam, cartes, rangs, identite, temps, fog, fogD, modele, trs} = ctx;
+  initialiser();
+
+  const C = SETUP.cartes;
+  const PORTEE2 = C.porteeRendu * C.porteeRendu;
+
+  gl.useProgram(P);
+  gl.uniformMatrix4fv(U.uProj, false, proj);
+  gl.uniformMatrix4fv(U.uView, false, view);
+  gl.uniform3fv(U.uFog, fog);
+  gl.uniform1f(U.uFogD, fogD);
+  gl.bindVertexArray(vao);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.uniform1i(U.uTex, 0);
+
+  for(const k of cartes){
+    if(k.prise) continue;
+    const dx = k.x - cam.x, dz = k.z - cam.z;
+    const d2 = dx*dx + dz*dz;
+    if(d2 > PORTEE2) continue;
+    const dist = Math.sqrt(d2);
+
+    const rang = rangs[k.rang];
+    const col = rang.couleur;
+    const bob = Math.sin(temps*1.4 + k.id) * C.amplitudeFlottement;
+    const yaw = temps * C.vitesseRotation + k.id;
+    const y = k.y + bob;
+    const puls = 0.84 + 0.16*Math.sin(temps*2.2 + k.id*1.7);
+
+    const img = identite(k.id).img;
+    const tex = texturePour(img);
+
+    const poser = (l, ht, e) => {
+      trs(modele, k.x, y, k.z, yaw, 0, 0, l, ht, 1);
+      gl.uniformMatrix4fv(U.uModel, false, modele);
+      gl.uniform1f(U.uEclat, e);
+      gl.uniform1f(U.uDist, dist);
+    };
+
+    /* 1. LE HALO — large, faible, sans texture. C'est lui qu'on aperçoit dans
+       la brume avant de distinguer la carte elle-même. */
+    gl.uniform1f(U.uAvecTex, 0);
+    gl.uniform3fv(U.uTeinte, [col[0]*0.55, col[1]*0.55, col[2]*0.55]);
+    poser(C.largeur * 1.55, C.hauteur * 1.55, 0.30 * puls);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    /* 2. LE CADRE — un liseré fin. La v3.1 en faisait une bordure de 12 cm de
+       large qui bouffait la carte : « trop gros / vulgaire ». Ici c'est
+       l'épaisseur d'un trait. */
+    gl.uniform3fv(U.uTeinte, col);
+    poser(C.largeur + C.cadre*2, C.hauteur + C.cadre*2, 1.15 * puls);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    /* 3. L'ILLUSTRATION. */
+    if(tex){
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.uniform1f(U.uAvecTex, 1);
+    } else {
+      gl.uniform1f(U.uAvecTex, 0);
+      gl.uniform3fv(U.uTeinte, [col[0]*0.30, col[1]*0.30, col[2]*0.30]);
+    }
+    poser(C.largeur, C.hauteur, C.eclatIllustration);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  gl.bindVertexArray(null);
+}
+
+  return { dessinerCartes, texturePour };
+})();
+
 /* ─── src/rendu/pipeline.js ─── */
 __M['M_rendu_pipeline'] = (function(){
   const { SETUP, abonner } = __M['M_setup'];
@@ -8355,6 +9282,7 @@ __M['M_rendu_pipeline'] = (function(){
   const { lpArr, lcArr, choisirLumieres, projeterGodrays } = __M['M_rendu_lumieres'];
   const { batirCreature, batirJeune, dessinerCreatures } = __M['M_creatures_geometrie'];
   const { creerLune, directionLune } = __M['M_rendu_lune'];
+  const { dessinerCartes } = __M['M_rendu_carte_rendu'];
   const { M } = __M['M_noyau_math'];
 /* ═══ RENDU / PIPELINE ═══
    Deux passes : le monde dans un tampon interne basse résolution, puis ce
@@ -8363,6 +9291,7 @@ __M['M_rendu_pipeline'] = (function(){
 
    La basse résolution interne n'est pas une économie : c'est l'esthétique du
    jeu. SETUP.image.res la contrôle.                                          */
+
 
 
 
@@ -8539,44 +9468,9 @@ function rendre(ctx){
     visuel.pavesVus++;
   }
 
-  /* ── CARTES ──
-     Retour de test : « les cartes n'ont plus leur bordure lumineuse ».
-     Deux causes, corrigées ensemble :
-       · le shader ne teintait PAS l'émissif (vC*uEmit au lieu de
-         vC*uTint*uEmit), donc le halo sortait blanc au lieu de porter la
-         couleur du rang — corrigé dans noyau/shaders.js ;
-       · les intensités étaient trop faibles pour survivre au fog, qui était
-         lui-même trois fois trop épais.
-     Trois passes maintenant : la face, un liseré large, et un halo très diffus
-     qui se voit à travers la brume. */
-  for(const k of cartes){
-    if(k.prise) continue;
-    const dx = k.x-joueur.x, dz = k.z-joueur.z;
-    const d2 = dx*dx + dz*dz;
-    if(d2 > 3600) continue;
-    const col = rangs[k.rang].couleur;
-    const bob = Math.sin(temps*1.6 + k.id)*0.12;
-    const puls = 0.82 + 0.18*Math.sin(temps*2.4 + k.id*1.7);
-    const yaw = temps*1.15 + k.id;
-    // la face
-    trs(model, k.x, k.y+bob, k.z, yaw, 0, 0, 0.62, 0.94, 0.045);
-    draw(meshCarte, col, 1.25*puls);
-    // le liseré : à peine plus grand, très lumineux
-    trs(model, k.x, k.y+bob, k.z, yaw, 0, 0, 0.74, 1.08, 0.02);
-    draw(meshCarte, col, 0.95*puls);
-    // le halo : large et faible, c'est lui qui perce le fog
-    trs(model, k.x, k.y+bob, k.z, yaw, 0, 0, 1.15, 1.55, 0.012);
-    draw(meshCarte, [col[0]*.5, col[1]*.5, col[2]*.5], 0.34*puls);
-  }
-
-  // ── combustible au sol
-  for(const f of combustibles){
-    if(f.pris) continue;
-    const dx = f.x-joueur.x, dz = f.z-joueur.z;
-    if(dx*dx + dz*dz > 1400) continue;
-    trs(model, f.x, f.y+Math.sin(temps*2+f.x)*0.05, f.z, temps*0.6, 0, 0, 0.30,0.30,0.30);
-    draw(meshCarte, [0.85,0.55,0.20], 0.42);
-  }
+  /* Les cartes ont leur propre programme, avec des UV et une texture : voir
+     rendu/carte-rendu.js. Elles sont dessinées après tout le reste, une fois
+     le programme du monde relâché. */
 
   /* ── OBJETS AU SOL ET FEUX ──
      Tous rendus avec la même boîte que les cartes : c'est cohérent visuellement
@@ -8584,20 +9478,39 @@ function rendre(ctx){
   const proche = (x, z, r2) => { const dx = x-joueur.x, dz = z-joueur.z;
                                  return dx*dx + dz*dz < r2; };
 
+  /* Les objets à ramasser sont FINS. En v3.1 c'étaient de gros cubes de
+     40 à 55 cm posés au sol : « grossiers », et à juste titre — un fagot n'est
+     pas un dé. Chacun est maintenant fait de quelques baguettes minces, ce qui
+     coûte deux ou trois quads de plus et change tout à la lecture. */
   for(const b of monde.bois){
     if(b.pris || !proche(b.x, b.z, 1400)) continue;
-    trs(model, b.x, b.y, b.z, temps*0.3 + b.x, 0, 0.5, 0.55, 0.22, 0.22);
-    draw(meshCarte, [0.42,0.30,0.18], 0.06);
+    // trois branches croisées, presque à plat
+    for(let q=0;q<3;q++){
+      const a = q*1.05 + b.x*0.7;
+      trs(model, b.x + Math.cos(a)*0.05, b.y - 0.06 + q*0.045, b.z + Math.sin(a)*0.05,
+          a, 0, 1.5708, 0.052, 0.62, 0.052);
+      draw(meshCarte, [0.34,0.24,0.15], 0.05);
+    }
   }
   for(const f of monde.fusees){
     if(f.prise || !proche(f.x, f.z, 1400)) continue;
-    trs(model, f.x, f.y + Math.sin(temps*2 + f.x)*0.05, f.z, temps*0.9, 0, 0, 0.16,0.46,0.16);
-    draw(meshCarte, [1.0,0.35,0.30], 0.55);
+    const bob = Math.sin(temps*2 + f.x)*0.04;
+    // un tube élancé, plus une coiffe rouge : ça se lit comme une fusée
+    trs(model, f.x, f.y + bob, f.z, temps*0.9, 0, 0.35, 0.055, 0.40, 0.055);
+    draw(meshCarte, [0.72,0.70,0.66], 0.10);
+    trs(model, f.x, f.y + bob + 0.17, f.z, temps*0.9, 0, 0.35, 0.075, 0.10, 0.075);
+    draw(meshCarte, [1.3,0.30,0.22], 0.85);
   }
   for(const t of monde.trousses){
     if(t.prise || !proche(t.x, t.z, 2600)) continue;
-    trs(model, t.x, t.y + Math.sin(temps*1.7 + t.x)*0.08, t.z, temps*0.8, 0, 0, 0.42,0.30,0.30);
-    draw(meshCarte, [0.35,1.0,0.55], 0.70);
+    const bob = Math.sin(temps*1.7 + t.x)*0.055;
+    // une mallette plate, et la croix dessus
+    trs(model, t.x, t.y + bob, t.z, temps*0.5, 0, 0, 0.34, 0.11, 0.24);
+    draw(meshCarte, [0.62,0.62,0.60], 0.10);
+    trs(model, t.x, t.y + bob + 0.062, t.z, temps*0.5, 0, 0, 0.19, 0.012, 0.055);
+    draw(meshCarte, [0.30,1.1,0.55], 0.80);
+    trs(model, t.x, t.y + bob + 0.062, t.z, temps*0.5, 0, 0, 0.055, 0.012, 0.19);
+    draw(meshCarte, [0.30,1.1,0.55], 0.80);
   }
 
   /* Les feux et les fusées allumées : un cœur incandescent qui vacille. Le
@@ -8638,8 +9551,12 @@ function rendre(ctx){
     const y = l.vol ? p.y : l.y;
     const dx = p.x-joueur.x, dz = p.z-joueur.z;
     if(dx*dx + dz*dz > 1400) continue;
-    trs(model, p.x, y, p.z, temps*1.4, 0, 0, 0.26,0.26,0.26);
-    draw(meshCarte, [0.75,0.68,0.42], 0.30);
+    // un caillou : trois éclats aplatis, pas un cube doré
+    const r = l.vol ? temps*7 : temps*0.4 + p.x;
+    trs(model, p.x, y, p.z, r, 0, 0.4, 0.17, 0.11, 0.14);
+    draw(meshCarte, [0.44,0.41,0.34], 0.05);
+    trs(model, p.x, y + 0.03, p.z, r + 1.1, 0, -0.3, 0.12, 0.09, 0.16);
+    draw(meshCarte, [0.52,0.48,0.40], 0.05);
   }
 
   // ── les créatures, en un seul appel
@@ -8647,6 +9564,14 @@ function rendre(ctx){
   gl.uniform1f(uS.uEmit, 0.010);
   gl.uniformMatrix4fv(uS.uModel, false, IDENT);
   dessinerCreatures();
+
+  /* ── les cartes, avec leur programme texturé ──
+     Après le reste de la passe monde : elles écrivent dans le même tampon de
+     profondeur, donc elles s'occultent correctement avec le décor. */
+  if(ctx.identite) dessinerCartes({
+    proj, view, cam, cartes, rangs, identite: ctx.identite,
+    temps, fog: visuel.fog, fogD: visuel.fogD, modele: model, trs,
+  });
 
   /* ── passe écran ── */
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -8685,6 +9610,8 @@ __M['M_rendu_sismographe'] = (function(){
   const { clamp, lerp } = __M['M_noyau_math'];
   const { GW, GH, CELL, FLOOR, grid, blocked, floorH, vide, pont, idx, w2c, groundAt } = __M['M_monde_grille'];
   const { cachettes } = __M['M_monde_cachettes'];
+  const { pancartes } = __M['M_monde_pancartes'];
+  const { villages } = __M['M_monde_villages'];
   const { creature, sampleBody } = __M['M_creatures_mere'];
   const { jeunes } = __M['M_creatures_jeunes'];
   const { directeur } = __M['M_creatures_directeur'];
@@ -8701,6 +9628,8 @@ __M['M_rendu_sismographe'] = (function(){
      · les CACHETTES sont un losange creux, visible seulement à moins de
        SETUP.cachettes.porteeMarqueur — « discrètement visibles », comme
        demandé : il faut s'en approcher une fois pour les connaître.          */
+
+
 
 
 
@@ -8782,6 +9711,37 @@ function dessinerScope(joueur, sons, odeur, dP){
     dc.beginPath();
     dc.moveTo(px, pz-r); dc.lineTo(px+r, pz); dc.lineTo(px, pz+r); dc.lineTo(px-r, pz);
     dc.closePath(); dc.stroke();
+  }
+
+  /* ── LES VILLAGES DÉJÀ VISITÉS ──
+     Rien tant qu'on n'y est pas entré : un village doit se trouver, pas se
+     lire sur une carte. Une fois découvert, il reste marqué pour de bon — un
+     cercle plein, la seule tache franchement chaude du sismographe. */
+  for(const v of villages){
+    if(!v.vu) continue;
+    const px = X(v.x), pz = Z(v.z);
+    dc.fillStyle = 'rgba(255,168,72,.22)';
+    dc.beginPath(); dc.arc(px, pz, v.safe*k, 0, 6.283); dc.fill();
+    dc.strokeStyle = 'rgba(255,168,72,.85)'; dc.lineWidth = 1.4;
+    dc.beginPath(); dc.arc(px, pz, v.safe*k, 0, 6.283); dc.stroke();
+    dc.fillStyle = 'rgba(255,196,120,.95)';
+    dc.beginPath(); dc.arc(px, pz, 2.6, 0, 6.283); dc.fill();
+  }
+
+  /* ── TES PANCARTES ──
+     Elles apparaissent à TOUTE distance, contrairement aux cachettes : c'est
+     tout leur intérêt. Un petit carré cyan qui clignote au même rythme que la
+     loupiote du panneau — on fait le lien tout de suite entre ce qu'on voit
+     dans le monde et ce qu'on voit sur la carte. */
+  {
+    const ph = (Date.now()/1600) % 1;
+    const on = ph < 0.24 ? 1 : 0.32;
+    for(const p of pancartes){
+      dc.fillStyle = `rgba(64,215,180,${on})`;
+      dc.fillRect(X(p.x)-2, Z(p.z)-2, 4, 4);
+      dc.strokeStyle = `rgba(64,215,180,${on*0.45})`; dc.lineWidth = 1;
+      dc.strokeRect(X(p.x)-4.5, Z(p.z)-4.5, 9, 9);
+    }
   }
 
   // ── ta piste odorante
@@ -9098,7 +10058,6 @@ const el = id => document.getElementById(id);
 
 const COULEUR_PALIER = ['#8fa88c', '#b8a25f', '#6f9fc0', '#b4553f'];
 
-let dernierMessage = null;
 
 function majHUD(ctx){
   const {joueur, biome, nappe, pavesVus, pavesTotal, graine, sortie, monde} = ctx;
@@ -9152,14 +10111,33 @@ function majJauge(){
     : froid.nomPalier + ' · ' + c.toFixed(0) + '%';
   if(boite) boite.classList.toggle('critique', froid.palier === 3);
 
-  // message de franchissement de palier
+  // le message de palier passe par le même canal que le reste : voir majAlerte()
+}
+
+/* ═══ LE CANAL DES MESSAGES ═══
+   BUG CORRIGÉ ICI. flash() et le message de froid écrivaient tous les deux
+   dans #alerte sans se concerter. Comme la mise à jour du HUD tourne cinq fois
+   par seconde et que flash() posait son texte dans `dernierMessage`, la
+   comparaison `froid.message !== dernierMessage` était vraie à l'itération
+   suivante — et le HUD effaçait le flash au bout de 200 ms.
+
+   Conséquence : AUCUN message transitoire n'était lisible. Ni le texte d'une
+   pancarte, ni « À L'ABRI », ni « FEU ALLUMÉ », ni « EFFONDREMENT ».
+
+   Un seul écrivain désormais, avec une priorité explicite :
+     1. le flash, tant qu'il lui reste du temps ;
+     2. sinon le palier de froid ;
+     3. sinon rien.                                                          */
+let texteAffiche = null;
+
+function majAlerte(){
   const m = el('alerte');
   if(!m) return;
-  if(froid.message !== dernierMessage){
-    dernierMessage = froid.message;
-    m.textContent = froid.message || '';
-    m.style.opacity = froid.message ? '1' : '0';
-  } else if(!froid.message) m.style.opacity = '0';
+  const voulu = flashT > 0 ? flashTexte : (froid.message || null);
+  if(voulu === texteAffiche) return;
+  texteAffiche = voulu;
+  m.textContent = voulu || '';
+  m.style.opacity = voulu ? '1' : '0';
 }
 
 /* La santé n'existait pas en v3.0 : on mourait d'un coup. Sa jauge est
@@ -9176,26 +10154,44 @@ function majSante(){
 }
 
 /** Message ponctuel au centre bas (entrée en cachette, effondrement…). */
-let flashT = 0;
-function flash(texte, duree = 2.2){
-  const m = el('alerte');
-  if(!m) return;
-  m.textContent = texte;
-  m.style.opacity = '1';
+let flashT = 0, flashTexte = '';
+
+function flash(texte, duree = 2.6){
+  flashTexte = texte;
   flashT = duree;
-  dernierMessage = texte;
+  majAlerte();
 }
 
+/** Appelé à chaque image : c'est lui qui fait vivre le canal des messages. */
 function majFlash(dt){
-  if(flashT <= 0) return;
-  flashT -= dt;
-  if(flashT <= 0){
-    const m = el('alerte');
-    if(m && !froid.message){ m.style.opacity = '0'; dernierMessage = null; }
-  }
+  if(flashT > 0) flashT -= dt;
+  majAlerte();
 }
 
-  return { flash, majFlash, majHUD };
+/* ═══ LE PANNEAU DE LECTURE DES PANCARTES ═══
+   Un flash de deux secondes ne convient pas à un panneau : on veut le lire, et
+   surtout le RELIRE en s'approchant. Le panneau reste donc affiché tant qu'on
+   est à portée, sans appuyer sur quoi que ce soit. C'est aussi ce qui rend la
+   touche B utile pour autre chose : écrire, pas déchiffrer. */
+let pancarteAffichee = null;
+
+function majPancarte(p){
+  const el2 = el('pancarte');
+  if(!el2) return;
+  if(p === pancarteAffichee) return;
+  pancarteAffichee = p;
+  if(!p){ el2.style.opacity = '0'; return; }
+  el2.innerHTML = p.texte
+    ? '<i>« </i>' + echapper(p.texte) + '<i> »</i>'
+      + '<u>B pour réécrire · MAJ+B pour retirer</u>'
+    : '<i>pancarte vierge</i><u>B pour y écrire</u>';
+  el2.style.opacity = '1';
+}
+
+const echapper = t => String(t)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  return { flash, majFlash, majHUD, majPancarte };
 })();
 
 /* ─── src/jeu.js ─── */
@@ -9214,7 +10210,7 @@ __M['M_jeu'] = (function(){
   const { majPaves, indexerProps, libererTousLesPaves, paves } = __M['M_monde_maillage'];
   const { placerSortie, atteinte, objectif } = __M['M_monde_sortie'];
   const { lireCartePNG } = __M['M_monde_import_png'];
-  const { villages, trousses, bois, fusees, dansSafe } = __M['M_monde_villages'];
+  const { villages, trousses, bois, fusees, dansSafe, dansCabane, marquerDecouvert, chargerVillagesVus } = __M['M_monde_villages'];
   const { pancartes, chargerPancartes, poser: poserPancarte, pancarteProche, retirer: retirerPancarte, lumieresPancartes } = __M['M_monde_pancartes'];
   const { RANGS } = __M['M_carte_rangs'];
   const { sonderStacks, identite } = __M['M_carte_catalogue'];
@@ -9225,12 +10221,12 @@ __M['M_jeu'] = (function(){
   const { creature, spawnCreature, updateCreature, brancherCri } = __M['M_creatures_mere'];
   const { jeunes, majPopulation, updateJeunes, viderJeunes, brancherStridulation, brancherFeu, attirerJeunes } = __M['M_creatures_jeunes'];
   const { creerCreature } = __M['M_creatures_geometrie'];
-  const { joueur, touches, sons, odeur, spawnJoueur, updateJoueur, indexerColliders, basculerRampe, emettreSon, decroitreTraces, echelleIci, emprunterEchelle } = __M['M_joueur_joueur'];
+  const { joueur, touches, sons, odeur, spawnJoueur, updateJoueur, indexerColliders, basculerRampe, emettreSon, decroitreTraces, echelleIci, emprunterEchelle, debloquer, sauter } = __M['M_joueur_joueur'];
   const { CHUTE, tirerChuteSismique, impactSol, verifierVide, reinitialiserChute } = __M['M_joueur_chute'];
   const { froid, updateFroid, reinitialiserFroid, intensiteVisuelle } = __M['M_joueur_froid'];
   const { torche, combustibles, refuges, placerCombustible, placerRefuges, refugeProche, updateTorche, basculerTorche, reinitialiserTorche } = __M['M_joueur_torche'];
   const { leurres, placerLeurres, reprendreTous, ramasserLeurres, lancer, updateVol } = __M['M_joueur_leurres'];
-  const { sante, reinitialiserSante, blesser, ramasserTrousse, updateSante, gravite } = __M['M_joueur_sante'];
+  const { sante, reinitialiserSante, blesser, ramasserTrousse, updateSante, gravite, soigner } = __M['M_joueur_sante'];
   const { feux, fuseesActives, inventaire, reinitialiserFeu, ramasser: ramasserFeu, allumerFeu, lancerFusee, updateFeu, feuProche, lumieresDuFeu, chaleurDuFeu } = __M['M_joueur_feu'];
   const Audio = __M['M_audio_index'];
   const { proj, view, cam, majTremblement, construireVue } = __M['M_rendu_camera'];
@@ -9238,7 +10234,7 @@ __M['M_jeu'] = (function(){
   const { lumieresDynamiques } = __M['M_rendu_lumieres'];
   const { dessinerScope, basculer: basculerScope } = __M['M_rendu_sismographe'];
   const { construireMenu, ouvrirChargement, majChargement, fermerChargement, afficherVoile, messageMenu } = __M['M_ui_menu'];
-  const { majHUD, majFlash, flash } = __M['M_ui_hud'];
+  const { majHUD, majFlash, flash, majPancarte } = __M['M_ui_hud'];
 /* ══════════════════════════════════════════════════════════════════════════
    SCOLOPANDRE v3 — ASSEMBLAGE ET BOUCLE
    ──────────────────────────────────────────────────────────────────────────
@@ -9359,6 +10355,7 @@ async function genererMonde(nouvelleGraine){
   reinitialiserFeu();
   reprendreTous();
   chargerPancartes(graine());
+  chargerVillagesVus(graine());
   joueur.held = 1;
 
   jeu.biome = biomeAt(joueur.x, joueur.z);
@@ -9426,10 +10423,20 @@ function brancherEntrees(){
        pas — et Espace sert justement à démarrer la partie depuis le menu. */
     if(!jeu.enCours) return;
 
-    if(e.code === 'Space'){ e.preventDefault(); lancerLeurre(); }
+    /* ESPACE SAUTE. Le leurre passe au clic gauche seul — c'est le geste
+       naturel pour viser, et le monde est devenu bien trop vertical pour que
+       la barre d'espace serve à autre chose qu'à sauter. */
+    if(e.code === 'Space'){ e.preventDefault(); if(sauter()) Audio.effets.saut(); }
     if(e.code === 'KeyG'){ e.preventDefault(); allumerFeuIci(); }
     if(e.code === 'KeyV'){ e.preventDefault(); tirerFusee(); }
     if(e.code === 'KeyB'){ e.preventDefault(); gererPancarte(); }
+    if(e.code === 'KeyD' && !touches['ShiftLeft']){
+      /* D — se dégager. Volontairement PAS derrière un menu de débogage : si
+         le moteur coince quelqu'un, il faut pouvoir s'en sortir tout de suite,
+         sans savoir que le mode debug existe. */
+      const d = debloquer();
+      flash(d > 0 ? 'DÉGAGÉ · ' + d.toFixed(1) + ' m' : 'AUCUNE ISSUE À PROXIMITÉ');
+    }
     if(e.code === 'KeyE'){ e.preventDefault(); actionContextuelle(); }
     if(e.code === 'CapsLock') basculerRampe();
     if(e.code === 'KeyF') basculerTorche();
@@ -9475,29 +10482,33 @@ function tirerFusee(){
   else flash('PLUS DE FUSÉE');
 }
 
-/** B — poser une pancarte, ou lire / retirer celle qui est là. */
+/**
+ * B — écrire. La LECTURE est automatique : le panneau s'affiche dès qu'on est
+ * à portée (voir majPancarte, appelé dans la boucle). B sert donc à poser une
+ * pancarte neuve, ou à réécrire celle qui est déjà là. MAJ+B la retire.
+ */
 function gererPancarte(){
   if(joueur.prone > 0) return;
   const p = pancarteProche(joueur.x, joueur.z);
-  if(p){
-    // déjà une pancarte ici : on la lit, et MAJ+B la retire
-    if(touches['ShiftLeft'] || touches['ShiftRight']){
-      retirerPancarte(joueur.x, joueur.z);
-      flash('PANCARTE RETIRÉE');
-    } else {
-      flash(p.texte ? '« ' + p.texte + ' »' : 'PANCARTE VIERGE', 4);
-    }
+
+  if(p && (touches['ShiftLeft'] || touches['ShiftRight'])){
+    retirerPancarte(joueur.x, joueur.z);
+    flash('PANCARTE RETIRÉE');
     return;
   }
-  /* On relâche le pointeur pour écrire : sans ça le prompt ne reçoit pas les
-     touches, et on se retrouve à taper dans le vide. */
+
+  /* On relâche le pointeur pour écrire : sans ça la boîte de saisie ne reçoit
+     pas les touches et on tape dans le vide. Le délai laisse au navigateur le
+     temps de rendre la souris avant d'ouvrir la boîte. */
   document.exitPointerLock();
+  const ancien = p ? p.texte : '';
   setTimeout(() => {
-    const txt = prompt('Message à laisser ici (48 caractères) :', '');
-    if(txt !== null){
-      poserPancarte(joueur, txt);
-      flash('PANCARTE POSÉE');
-    }
+    const txt = prompt(p ? 'Réécrire ce panneau (48 caractères) :'
+                         : 'Message à laisser ici (48 caractères) :', ancien);
+    if(txt === null) return;
+    if(p){ retirerPancarte(joueur.x, joueur.z); }
+    poserPancarte(joueur, txt);
+    flash(p ? 'PANCARTE RÉÉCRITE' : 'PANCARTE POSÉE');
   }, 60);
 }
 
@@ -9656,6 +10667,8 @@ function coeur(now){
 
   compteurUI += dt;
   majFlash(dt);
+  // la lecture d'une pancarte est PASSIVE : on s'approche, on lit.
+  majPancarte(jeu.enCours ? pancarteProche(joueur.x, joueur.z) : null);
   if(compteurUI > 0.2){
     compteurUI = 0;
     majHUD({
@@ -9705,6 +10718,17 @@ function simuler(dt){
   joueur.torcheAllumee = torche.on;
   const brasero = refugeProche(joueur.x, joueur.gy, joueur.z);
   const safe = dansSafe(joueur.x, joueur.z);
+  if(safe && marquerDecouvert(safe)) flash('VILLAGE REPÉRÉ — il restera sur la carte', 4);
+
+  /* LA CABANE : le seul endroit où l'on récupère complètement. Ni ressource
+     consommée, ni compte à rebours — juste un abri, et le trajet pour y aller. */
+  const cabane = dansCabane(joueur.x, joueur.z);
+  if(cabane){
+    if(froid.chaleur < 99.5 || sante.pv < SETUP.sante.max - 0.5){
+      froid.chaleur = Math.min(100, froid.chaleur + 26*dt);
+      soigner(20*dt);
+    }
+  }
   const gainFeu = chaleurDuFeu(joueur.x, joueur.z);
   const auChaud = !!brasero || !!safe || gainFeu > 0;
   const F = updateFroid(dt, joueur, jeu.ventForce, auChaud, {
@@ -9863,6 +10887,7 @@ function dessinerImage(dt, dP){
     meshCarte: jeu.meshCarte, ventX: jeu.ventX, rangs: RANGS,
     cielOuvert: jeu.cielOuvert,
     monde: {bois, fusees, trousses, feux, fuseesActives, pancartes},
+    identite,
   });
   dessinerScope(joueur, sons, odeur, dP);
 }

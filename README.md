@@ -36,10 +36,12 @@ Les GIF de cartes exigent toujours un serveur ; le monde, lui, se joue hors lign
 | `C` (ou `MAJ.VERR` pour basculer) | ramper — **n'imprime aucune trace** |
 | `F` | lampe de poche |
 | `CLIC DROIT` (maintenu) | brandir la lampe : les petits reculent, le jus fond |
-| `CLIC` ou `ESPACE` | lancer un leurre |
+| `ESPACE` | sauter |
+| `CLIC` | lancer un leurre |
+| `D` | **se dégager** si le terrain t'a coincé |
 | `G` | allumer un feu de camp (il faut du bois) |
 | `V` | lancer une fusée de détresse |
-| `B` | poser une pancarte · à côté d'une : la lire · `MAJ+B` : la retirer |
+| `B` | écrire sur une pancarte · `MAJ+B` la retirer (la lecture est automatique) |
 | `E` | cachette, ou échelle de passerelle |
 | `TAB` | sismographe |
 | `I` | collection |
@@ -120,6 +122,7 @@ python outils/syntaxe.py      # délimiteurs équilibrés dans tous les .js
 python outils/verifier.py     # cohérence du projet
 python outils/smoke.py        # LANCE LE JEU pour de vrai, 30 s, sans GPU
 python outils/bundler.py      # produit dist/scolopandre.html
+python outils/gabarit_carte.py # cartes d'essai dans cartes/*/
 ```
 
 `smoke.py` est l'outil important : il exécute le jeu dans Chrome headless avec
