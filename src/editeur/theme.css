@@ -1,0 +1,198 @@
+/* ═══ ÉDITEUR / THÈME ═══
+   Transposition de la palette d'Héphaïstos (ui/theme.py) pour le web.
+
+   ── LA MÊME SOURCE DE VÉRITÉ, LE MÊME VOCABULAIRE ──────────────────────────
+   Les noms sont ceux d'Héphaïstos, volontairement : PANEL_BG, ITEM_BG, SECTION,
+   MUTED, MAGIC, ACCENT… Passer d'un projet à l'autre ne doit demander aucune
+   traduction mentale. Ce fichier est le pendant exact de core `ui/theme.py`.
+
+   ── « RICH BLACK » ─────────────────────────────────────────────────────────
+   Base bleu nuit profond #0d1117, jamais de noir pur — fatigant pour les yeux
+   sur une longue séance d'édition. Accent bleu clair « magique » #58a6ff.
+   Thème sombre unique, comme Héphaïstos : pas de mode clair.
+
+   ATTENTION : ce thème est celui des OUTILS. Le jeu lui-même garde sa palette
+   os-et-vide (#cfc7b4 sur #07080a), qui est une direction artistique et non
+   une charte d'interface. Habiller un jeu d'horreur en bleu GitHub le tuerait.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+:root{
+  /* ── surfaces ── */
+  --content-bg: #0d1117;   /* contenu */
+  --panel-bg:   #161b22;   /* panneaux */
+  --card-bg:    #161b22;   /* cartes */
+  --item-bg:    #21262d;   /* élément de liste */
+  --item-sel:   #1f3a5f;   /* sélection */
+  --slate:      #21262d;
+  --slate2:     #30363d;
+  --hover:      #30363d;
+  --border:     #30363d;
+
+  /* ── texte ── */
+  --text:       #c9d1d9;   /* par défaut */
+  --text-vif:   #e6edf3;   /* mis en avant */
+  --muted:      #8b949e;   /* secondaire */
+  --section:    #7d8590;   /* libellés de section */
+
+  /* ── accent ── */
+  --magic:      #58a6ff;   /* surbrillances */
+  --accent:     #1f6feb;   /* boutons */
+  --accent-hov: #388bfd;
+
+  /* ── console : mêmes ondes pastel que le canevas d'Héphaïstos ── */
+  --canvas-tint: #101a33;
+  --console-bg:  #101a33;
+  --console-fg:  #c9d1d9;
+
+  /* ── tags de journal ── */
+  --log-info:    #58a6ff;
+  --log-success: #3fb950;
+  --log-warning: #d29922;
+  --log-error:   #f85149;
+  --log-accent:  #bc8cff;
+  --log-muted:   #8b949e;
+
+  /* ── typographie ──
+     Héphaïstos embarque ses polices ; un navigateur ne peut pas compter
+     dessus, d'où des piles de repli qui gardent la même silhouette. */
+  --ui:    "DejaVu Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono:  "DejaVu Sans Mono", "Cascadia Mono", Consolas, monospace;
+  --brand: "Oswald", "Bebas Neue", "Arial Narrow", "Haettenschweiler", sans-serif;
+}
+
+*{ box-sizing:border-box; margin:0; padding:0 }
+
+html,body{
+  height:100%; overflow:hidden;
+  background:var(--content-bg); color:var(--text);
+  font-family:var(--ui); font-size:12px;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ═══════════════ LOGOTYPE ═══════════════
+   Deux lignes : le nom, puis un sous-nom inter-lettré à la MÊME LARGEUR.
+   Héphaïstos le calcule en insérant des espaces (Tk n'a pas de letter-spacing) ;
+   en CSS on a mieux, mais le résultat visé est identique. */
+.marque{ display:flex; flex-direction:column; justify-content:center;
+         padding:0 18px 0 14px; user-select:none }
+.marque .nom{ font-family:var(--brand); font-size:17px; font-weight:700;
+              letter-spacing:.06em; color:var(--accent); line-height:1.05 }
+.marque .sous{ font-family:var(--brand); font-size:10px; font-weight:400;
+               color:var(--muted); line-height:1.05;
+               /* inter-lettrage : c'est lui qui aligne les deux largeurs */
+               letter-spacing:.42em; margin-left:.06em }
+
+/* ═══════════════ BARRE ET PANNEAUX ═══════════════ */
+
+.barre{ display:flex; align-items:center; gap:6px; height:58px;
+        padding:0 12px 0 0; background:var(--panel-bg);
+        border-bottom:1px solid var(--border) }
+.barre .droite{ margin-left:auto; display:flex; gap:6px }
+
+.panneau{ background:var(--panel-bg); border-left:1px solid var(--border);
+          overflow-y:auto; padding:12px }
+
+/* Titre de section : petite capitale grise sur un filet, comme Héphaïstos. */
+.panneau h3{ font-size:10px; font-weight:700; letter-spacing:.14em;
+             color:var(--section); text-transform:uppercase;
+             margin:16px 0 7px; padding-bottom:5px;
+             border-bottom:2px solid var(--border) }
+.panneau h3:first-child{ margin-top:0 }
+.panneau h4{ font-size:10px; font-weight:700; letter-spacing:.10em;
+             color:var(--section); text-transform:uppercase; margin:11px 0 5px }
+
+/* ═══════════════ CONTRÔLES ═══════════════ */
+
+label{ display:block; margin:0 0 8px; color:var(--muted); font-size:11px }
+label i{ font-style:normal; color:var(--magic); float:right; font-family:var(--mono) }
+
+input[type=text], input[type=number], select, textarea{
+  width:100%; margin-top:3px; padding:5px 7px;
+  background:var(--slate); border:1px solid var(--border); border-radius:4px;
+  color:var(--text-vif); font:inherit; font-size:11px; outline:none;
+}
+input[type=text]:focus, input[type=number]:focus, select:focus, textarea:focus{
+  border-color:var(--accent);
+}
+textarea{ font-family:var(--mono); font-size:10px; line-height:1.5; resize:vertical }
+
+input[type=range]{
+  -webkit-appearance:none; appearance:none; width:100%; height:4px;
+  margin-top:8px; background:var(--slate2); border-radius:2px; outline:none;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none; width:13px; height:13px; border-radius:50%;
+  background:var(--accent); cursor:pointer; border:2px solid var(--panel-bg);
+}
+input[type=range]::-webkit-slider-thumb:hover{ background:var(--accent-hov) }
+input[type=range]::-moz-range-thumb{
+  width:13px; height:13px; border-radius:50%; border:2px solid var(--panel-bg);
+  background:var(--accent); cursor:pointer;
+}
+input[type=color]{ width:100%; height:26px; margin-top:3px; padding:0;
+                   background:none; border:1px solid var(--border);
+                   border-radius:4px; cursor:pointer }
+
+button{
+  padding:7px 12px; background:var(--slate); color:var(--text);
+  border:1px solid var(--border); border-radius:4px;
+  font:inherit; font-size:11px; font-weight:700; cursor:pointer;
+  transition:background .12s, border-color .12s, color .12s;
+}
+button:hover{ background:var(--hover); border-color:var(--slate2); color:var(--text-vif) }
+button.accent{ background:var(--accent); border-color:var(--accent); color:#fff }
+button.accent:hover{ background:var(--accent-hov); border-color:var(--accent-hov) }
+button[aria-pressed="true"]{ background:var(--item-sel); border-color:var(--accent);
+                             color:var(--text-vif) }
+
+.onglet{ padding:8px 16px; border-radius:5px; font-size:11px; letter-spacing:.06em }
+
+.rangee{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:9px }
+.rangee button{ flex:1 1 auto }
+
+.g3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px }
+.cases{ display:grid; grid-template-columns:1fr 1fr; gap:3px 10px }
+.case{ display:flex; align-items:center; gap:6px; color:var(--muted); font-size:11px }
+.case input{ width:auto; margin:0; accent-color:var(--accent) }
+
+.aide{ color:var(--muted); font-size:11px; line-height:1.65; margin:7px 0 }
+.aide span{ color:var(--magic); font-family:var(--mono) }
+
+/* ═══════════════ LISTE DE PRIMITIVES ═══════════════ */
+
+.liste{ display:flex; flex-wrap:wrap; gap:4px; max-height:140px;
+        overflow-y:auto; margin-bottom:9px }
+.pt{ padding:4px 9px; font-size:10px; font-weight:400; background:var(--item-bg) }
+.pt.sel{ background:var(--item-sel); border-color:var(--accent); color:var(--text-vif) }
+
+/* ═══════════════ CONSOLE ═══════════════
+   Le pendant du terminal d'Héphaïstos : fond bleu nuit pastel, tags colorés.
+   C'est là qu'on lit ce que fait le générateur, et surtout ce qui rate. */
+
+.console{ background:var(--console-bg); border-top:1px solid var(--border);
+          font-family:var(--mono); font-size:10.5px; line-height:1.65;
+          overflow-y:auto; padding:7px 11px; color:var(--console-fg) }
+.console div{ white-space:pre-wrap; word-break:break-word }
+.console .h{ color:var(--section); margin-right:7px }
+.console .info    b{ color:var(--log-info) }
+.console .success b{ color:var(--log-success) }
+.console .warning b{ color:var(--log-warning) }
+.console .error   b{ color:var(--log-error) }
+.console .accent  b{ color:var(--log-accent) }
+.console .muted   b{ color:var(--log-muted) }
+.console b{ font-weight:700 }
+
+/* ═══════════════ BARRE D'ÉTAT ═══════════════ */
+
+.etat{ display:flex; align-items:center; gap:14px; padding:0 12px;
+       font-size:10.5px; color:var(--muted); background:var(--panel-bg);
+       border-top:1px solid var(--border) }
+.etat b{ color:var(--magic); font-weight:400; font-family:var(--mono) }
+
+/* ═══════════════ BARRES DE DÉFILEMENT ═══════════════ */
+
+*::-webkit-scrollbar{ width:10px; height:10px }
+*::-webkit-scrollbar-track{ background:var(--content-bg) }
+*::-webkit-scrollbar-thumb{ background:var(--slate2); border-radius:5px;
+                            border:2px solid var(--content-bg) }
+*::-webkit-scrollbar-thumb:hover{ background:var(--accent) }
