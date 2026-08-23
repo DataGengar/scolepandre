@@ -22,7 +22,7 @@
 
 import {SETUP} from '../setup.js';
 import {plan, appliquer as appliquerPlan, enregistrerPlan} from '../monde/plan.js';
-import {asset, salir} from './assets.js';
+import * as Assets from './assets.js';
 import {reglages as reglagesCreature} from './creature-edit.js';
 
 const CLE = 'scolopandre.projet.v1';
@@ -70,7 +70,11 @@ export function versObjet(){
     version: 1,
     date: new Date().toISOString().slice(0, 19).replace('T', ' '),
     plan: {version: plan.version, nom: plan.nom, zones: plan.zones},
-    asset: {nom: asset.nom, parts: asset.parts},
+    /* La BIBLIOTHÈQUE entière, piles de modificateurs comprises. Ce sont
+       les recettes qu'on voudra reprendre : garder seulement les primitives
+       finales reviendrait à jeter la règle et à ne conserver que son
+       résultat, impossible à retoucher. */
+    assets: Assets.versObjet(),
     creature: {...reglagesCreature},
     setup: ecarts(),
   };
@@ -79,8 +83,8 @@ export function versObjet(){
 export function depuisObjet(o){
   if(!o) return false;
   if(o.plan) appliquerPlan(o.plan);
-  if(o.asset){ asset.nom = o.asset.nom || 'element';
-               asset.parts = o.asset.parts || []; asset.selection = -1; salir(); }
+  // `o.asset` est l'ancien format, à un seul élément sans pile.
+  if(o.assets || o.asset) Assets.depuisObjet(o.assets || o.asset);
   if(o.creature) Object.assign(reglagesCreature, o.creature);
   appliquerEcarts(o.setup);
   return true;
