@@ -48,8 +48,12 @@ ATTENDU = [
     "src/editeur/editeur.js",
     "src/editeur/theme.css",
     "outils/verifier.py",
-    "cartes/communes/1.png",
 ]
+
+# Dossiers qui doivent exister ET ne pas être vides. Exiger un NOM de fichier
+# précis a cassé la construction le jour où les vraies cartes sont arrivées :
+# elles s'appellent carte_045.png, pas 1.png. C'est le dossier qui compte.
+ATTENDU_NON_VIDE = ["cartes/communes", "cartes/rares", "cartes/legendaires"]
 
 
 def titre(t):
@@ -130,6 +134,12 @@ def main():
 
     titre("6 · CONTRÔLE DU DOSSIER CONSTRUIT")
     manque = [r for r in ATTENDU if not (SORTIE / r).exists()]
+    for d in ATTENDU_NON_VIDE:
+        p = SORTIE / d
+        if not p.is_dir():
+            manque.append(d + "  (dossier absent)")
+        elif not any(p.iterdir()):
+            manque.append(d + "  (dossier vide)")
     if manque:
         print("  MANQUANT dans %s :" % SORTIE)
         for m in manque:
@@ -142,6 +152,9 @@ def main():
     print("  %d fichiers · %.1f Mo" % (nb, total / 1e6))
     for r in ATTENDU:
         print("    ok  " + r)
+    for d in ATTENDU_NON_VIDE:
+        print("    ok  %-22s %d fichiers"
+              % (d, sum(1 for _ in (SORTIE / d).iterdir())))
 
     print()
     print("  ✓  " + str(SORTIE / "Scolopandre.exe"))

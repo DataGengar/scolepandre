@@ -157,8 +157,8 @@
   <div id="keys"><b>ZQSD</b> avancer · <b>MAJ</b> courir · <b>C</b> ramper ·
     <b>F</b> lampe · <b>CLIC DROIT</b> brandir · <b>E</b> cachette / échelle ·
     <b>ESPACE</b> sauter · <b>CLIC</b> leurre · <b>G</b> feu · <b>V</b> fusée ·
-    <b>B</b> pancarte · <b>D</b> se dégager · <b>TAB</b> sismographe ·
-    <b>I</b> collection · <b>P</b> réglages · <b>R</b> nouveau monde</div>
+    <b>B</b> pancarte · <b>R</b> se dégager · <b>TAB</b> sismographe ·
+    <b>I</b> collection · <b>P</b> réglages · <b>MAJ+R</b> nouveau monde</div>
   <div id="right">
     <div id="lures">—</div>
     <div id="place">—</div>
@@ -306,15 +306,31 @@ const SETUP = {
         morceaux du monde qui sont réellement COUPÉS les uns des autres, et ne
         pose une rampe qu'à la frontière la moins chère entre deux d'entre eux.
         D'où un nombre bien plus faible qu'en v3.1 — et chacune sert. */
+    /* ─── GALERIES DE PERÇAGE ───
+        Les rampes ne franchissent qu'un dénivelé. Ce qui restait isolé l'était
+        surtout par de la ROCHE — 60 % des frontières de poche, mesuré par
+        outils/diag_passage.py. monde/connexite.js perce donc une fissure
+        jusqu'aux poches qui en valent la peine. */
+    enclaveTailleMin:110,  // cellules : en dessous, une alcôve, on laisse
+    nbGaleries:70,         // borne haute : au-delà le monde devient un gruyère
+
     nbRampes:120,
     rampeChuteMax:11,      // au-delà, un escalier n'est plus plausible
     rampePasses:4,         // on recommence tant que ça relie encore
     rampeTailleMin:260,    // cellules : en dessous, c'est une miette
 
-    nbPonts:260,
-    pontLongMin:14,
-    pontLongMax:46,
-    pontTirantAir:3.6,   // dégagement sous le tablier
+    /* ─── PASSERELLES ───
+        Refaites en v4. Un tablier part du sol et y revient : plus de dalle
+        flottant à 3,6 m au-dessus des deux rives, plus d'échelle invisible,
+        plus de semis au hasard. Un pont franchit un gouffre, ou n'existe pas.
+        Il n'y a donc plus de « nombre de ponts » à régler : c'est le nombre de
+        gouffres franchissables qui le décide. */
+    pontPorteeMax:70,    // mètres : au-delà, aucune passerelle n'est crédible
+    pontDeniveleMax:5.0, // écart d'altitude toléré entre les deux rives
+    pontFlecheMax:1.8,   // creux au milieu — au-delà on plonge dans le trou
+    pontTeteMin:2.4,     // dégagement au-dessus du tablier, pour la tête
+    pontLargeur:2,       // cellules : 3 m. Une passerelle, pas une corde raide
+    pontEssais:14,       // décalages tentés le long de chaque gouffre
 
     mortChute:14,        // mètres de chute au-delà desquels on meurt
     degatChute:6,        // mètres au-delà desquels on est sonné
@@ -344,9 +360,17 @@ const SETUP = {
        écrasaient le reste de l'image dès qu'une source entrait dans le champ. */
     fog:2.10,    fogMax:3.5,
     rays:0.65,   raysMax:3.0,
-    ambiance:1.0,        // multiplicateur global de la lumière ambiante
+    ambiance:0.92,       // multiplicateur global de la lumière ambiante
     vignette:0.55,       // 0.92 en v3.0 : les bords de l'écran étaient noirs
     grain:0.115,
+
+    /* ─── DÉSATURATION ───
+        « Trop de couleurs pétantes. » Les teintes de biome et les lampes ont
+        été ramenées vers le gris à la source (voir monde/biomes.js), et une
+        dernière passe vide ce qu'il reste. À 0 le monde est criard, à 1 il est
+        en noir et blanc ; 0.45 laisse juste ce qu'il faut pour reconnaître un
+        endroit sans le trouver joli. */
+    desaturation:0.45,
     res:360,             // hauteur du tampon interne, en pixels
     detail:1.0,          // multiplicateur de polycount du décor
     fov:1.30,
@@ -372,7 +396,11 @@ const SETUP = {
   lumiereDecor:{
     attenLin:0.07,
     attenQuad:0.020,
-    gain:2.2,
+    /* 2.2 en v3.3. Chaque cristal, chaque fenêtre, chaque braise éclairait
+       comme un projecteur ; additionnées par milliers, elles noyaient le
+       brouillard qui fait tout le travail. Une source de décor doit se VOIR
+       de loin sans ÉCLAIRER de loin. */
+    gain:1.70,
   },
 
   /* ─────────────── LUNE BRISÉE ───────────────
@@ -1027,12 +1055,57 @@ __M['M_monde_biomes'] = (function(){
    L'ORDRE FAIT FOI. Les cartes PNG dessinées dans RELEVÉ encodent l'index du
    biome ; le réordonner casse les cartes déjà dessinées.                    */
 
+/* ═══ DEUX RÉGIMES D'AIR ═══════════════════════════════════════════════════
+
+   « Il y a trop de lumière, trop de couleurs pétantes, et ça manque de smog
+   à la Silent Hill. » Le retour était juste, et la correction n'est pas
+   « assombrir ».
+
+   ── CE QUE FAIT VRAIMENT SILENT HILL ──────────────────────────────────────
+   Son brouillard est CLAIR. Un gris lumineux, très dense, presque blanc. On
+   voit net à une douzaine de mètres, et au-delà le monde n'est pas noir : il
+   est ABSENT. C'est bien pire. Le noir, on l'éclaire ; le gris, on ne le
+   traverse pas — et on avance en sachant que ce qui arrive sera déjà sur nous
+   quand on le verra.
+
+   D'où deux régimes, et non un réglage :
+
+     SMOG      brouillard CLAIR. Surface, glacière, ville. La brume est
+               visible, elle a une couleur, elle est éclairée par ce qui s'y
+               trouve. L'ambiante monte : un smog clair diffuse la lumière.
+
+     TÉNÈBRES  brouillard SOMBRE. Souterrain profond, barrage. Là, c'est le
+               noir qui mange le monde, et la lampe compte.
+
+   ── LA DENSITÉ N'A PAS BOUGÉ, ET C'EST DÉLIBÉRÉ ───────────────────────────
+   Première tentative : couleurs claires ET densité relevée de 20 à 40 %.
+   Résultat, mesuré au rendu logiciel puis en portée utile : un souterrain
+   quasiment noir, et une portée qui tombait de 12,8 m à 9,8 m. C'est
+   exactement le défaut déjà signalé deux fois — « on ne voit absolument
+   rien ».
+
+   La leçon : ce qui fait le smog, c'est la COULEUR du brouillard, pas sa
+   quantité. Un gris clair à densité égale dissout le monde dans du gris ; un
+   gris sombre le noie dans du noir. Le premier est angoissant, le second est
+   seulement illisible. Les densités sont donc revenues à leurs valeurs
+   d'origine, à un cheveu près.
+
+   Descendre change donc l'air qu'on respire, et c'est lisible sans un mot.
+
+   ── LES COULEURS ONT ÉTÉ DÉSATURÉES ───────────────────────────────────────
+   Les `lum` d'origine étaient des teintes pures — orange saturé, bleu
+   électrique, rouge vif. Une lampe orange pur dans une caverne brune, c'est
+   du carnaval. Elles sont ramenées vers le gris : il reste assez de teinte
+   pour identifier un biome, plus assez pour faire joli.                     */
+
 const BIOMES = [
   {
     n:'SOUTERRAIN', code:'#8a4a22',
-    fog:[.013,.014,.017], fogD:4.6, h:1.00, amb:.16, snow:0, sky:0,
-    floor:[.23,.21,.18], wall:[.29,.27,.24], ceil:[.10,.10,.11],
-    lum:[0.72,0.31,0.09],
+    // TÉNÈBRES : la roche profonde. Le noir mange tout, la lampe est vitale.
+    air:'tenebres',
+    fog:[.020,.019,.017], fogD:4.8, h:1.00, amb:.15, snow:0, sky:0,
+    floor:[.21,.19,.17], wall:[.26,.24,.22], ceil:[.09,.09,.09],
+    lum:[0.52,0.34,0.20],
     reverb:'moyenne',
     props:['pilier','gravats','stalag','arche','os','cotes','crane','cristal',
            'monolithe','cristal','champignon','champignon'],
@@ -1040,18 +1113,22 @@ const BIOMES = [
   {
     n:'GLACIÈRE', code:'#2f7fa8',
     // souterraine : du givre, pas des flocons. snow reste à 0.
-    fog:[.024,.031,.042], fogD:5.4, h:1.35, amb:.19, snow:0, sky:0,
-    floor:[.33,.38,.45], wall:[.29,.35,.43], ceil:[.16,.21,.29],
-    lum:[0.14,0.42,0.78],
+    // SMOG : la vapeur froide. Elle est claire, elle brille, elle aveugle.
+    air:'smog',
+    fog:[.112,.122,.134], fogD:5.4, h:1.35, amb:.26, snow:0, sky:0,
+    floor:[.31,.34,.38], wall:[.28,.31,.35], ceil:[.17,.20,.24],
+    lum:[0.26,0.38,0.52],
     reverb:'longue',
     props:['glace','gravats','stalag','os','cotes','cristal','cristal',
            'monolithe','glace'],
   },
   {
     n:'BARRAGE', code:'#9a8b4a',
-    fog:[.015,.016,.018], fogD:3.2, h:2.60, amb:.15, snow:0, sky:0,
-    floor:[.26,.26,.25], wall:[.31,.31,.30], ceil:[.12,.12,.13],
-    lum:[0.80,0.58,0.20],
+    // TÉNÈBRES : du béton dans le noir. Les grandes salles s'y perdent.
+    air:'tenebres',
+    fog:[.026,.026,.025], fogD:3.4, h:2.60, amb:.15, snow:0, sky:0,
+    floor:[.24,.24,.23], wall:[.28,.28,.27], ceil:[.11,.11,.11],
+    lum:[0.54,0.46,0.30],
     reverb:'longue',
     props:['poutre','conduit','gravats','os','crane','monolithe','monolithe',
            'cristal','carcasse','lampadaire'],
@@ -1059,9 +1136,12 @@ const BIOMES = [
   {
     n:'SURFACE GELÉE', code:'#cfd8dd',
     // le seul biome à ciel ouvert : la neige et la lune brisée sont ici
-    fog:[.070,.077,.090], fogD:4.2, h:1.00, amb:.34, snow:1, sky:1,
-    floor:[.46,.49,.55], wall:[.18,.19,.22], ceil:[.05,.06,.08],
-    lum:[0.22,0.34,0.55],
+    // SMOG, le plus dense du jeu. Le blanc pur de Silent Hill : dehors, on ne
+    // voit pas plus loin que dedans, et c'est ça qui met mal à l'aise.
+    air:'smog',
+    fog:[.198,.202,.208], fogD:4.4, h:1.00, amb:.44, snow:1, sky:1,
+    floor:[.42,.44,.47], wall:[.19,.20,.22], ceil:[.06,.07,.08],
+    lum:[0.30,0.34,0.42],
     reverb:'aucune',
     props:['tronc','tronc','tronc','souche','souche','os','cotes','monolithe',
            'cristal','carcasse','maison','pylone'],
@@ -1072,9 +1152,16 @@ const BIOMES = [
      recouverte. Nommée VILLE ROUGE en v3.0. */
   {
     n:'VILLE ENSEVELIE', code:'#7a1410',
-    fog:[.052,.010,.009], fogD:4.8, h:3.4, amb:.17, snow:0, sky:0,
-    floor:[.16,.065,.06], wall:[.22,.08,.07], ceil:[.07,.025,.025],
-    lum:[1.05,0.34,0.18],
+    /* SMOG rouge sale. Esprit BACKROOMS : ce n'est pas une ruine, c'est du
+       liminal. Des néons que personne n'a éteints, une lumière uniforme et
+       bourdonnante, rien qui varie. La peur vient de la monotonie et de
+       l'absence de sortie, pas du danger. D'où un rouge DÉSATURÉ et constant
+       plutôt que l'écarlate d'avant : un rouge vif est spectaculaire, un
+       rouge sale est habité par personne. */
+    air:'smog',
+    fog:[.082,.055,.052], fogD:4.8, h:3.4, amb:.22, snow:0, sky:0,
+    floor:[.17,.10,.095], wall:[.21,.12,.11], ceil:[.08,.05,.05],
+    lum:[0.72,0.34,0.26],
     reverb:'moyenne',
     props:['tourFenetres','meneau','tourFenetres','meneau','gravats','os',
            'cotes','monolithe','carcasse','maison','lampadaire','pylone'],
@@ -1939,7 +2026,7 @@ __M['M_monde_connexite'] = (function(){
   const { SETUP } = __M['M_setup'];
   const { rnd, ri, rf } = __M['M_noyau_rng'];
   const { BIOMES } = __M['M_monde_biomes'];
-  const { GW, GH, CELL, FLOOR, STEPUP, grid, floorH, blocked, vide, platform, falaise, biome, pont, idx, isFloor } = __M['M_monde_grille'];
+  const { GW, GH, CELL, FLOOR, STEPUP, grid, floorH, ceilH, blocked, vide, platform, falaise, biome, pont, idx, isFloor } = __M['M_monde_grille'];
 /* ═══ MONDE / CONNEXITÉ ═══
    Trouve les morceaux du monde qui sont COUPÉS les uns des autres, et n'y
    place des rampes que là où elles servent réellement à quelque chose.
@@ -1986,9 +2073,12 @@ const composante = new Int32Array(GW * GH);
 /** [{id, taille, cellule}] trié par taille décroissante. */
 const morceaux = [];
 
-/* Praticable pour le JOUEUR : du sol, pas d'élément massif, pas de vide. */
+/* Praticable pour le JOUEUR : du sol, pas d'élément massif, pas de vide —
+   OU un tablier, qui porte au-dessus du vide et relie ses deux rives.
+   L'oublier faisait tailler des rampes pour franchir des gouffres qu'un pont
+   enjambait déjà. */
 const praticable = i =>
-  grid[i] === FLOOR && !blocked[i] && !vide[i];
+  pont[i] || (grid[i] === FLOOR && !blocked[i] && !vide[i]);
 
 /* Deux cellules voisines sont reliées si la marche passe DANS LES DEUX SENS.
    C'est la nuance qui compte : une corniche d'où l'on saute sans pouvoir
@@ -2183,150 +2273,406 @@ function relierLeMonde(lights, props){
     analyser();                              // la topologie a changé
   }
 
+  /* Les rampes ne savent franchir qu'un dénivelé. Ce qui reste isolé l'est
+     surtout par de la ROCHE — mesuré : 60 % des frontières de poche. On
+     perce. */
+  const galeries = percerEnclaves();
+
+  analyser();
   const apres = morceaux.length;
   const isoles = morceaux.filter(m => m.taille >= S.rampeTailleMin).length;
-  return {rampes, avant, apres, isoles};
+  return {rampes, galeries, avant, apres, isoles};
 }
 
-  return { analyser, composante, morceaux, relierLeMonde };
+/* ═══════════════ PERCER LES ENCLAVES ═══════════════
+
+   ── LE CONSTAT ─────────────────────────────────────────────────────────────
+   Après les rampes, il restait en moyenne quatre morceaux significatifs
+   inatteignables. `outils/diag_passage.py` a dit pourquoi, en longeant leurs
+   frontières :
+
+       roche non creusée   60 %
+       falaise             15 %
+       élément de décor    15 %
+       gouffre             10 %
+
+   Ce ne sont donc ni les ponts ni le décor : ce sont des poches que le
+   creusement a ouvertes sans jamais les raccorder. Aucune rampe ne peut rien
+   pour elles — il n'y a pas de dénivelé à franchir, il y a un mur.
+
+   ── LA MÉTHODE ─────────────────────────────────────────────────────────────
+   Un seul parcours en largeur depuis TOUTE la composante principale à la
+   fois, qui se propage à travers la roche en retenant d'où il vient. Chaque
+   poche isolée n'a plus qu'à remonter cette chaîne jusqu'au monde connu, et
+   on creuse le long du chemin.
+
+   Une seule passe pour toutes les poches, au lieu d'une recherche par poche :
+   sur 1,18 M de cellules, la différence n'est pas cosmétique.
+
+   ── CE QU'ON CREUSE ────────────────────────────────────────────────────────
+   Une galerie d'une cellule, basse. L'altitude est interpolée entre les deux
+   bouts, ce qui rabote au passage la falaise qui aurait pu s'y trouver ; et
+   un élément qui condamnait la cellule est simplement libéré. La même passe
+   règle donc les trois causes sur quatre.
+
+   Ce n'est pas un couloir décoré : c'est une fissure. Elle a exactement le
+   rôle qu'elle doit avoir — dire « on peut passer par là », sans promettre
+   que ce soit agréable.                                                     */
+
+function percerEnclaves(){
+  const S = SETUP.relief;
+  const n = N();
+
+  analyser();
+  if(morceaux.length < 2) return 0;
+
+  // la plus grande composante est la référence : c'est « le monde »
+  const principale = morceaux[0].id;
+
+  /* Les poches qui méritent une galerie. On ignore les miettes : creuser
+     jusqu'à une alcôve de trente cellules coûte le même travail et n'ouvre
+     rien. */
+  const aRelier = morceaux.filter(m => m.id !== principale
+                                    && m.taille >= S.enclaveTailleMin);
+  if(!aRelier.length) return 0;
+
+  /* ── parcours en largeur depuis toute la composante principale ──
+     `venuDe[i]` retient la cellule d'où l'on est arrivé en i : c'est ce qui
+     permet de rebrousser chemin sans refaire de recherche. */
+  const venuDe = new Int32Array(n).fill(-1);
+  const vu = new Uint8Array(n);
+  const file = new Int32Array(n);
+  let tete = 0, queue = 0;
+
+  for(let i = 0; i < n; i++)
+    if(composante[i] === principale){ vu[i] = 1; file[queue++] = i; }
+
+  const pousser = (de, vers) => {
+    if(vu[vers]) return;
+    if(vide[vers]) return;                 // on ne perce pas au-dessus du vide
+    vu[vers] = 1; venuDe[vers] = de; file[queue++] = vers;
+  };
+
+  while(tete < queue){
+    const c = file[tete++];
+    const x = c % GW, z = (c / GW) | 0;
+    if(x > 1)      pousser(c, c - 1);
+    if(x < GW - 2) pousser(c, c + 1);
+    if(z > 1)      pousser(c, c - GW);
+    if(z < GH - 2) pousser(c, c + GW);
+  }
+
+  /* ── pour chaque poche, la cellule la plus proche du monde ── */
+  let galeries = 0;
+  for(const m of aRelier){
+    if(galeries >= S.nbGaleries) break;
+
+    // on cherche, dans la poche, la cellule que le parcours a atteinte
+    let depart = -1;
+    for(let i = 0; i < n; i++){
+      if(composante[i] !== m.id || !vu[i]) continue;
+      depart = i; break;
+    }
+    if(depart < 0) continue;               // poche murée par du vide : tant pis
+
+    if(creuserGalerie(depart, venuDe)) galeries++;
+  }
+  return galeries;
+}
+
+/** Remonte la chaîne `venuDe` depuis `depart` et creuse tout du long. */
+function creuserGalerie(depart, venuDe){
+  const chemin = [];
+  let c = depart, garde = 0;
+  while(c >= 0 && garde++ < 4000){
+    chemin.push(c);
+    c = venuDe[c];
+  }
+  if(chemin.length < 2) return false;
+
+  const hA = floorH[chemin[0]];
+  const hB = floorH[chemin[chemin.length - 1]];
+
+  for(let k = 0; k < chemin.length; k++){
+    const i = chemin[k];
+    const u = k / (chemin.length - 1);
+    // interpolation : la galerie rabote la falaise qu'elle traverse
+    const y = hA + (hB - hA) * u;
+    grid[i] = FLOOR;
+    floorH[i] = y;
+    blocked[i] = 0;                         // un élément qui condamnait cède
+    if(ceilH[i] < y + 2.0) ceilH[i] = y + 2.0;
+  }
+  return true;
+}
+
+  return { analyser, composante, morceaux, percerEnclaves, relierLeMonde };
 })();
 
 /* ─── src/monde/ponts.js ─── */
 __M['M_monde_ponts'] = (function(){
   const { SETUP } = __M['M_setup'];
-  const { rnd, ri } = __M['M_noyau_rng'];
-  const { GW, GH, CELL, floorH, ceilH, openN, pont, pontH, echelle, vide, idx, isFloor, celluleLibre } = __M['M_monde_grille'];
+  const { rnd, ri, rf } = __M['M_noyau_rng'];
+  const { GW, GH, CELL, STEPUP, floorH, ceilH, openN, pont, pontH, vide, idx, isFloor } = __M['M_monde_grille'];
   const { gouffres } = __M['M_monde_relief'];
   const { autorise } = __M['M_monde_plan'];
 /* ═══ MONDE / PONTS ═══
-   Passerelles suspendues. On enjambe les gouffres, on longe les grandes salles.
+   Passerelles. On enjambe les gouffres — et rien d'autre.
 
-   Un pont suspendu, pas une dalle : le tablier fléchit en son milieu, deux
-   câbles portent depuis les pylônes des extrémités, et des suspentes verticales
-   descendent du câble au tablier.
+   ── CE QUI N'ALLAIT PAS, ET POURQUOI ───────────────────────────────────────
+   La version précédente posait le tablier à `max(sol) + 3,6 m` sur toute la
+   longueur. Conséquence : aux DEUX BOUTS, le pont flottait à trois mètres
+   cinquante au-dessus du sol, sans le moindre barreau visible. On y montait
+   par une touche contextuelle sur une cellule unique, invisible, non signalée.
+   Et 260 tronçons étaient posés au hasard, sans rien relier.
 
-   Chaque tronçon reçoit une échelle à chaque bout — sans quoi on aurait des
-   étages qu'on ne peut pas atteindre, c'est-à-dire du décor.
+   Le verdict d'Orlando était exact et complet : « elles flottent, elles sont
+   trop courtes, elles sont inaccessibles, on ne peut pas marcher dessus ».
 
-   PRIORITÉ v3 : on tente D'ABORD un pont au-dessus de chaque gouffre creusé
-   par monde/relief.js. Un gouffre non franchissable coupe la carte ; un
-   gouffre avec un pont est un choix (le traverser ou le contourner).       */
+   ── LA RÈGLE, MAINTENANT ───────────────────────────────────────────────────
+   UN TABLIER COMMENCE ET FINIT AU NIVEAU DU SOL.
+
+   Il part d'une culée en terre ferme, franchit le vide, et retombe sur une
+   culée en terre ferme. Entre les deux il fléchit, sans jamais descendre sous
+   la lèvre du gouffre. On y marche en marchant : pas d'échelle, pas de touche,
+   pas d'étage à comprendre. On voit un pont, on avance, on est dessus.
+
+   Et un pont n'existe que s'il FRANCHIT quelque chose. Plus de semis au
+   hasard : chaque gouffre reçoit une traversée si la géométrie le permet, et
+   c'est tout. Un pont qui ne relie rien n'est pas un pont, c'est un obstacle
+   décoratif au-dessus du vide.
+
+   ── DEUX CELLULES DE LARGE ─────────────────────────────────────────────────
+   La v3 en faisait une (1,5 m), au motif que c'était plus terrifiant. Ça
+   l'était surtout parce qu'on tombait en marchant droit. Trois mètres, c'est
+   une passerelle qu'on emprunte au lieu de la subir — et un gouffre sans fond
+   reste un gouffre sans fond.                                               */
 
 
 
 
 
 
+
+/** Ce que la traversée d'un gouffre a donné, pour le rapport de génération. */
+const statsPonts = {tentes: 0, poses: 0, refusDenivele: 0,
+                           refusCulee: 0, refusPlafond: 0, refusPlan: 0};
 
 /**
  * @param props  tableau du décor : chaque pont y pousse son maillage
  * @returns nombre de ponts posés
  */
 function placerPonts(props){
-  const S = SETUP.relief;
-  let poses = 0;
+  for(const k in statsPonts) statsPonts[k] = 0;
 
-  // 1. un pont par gouffre, en priorité — c'est celui qui compte
+  /* On ne traverse QUE des gouffres. Les morceaux de monde séparés par une
+     falaise sont l'affaire de monde/connexite.js, qui y taille un éboulis :
+     une rampe de gravats est bien plus plausible qu'une passerelle suspendue
+     entre deux corniches, et elle ne demande aucune règle nouvelle au joueur. */
   for(const g of gouffres){
-    const horiz = g.rx >= g.rz;
-    const demi = horiz ? g.rx : g.rz;
-    const lon = demi*2 + 8;                       // on déborde des deux côtés
-    const x0 = horiz ? g.x - demi - 4 : g.x;
-    const z0 = horiz ? g.z : g.z - demi - 4;
-    if(poserTroncon(props, x0, z0, lon, horiz, true)) poses++;
+    // on tente l'axe le plus court en premier : moins de portée, plus de chances
+    const horizDabord = g.rx <= g.rz;
+    if(traverser(props, g, horizDabord)) continue;
+    traverser(props, g, !horizDabord);
   }
-
-  // 2. le reste au hasard, pour la verticalité générale
-  // SETUP en mètres → cellules (cf. la même conversion dans relief.js)
-  const LMIN = Math.round(S.pontLongMin / CELL);
-  const LMAX = Math.round(S.pontLongMax / CELL);
-  for(let essai=0; essai<20000 && poses < S.nbPonts; essai++){
-    const c = celluleLibre(ri);
-    if(poserTroncon(props, c.x, c.z, ri(LMIN,LMAX), rnd()<0.5, false)) poses++;
-  }
-  return poses;
+  return statsPonts.poses;
 }
 
 /**
- * @param surGouffre  si vrai, on tolère que le tronçon survole du vide (c'est
- *                    le but) ; sinon il doit rester au-dessus de sol praticable.
+ * Cherche une traversée d'un gouffre selon un axe, et la bâtit.
+ *
+ * @param horiz  vrai pour franchir selon X, faux selon Z
  */
-function poserTroncon(props, x0, z0, lon, horiz, surGouffre){
-  if(!autorise('ponts', x0, z0)) return false;
-  let hmax = -1e9, appuis = 0;
-  for(let k=0; k<lon; k++){
-    const x = horiz ? x0+k : x0, z = horiz ? z0 : z0+k;
-    if(x<1 || z<1 || x>=GW-1 || z>=GH-1) return false;
-    const i = idx(x,z);
-    if(pont[i]) return false;
-    if(vide[i]){ if(!surGouffre) return false; continue; }
-    if(!isFloor(x,z)) return false;
-    if(!surGouffre && openN[i] < 0.42) return false;
-    hmax = Math.max(hmax, floorH[i]);
-    appuis++;
+function traverser(props, g, horiz){
+  const S = SETUP.relief;
+  const demi = horiz ? g.rx : g.rz;
+  const portee = Math.round(S.pontPorteeMax / CELL);
+
+  /* Plusieurs essais décalés le long du gouffre : sa lèvre est irrégulière, et
+     l'endroit où les deux bords se font face à la même altitude n'est pas
+     forcément en son milieu. */
+  for(let essai = 0; essai < S.pontEssais; essai++){
+    const decal = (essai === 0) ? 0 : ri(-demi, demi);
+    const cx = horiz ? g.x : g.x + decal;
+    const cz = horiz ? g.z + decal : g.z;
+
+    statsPonts.tentes++;
+    const t = chercherCulees(cx, cz, horiz, portee);
+    if(!t) continue;
+    if(batir(props, t, horiz)) return true;
   }
-  if(appuis < 4 || hmax === -1e9) return false;
+  return false;
+}
 
-  const H = hmax + SETUP.relief.pontTirantAir + rnd()*2.2;
+/**
+ * Depuis le centre du gouffre, marcher vers les deux bords jusqu'à retrouver
+ * de la terre ferme. Renvoie les deux culées, ou null.
+ */
+function chercherCulees(cx, cz, horiz, portee){
+  const pas = horiz ? 1 : GW;          // avancer d'une cellule sur l'axe
+  const i0 = idx(cx, cz);
+  if(!vide[i0]) return null;           // on ne part pas d'un gouffre : rien à franchir
 
-  // le plafond doit laisser la place au tablier ET à toi dessus
-  for(let k=0; k<lon; k++){
-    const x = horiz ? x0+k : x0, z = horiz ? z0 : z0+k;
-    const i = idx(x,z);
-    if(vide[i]) continue;
-    if(ceilH[i] < H + 2.3) return false;
+  const bord = (sens) => {
+    let i = i0, n = 0;
+    while(n < portee){
+      i += sens * pas; n++;
+      const x = i % GW, z = (i / GW) | 0;
+      if(x < 2 || z < 2 || x >= GW - 2 || z >= GH - 2) return null;
+      if(vide[i]) continue;
+      if(!isFloor(x, z)) return null;   // on a buté dans la roche, pas sur une rive
+      return {i, x, z, n};
+    }
+    return null;
+  };
+
+  const a = bord(-1), b = bord(+1);
+  if(!a || !b) { statsPonts.refusCulee++; return null; }
+
+  /* La culée doit être un endroit où l'on tient debout, pas une aiguille. On
+     recule d'une cellule de plus pour que le pont s'appuie sur du solide. */
+  const dedans = (c, sens) => {
+    const j = c.i + sens * pas;
+    const x = j % GW, z = (j / GW) | 0;
+    return isFloor(x, z) && !vide[j]
+        && Math.abs(floorH[j] - floorH[c.i]) <= STEPUP;
+  };
+  if(!dedans(a, -1) || !dedans(b, +1)){ statsPonts.refusCulee++; return null; }
+
+  return {a, b, longueur: a.n + b.n + 1};
+}
+
+/**
+ * Pose le tablier entre deux culées.
+ *
+ * L'altitude va LINÉAIREMENT de `floorH[a]` à `floorH[b]`, moins une flèche
+ * au milieu. C'est tout le changement par rapport à la v3, et c'est celui qui
+ * rend le pont praticable : à chaque bout, la cote du tablier EST celle du
+ * sol, donc on y marche sans rien faire.
+ */
+function batir(props, t, horiz){
+  const S = SETUP.relief;
+  const {a, b} = t;
+
+  const hA = floorH[a.i], hB = floorH[b.i];
+  if(Math.abs(hA - hB) > S.pontDeniveleMax){ statsPonts.refusDenivele++; return false; }
+
+  const lon = t.longueur;
+  const x0 = horiz ? a.x : a.x;
+  const z0 = horiz ? a.z : a.z;
+  const CX = k => horiz ? x0 + k : x0;
+  const CZ = k => horiz ? z0 : z0 + k;
+
+  if(!autorise('ponts', CX(0), CZ(0))){ statsPonts.refusPlan++; return false; }
+
+  /* La flèche : un pont plat au-dessus d'un gouffre a l'air d'une dalle
+     posée. Elle reste petite, et surtout on vérifie ensuite qu'elle ne
+     descend pas sous la lèvre — un tablier qui plonge dans le trou serait
+     pire que pas de pont du tout. */
+  const fleche = Math.min(S.pontFlecheMax, lon * CELL * 0.035);
+  const yTab = k => {
+    const u = k / (lon - 1);
+    return hA + (hB - hA) * u - Math.sin(u * Math.PI) * fleche;
+  };
+
+  // ── contrôles avant de rien écrire ──
+  let libreMin = 1e9;
+  for(let k = 0; k < lon; k++){
+    const x = CX(k), z = CZ(k), i = idx(x, z);
+    if(pont[i]) return false;                     // un tronçon passe déjà là
+    const y = yTab(k);
+    if(!vide[i]){
+      // au-dessus de la terre ferme : il faut de la place sous le tablier ET
+      // au-dessus, sinon on marche dans la roche
+      if(y < floorH[i] - 0.05){ statsPonts.refusPlafond++; return false; }
+      libreMin = Math.min(libreMin, ceilH[i] - y);
+    }
   }
+  if(libreMin < S.pontTeteMin){ statsPonts.refusPlafond++; return false; }
 
-  const fleche = 1.4 + rnd()*1.6;
+  // ── le tablier ──
+  const LARG = SETUP.relief.pontLargeur;        // en cellules
+  const cotes = [];
+  for(let w = 0; w < LARG; w++) cotes.push(w - (LARG - 1) / 2);
+
   const parts = [];
-  const PX = k => horiz ? (x0+k+0.5)*CELL : (x0+0.5)*CELL;
-  const PZ = k => horiz ? (z0+0.5)*CELL   : (z0+k+0.5)*CELL;
-  const yTab = k => { const t = k/(lon-1); return H - Math.sin(t*Math.PI)*fleche; };
-  const yCab = k => { const t = k/(lon-1); return H + 3.2 - Math.sin(t*Math.PI)*(fleche*0.35); };
-  /* Le tablier fait EXACTEMENT une cellule de large, parce que c'est une
-     cellule qui est marquée praticable (`pont[i]`). Un visuel de 2,4 m sur une
-     bande jouable de 1,5 m donnait un pont où l'on tombait en marchant sur ce
-     qu'on voyait — mesuré en test : 7 images sur le tablier avant la chute.
-     Une passerelle d'un mètre cinquante au-dessus d'un gouffre sans fond est
-     de toute façon le bon niveau de terreur. */
-  const LARG = CELL * 1.02;
+  const PX = k => (CX(k) + 0.5) * CELL;
+  const PZ = k => (CZ(k) + 0.5) * CELL;
+  const DEMI = LARG * CELL / 2;
 
-  for(let k=0; k<lon; k++){
-    const x = horiz ? x0+k : x0, z = horiz ? z0 : z0+k;
-    const i2 = idx(x,z);
-    pont[i2] = 1; pontH[i2] = yTab(k);
-    if(k===0 || k===lon-1) echelle[i2] = 1;
+  for(let k = 0; k < lon; k++){
+    const y = yTab(k);
 
-    // planches du tablier
-    parts.push({x:PX(k), y:yTab(k), z:PZ(k),
-                sx: horiz ? CELL*1.02 : LARG, sy:0.16, sz: horiz ? LARG : CELL*1.02,
-                c:[.19,.16,.13]});
-    // suspentes
-    if(k % 2 === 0)
-      for(const sd of [1,-1])
-        parts.push({x:PX(k)+(horiz?0:sd*LARG*0.48), y:(yTab(k)+yCab(k))/2,
-                    z:PZ(k)+(horiz?sd*LARG*0.48:0),
-                    sx:.05, sy:yCab(k)-yTab(k), sz:.05, c:[.26,.24,.21]});
-    // câble porteur, en petits tronçons
-    if(k < lon-1)
-      for(const sd of [1,-1])
-        parts.push({x:(PX(k)+PX(k+1))/2 + (horiz?0:sd*LARG*0.48),
-                    y:(yCab(k)+yCab(k+1))/2,
-                    z:(PZ(k)+PZ(k+1))/2 + (horiz?sd*LARG*0.48:0),
-                    sx: horiz?CELL:.09, sy:.09, sz: horiz?.09:CELL, c:[.30,.27,.23]});
+    /* On marque TOUTE la largeur praticable. La v3 n'en marquait qu'une
+       cellule alors qu'elle en dessinait davantage : on tombait en marchant
+       sur ce qu'on voyait. Ce qui est dessiné et ce qui porte doivent être la
+       même chose. */
+    for(const d of cotes){
+      const x = horiz ? CX(k) : CX(k) + Math.round(d);
+      const z = horiz ? CZ(k) + Math.round(d) : CZ(k);
+      if(x < 0 || z < 0 || x >= GW || z >= GH) continue;
+      const i = idx(x, z);
+      pont[i] = 1; pontH[i] = y;
+    }
+
+    // planches
+    parts.push({x: PX(k), y, z: PZ(k),
+                sx: horiz ? CELL * 1.02 : DEMI * 2,
+                sy: 0.18,
+                sz: horiz ? DEMI * 2 : CELL * 1.02,
+                c: [.19, .16, .13]});
+
+    /* Un garde-corps bas. Il n'arrête personne — on peut toujours tomber par
+       le côté — mais il DIT que c'est une passerelle, et de loin dans la brume
+       c'est la seule chose qui distingue un pont d'une dalle flottante. */
+    if(k % 2 === 0){
+      for(const sd of [1, -1]){
+        const ox = horiz ? 0 : sd * DEMI * 0.92;
+        const oz = horiz ? sd * DEMI * 0.92 : 0;
+        parts.push({x: PX(k) + ox, y: y + 0.55, z: PZ(k) + oz,
+                    sx: .07, sy: 1.1, sz: .07, c: [.24, .21, .18]});
+      }
+    }
+    if(k % 2 === 0 && k < lon - 2){
+      for(const sd of [1, -1]){
+        const ox = horiz ? 0 : sd * DEMI * 0.92;
+        const oz = horiz ? sd * DEMI * 0.92 : 0;
+        parts.push({x: PX(k) + CELL * (horiz ? 1 : 0) + ox,
+                    y: (yTab(k) + yTab(Math.min(lon - 1, k + 2))) / 2 + 1.05,
+                    z: PZ(k) + CELL * (horiz ? 0 : 1) + oz,
+                    sx: horiz ? CELL * 2.1 : .05, sy: .05,
+                    sz: horiz ? .05 : CELL * 2.1, c: [.28, .25, .21]});
+      }
+    }
+
+    // suspentes vers un câble porteur, au-dessus du vide seulement
+    const i = idx(CX(k), CZ(k));
+    if(vide[i] && k % 3 === 0){
+      const hCab = 2.6;
+      for(const sd of [1, -1]){
+        const ox = horiz ? 0 : sd * DEMI * 0.92;
+        const oz = horiz ? sd * DEMI * 0.92 : 0;
+        parts.push({x: PX(k) + ox, y: y + hCab / 2, z: PZ(k) + oz,
+                    sx: .05, sy: hCab, sz: .05, c: [.26, .24, .21]});
+      }
+    }
   }
-  // pylônes
-  for(const k of [0, lon-1])
-    for(const sd of [1,-1])
-      parts.push({x:PX(k)+(horiz?0:sd*LARG*0.48), y:yTab(k)+2.1,
-                  z:PZ(k)+(horiz?sd*LARG*0.48:0),
-                  sx:.20, sy:4.2, sz:.20, c:[.24,.21,.18]});
 
-  props.push({parts, cell: idx(x0,z0)});
+  // pylônes aux culées, pour qu'on voie le pont arriver
+  for(const k of [0, lon - 1])
+    for(const sd of [1, -1]){
+      const ox = horiz ? 0 : sd * DEMI * 0.92;
+      const oz = horiz ? sd * DEMI * 0.92 : 0;
+      parts.push({x: PX(k) + ox, y: yTab(k) + 1.9, z: PZ(k) + oz,
+                  sx: .22, sy: 3.8, sz: .22, c: [.24, .21, .18]});
+    }
+
+  props.push({parts, cell: idx(CX(0), CZ(0))});
+  statsPonts.poses++;
   return true;
 }
 
-  return { placerPonts };
+  return { placerPonts, statsPonts };
 })();
 
 /* ─── src/monde/cachettes.js ─── */
@@ -4148,7 +4494,7 @@ __M['M_monde_index'] = (function(){
   const { GW, GH, FLOOR, grid, floorH, ceilH, biome, sky, vide, idx, viderGrille, calculerOuverture, majBornes, rebuildNavCost, bornes } = __M['M_monde_grille'];
   const { creuserPlan, relaxerEpine, finaliserRelief, poserPlafonds, quantifierRelief, salles } = __M['M_monde_generation'];
   const { creuserGouffres, gouffres } = __M['M_monde_relief'];
-  const { relierLeMonde } = __M['M_monde_connexite'];
+  const { relierLeMonde, percerEnclaves } = __M['M_monde_connexite'];
   const { placerPonts } = __M['M_monde_ponts'];
   const { placerCachettes, cachettes } = __M['M_monde_cachettes'];
   const { placerProps, viderDecor, props, lights, colliders } = __M['M_monde_props'];
@@ -4250,6 +4596,7 @@ function* construireMonde(hooks){
   {
     const r = relierLeMonde(lights, props);
     chrono.rampes = r.rampes;
+    chrono.galeries = r.galeries;
     chrono.morceaux = r.avant + ' → ' + r.apres;
     chrono.isoles = r.isoles;
   }
@@ -4266,6 +4613,18 @@ function* construireMonde(hooks){
   yield {nom:'bois et fusées', part:0.93};
   placerBoisEtFusees();
 
+  /* ── DERNIER CONTRÔLE DE PASSAGE ──
+     Une seconde passe de perçage, APRÈS le décor. La première tourne avant
+     que les éléments ne soient posés : villages, cachettes et décor peuvent
+     ensuite reboucher un couloir et rouvrir des poches qu'on venait de
+     relier. Mesuré : la passe unique laissait 2,7 morceaux significatifs
+     inatteignables, dont 14 % de frontières condamnées par du décor.
+
+     Elle est bornée par SETUP.relief.nbGaleries, donc elle ne peut pas
+     transformer le monde en gruyère si la génération part de travers. */
+  yield {nom:'dernier contrôle de passage', part:0.94};
+  chrono.galeriesFinales = percerEnclaves();
+
   yield {nom:'objets et objectifs', part:0.96};
   if(H.placerObjets) H.placerObjets();
 
@@ -4278,8 +4637,8 @@ function* construireMonde(hooks){
 }
 
 /** Compteurs remplis pendant la génération. */
-const chrono = {debut:0, duree:0, ponts:0, rampes:0, villages:0,
-                morceaux:'', isoles:0};
+const chrono = {debut:0, duree:0, ponts:0, rampes:0, galeries:0,
+                galeriesFinales:0, villages:0, morceaux:'', isoles:0};
 
 /* ─────────────── carte importée ─────────────── */
 
@@ -4318,6 +4677,7 @@ function rapportMonde(){
     salles: salles.length,
     gouffres: gouffres.length,
     rampes: chrono.rampes,
+    galeries: chrono.galeries + ' + ' + chrono.galeriesFinales + ' après décor',
     morceaux: chrono.morceaux,
     isoles: chrono.isoles,
     villages: chrono.villages,
@@ -6470,6 +6830,8 @@ function spawnJoueur(){
   joueur.gy = floorH[idx(c.x,c.z)]; joueur.vy = 0;
   joueur.yaw = rnd()*6.28; joueur.pitch = 0; joueur.held = 1;
   joueur.abrite = false; joueur.cachette = null;
+  joueur.degageAuto = 0;
+  veille.temps = 0; veille.parcouru = 0; veille.x = 0; veille.z = 0;
   joueur.prone = 0; joueur.shake = 0; joueur.chuteDepuis = null;
   joueur.surPont = false;
   odeur.length = 0; sons.length = 0;
@@ -6480,12 +6842,61 @@ function spawnJoueur(){
    un tablier et `pontH[i]` sa cote : on passe DESSOUS par défaut, et DESSUS
    quand `joueur.surPont` est vrai.
 
-   On monte et on descend par les ÉCHELLES, posées aux deux bouts de chaque
-   tronçon par monde/ponts.js. La touche E est contextuelle : une cachette si
-   tu es devant, sinon une échelle si tu es dessus.
+   ── ON Y MONTE EN MARCHANT ─────────────────────────────────────────────────
+   Depuis la v4, un tablier commence et finit au niveau du sol (voir
+   monde/ponts.js). Il suffit donc de comparer sa cote à la nôtre : si l'on
+   pose le pied sur une cellule de tablier dont la cote est à portée de pas,
+   on est dessus. Aucune touche, aucune échelle, rien à apprendre.
 
-   Sortir du tablier par le côté ne bloque pas : tu quittes l'étage et tu
-   tombes. C'est un pont suspendu, pas un couloir.                          */
+   La v3 exigeait un `E` sur une cellule unique, invisible et non signalée,
+   pour monter sur une dalle flottant à trois mètres cinquante. Personne ne
+   pouvait le deviner, et personne ne l'a deviné.
+
+   Sortir du tablier par le côté ne bloque pas : on quitte l'étage et on tombe.
+   C'est une passerelle au-dessus d'un gouffre, pas un couloir.             */
+
+/**
+ * Décide si l'on est sur le tablier ou dessous. Appelé chaque image.
+ *
+ * Extrait de la gravité pour être appelable seul : `outils/diag_passage.py`
+ * s'en sert pour faire réellement traverser des ponts au joueur. Un test qui
+ * réimplémenterait cette règle ne testerait que lui-même.
+ */
+function majEtage(){
+  const i = idx(clamp(w2c(joueur.x), 0, GW-1), clamp(w2c(joueur.z), 0, GH-1));
+
+  if(joueur.surPont){
+    if(!pont[i]) joueur.surPont = false;
+    return;
+  }
+  if(!pont[i] || joueur.vy > 0.01) return;
+
+  /* Monter en marchant. On ne s'accroche que si le tablier est à portée de
+     pas — sinon on s'y collerait en passant DESSOUS, ce qui est le cas normal
+     au milieu d'une travée. */
+  const ecart = pontH[i] - joueur.gy;
+  if(ecart <= SETUP.monde.marcheJoueur && ecart > -0.30){
+    joueur.surPont = true;
+    joueur.gy = Math.max(joueur.gy, pontH[i]);
+    joueur.vy = 0; joueur.chuteDepuis = null;
+    return;
+  }
+
+  /* LE TABLIER RATTRAPE. Au-dessus d'un gouffre, il n'y a rien d'autre sous
+     nos pieds : si une passerelle passe là, même un peu plus bas, c'est elle
+     qui nous reçoit. Sans cette clause, on traversait le pont EN TOMBANT
+     dedans — mesuré, cinq traversées sur trente-six finissaient dans le vide
+     alors qu'un tablier était juste dessous.
+
+     La restriction à `vide[i]` est ce qui rend la règle sûre : sur la terre
+     ferme, un pont qui passe deux mètres sous nos pieds ne doit surtout pas
+     nous aspirer. */
+  if(vide[i] && ecart < 0){
+    joueur.surPont = true;
+    joueur.gy = pontH[i];
+    joueur.vy = 0; joueur.chuteDepuis = null;
+  }
+}
 
 /** Cote du sol sur lequel le joueur se tient, étage courant compris. */
 function coteSol(wx, wz){
@@ -6621,6 +7032,7 @@ function updateJoueur(dt, mult, hooks){
 
   const mv = Math.hypot(joueur.vx, joueur.vz);
   joueur.vitesse = mv;
+  surveillerBlocage(dt, f !== 0 || s !== 0);
   joueur.bob += mv*dt*(rampe ? 4 : run ? 9 : 6.5);
   const cible = rampe ? J.hauteurRampe : J.hauteurOeil;
   joueur.eye = lerp(joueur.eye, cible + Math.sin(joueur.bob)*0.035*(mv>0.4?1:0),
@@ -6656,10 +7068,7 @@ function appliquerGravite(dt, H){
   /* Quitter le tablier par le côté : on redevient un piéton ordinaire, en
      l'air, et la gravité fait le reste. C'est ce qui rend une passerelle
      étroite réellement inquiétante. */
-  if(joueur.surPont){
-    const i = idx(clamp(w2c(joueur.x),0,GW-1), clamp(w2c(joueur.z),0,GH-1));
-    if(!pont[i]) joueur.surPont = false;
-  }
+  majEtage();
   const gt = coteSol(joueur.x, joueur.z);
 
   /* « Au sol » sert au saut. On le juge AVANT d'appliquer la gravité, et on
@@ -6737,6 +7146,51 @@ function decroitreTraces(dt, ventX = 0, ventZ = 0, effacement = 1){
      · ça fait du bruit. Se dégager n'est pas discret, et il n'y a aucune raison
        que la bête n'entende rien.                                           */
 
+/* ═══════════════ DÉTECTION DU BLOCAGE ═══════════════
+   Le joueur pousse une direction et n'avance pas : il est coincé.
+
+   La règle est délibérément stricte, parce qu'un dégagement intempestif est
+   pire que le blocage — c'est exactement ce que la touche « D » faisait, et
+   c'est insupportable. Il faut TROIS conditions réunies :
+
+     · une commande de marche est maintenue ;
+     · le déplacement cumulé reste sous 40 cm ;
+     · pendant 3 secondes pleines.
+
+   Un mur qu'on longe en biais avance toujours d'un peu ; un coin où l'on est
+   vraiment pris n'avance pas du tout. On tolère 40 cm pour ne pas déclencher
+   sur un tremblement de caméra ou une pente qu'on remonte lentement.
+
+   Ne se déclenche pas en l'air, sur un tablier, ni en cachette : dans ces
+   trois cas, ne pas avancer est normal.                                     */
+
+const veille = {temps: 0, x: 0, z: 0, parcouru: 0};
+
+const DELAI_BLOCAGE = 3.0;      // secondes de commande sans avancer
+const SEUIL_BLOCAGE = 0.40;     // mètres parcourus pendant ce temps
+
+/** Appelé chaque image par le déplacement. `commande` : une touche est tenue. */
+function surveillerBlocage(dt, commande){
+  const exempt = !commande || !joueur.auSol || joueur.surPont
+               || joueur.abrite || joueur.prone > 0;
+  if(exempt){ veille.temps = 0; veille.parcouru = 0;
+              veille.x = joueur.x; veille.z = joueur.z; return; }
+
+  veille.parcouru += Math.hypot(joueur.x - veille.x, joueur.z - veille.z);
+  veille.x = joueur.x; veille.z = joueur.z;
+  veille.temps += dt;
+
+  if(veille.temps < DELAI_BLOCAGE) return;
+
+  if(veille.parcouru > SEUIL_BLOCAGE){
+    // il avance : on repart pour un tour d'observation
+    veille.temps = 0; veille.parcouru = 0;
+    return;
+  }
+  veille.temps = 0; veille.parcouru = 0;
+  joueur.degageAuto = debloquer();     // jeu.js lit ce champ et l'annonce
+}
+
 /**
  * Repositionne le joueur sur une cellule praticable proche.
  * @returns la distance parcourue, ou 0 si rien n'a été trouvé
@@ -6779,7 +7233,7 @@ function tombeDansLeVide(){
   return joueur.gy < bornes.min - SETUP.relief.fondDuVide;
 }
 
-  return { basculerRampe, bloqueA, coteSol, debloquer, decroitreTraces, echelleIci, emettreSon, emprunterEchelle, indexerColliders, joueur, odeur, sauter, sons, spawnJoueur, tombeDansLeVide, touches, updateJoueur, verrouRampe };
+  return { basculerRampe, bloqueA, coteSol, debloquer, decroitreTraces, echelleIci, emettreSon, emprunterEchelle, indexerColliders, joueur, majEtage, odeur, sauter, sons, spawnJoueur, tombeDansLeVide, touches, updateJoueur, verrouRampe };
 })();
 
 /* ─── src/joueur/chute.js ─── */
@@ -9246,6 +9700,7 @@ in vec2 vUv; out vec4 frag;
 uniform sampler2D uTex;
 uniform vec2 uRes;
 uniform float uTime,uGrain,uDread,uSnow,uRays,uWind,uVision,uFroid,uCoeur,uVign;
+uniform float uDesat;                      // 0 = criard, 1 = noir et blanc
 uniform vec2 uSun[3];
 uniform vec3 uSunC[3];
 uniform int uSunN;
@@ -9285,6 +9740,18 @@ void main(){
 
   float n=rnd(px+vec2(fract(uTime*37.0)*91.0,fract(uTime*23.0)*57.0))-0.5;
   c+=n*uGrain*(0.55+0.9*(1.0-length(c)));
+
+  /* DÉSATURATION — la dernière étape avant la vignette.
+
+     Elle passe APRÈS le brouillard et AVANT les effets d'état (froid, dread),
+     pour deux raisons : le brouillard doit garder sa propre couleur, qui est
+     ce qui distingue un smog d'une ténèbre ; et le virage rouge de la peur ou
+     le bleu de l'hypothermie doivent rester lisibles, sinon on perd le seul
+     signal qui dit qu'on est en train de mourir. */
+  if(uDesat>0.001){
+    float lum=dot(c,vec3(0.299,0.587,0.114));
+    c=mix(c,vec3(lum),uDesat);
+  }
 
   /* VIGNETTE — elle porte aussi le rétrécissement du champ dû au froid.
      uVign valait 0.92 en dur : les bords de l'écran étaient noirs et on
@@ -9334,7 +9801,7 @@ const UNIS_MONDE = ['uProj','uView','uModel','uCam','uFwd','uFog','uFogD',
   'uAttLin','uAttQuad','uGainPt','uCiel'];
 
 const UNIS_POST = ['uTex','uRes','uTime','uGrain','uDread','uSnow','uRays',
-  'uWind','uVision','uFroid','uCoeur','uVign','uSun','uSunC','uSunN'];
+  'uWind','uVision','uFroid','uCoeur','uVign','uDesat','uSun','uSunC','uSunN'];
 
   return { FS, FSP, NLIGHT, UNIS_MONDE, UNIS_POST, VS, VSP };
 })();
@@ -10131,6 +10598,7 @@ function rendre(ctx){
   gl.uniform1f(uP.uCoeur, coeur);
   gl.uniform1f(uP.uRays, SETUP.image.rays);
   gl.uniform1f(uP.uVign, SETUP.image.vignette);
+  gl.uniform1f(uP.uDesat, SETUP.image.desaturation);
 
   const G = projeterGodrays(n, view, proj);
   gl.uniform1i(uP.uSunN, G.n);
@@ -10761,7 +11229,7 @@ __M['M_jeu'] = (function(){
   const { creature, spawnCreature, updateCreature, brancherCri } = __M['M_creatures_mere'];
   const { jeunes, majPopulation, updateJeunes, viderJeunes, brancherStridulation, brancherFeu, attirerJeunes } = __M['M_creatures_jeunes'];
   const { creerCreature } = __M['M_creatures_geometrie'];
-  const { joueur, touches, sons, odeur, spawnJoueur, updateJoueur, indexerColliders, basculerRampe, emettreSon, decroitreTraces, echelleIci, emprunterEchelle, debloquer, sauter } = __M['M_joueur_joueur'];
+  const { joueur, touches, sons, odeur, spawnJoueur, updateJoueur, indexerColliders, bloqueA, coteSol, majEtage, basculerRampe, emettreSon, decroitreTraces, echelleIci, emprunterEchelle, debloquer, sauter } = __M['M_joueur_joueur'];
   const { CHUTE, tirerChuteSismique, impactSol, verifierVide, reinitialiserChute } = __M['M_joueur_chute'];
   const { froid, updateFroid, reinitialiserFroid, intensiteVisuelle } = __M['M_joueur_froid'];
   const { torche, combustibles, refuges, placerCombustible, placerRefuges, refugeProche, updateTorche, basculerTorche, reinitialiserTorche } = __M['M_joueur_torche'];
@@ -10949,7 +11417,11 @@ function brancherEntrees(){
       if(!ouvert){ majAffichage(); document.exitPointerLock(); }
       return;
     }
-    if(e.code === 'KeyR'){        // un nouveau monde, y compris depuis le menu
+    if(e.code === 'KeyR' && (e.shiftKey || !jeu.enCours)){
+      /* MAJ+R — un nouveau monde. En partie il FAUT la touche majuscule :
+         régénérer efface tout, et ça ne doit pas être à un doigt d'écart de
+         « se dégager ». Depuis le menu ou l'écran de fin, R seul suffit —
+         il n'y a rien à perdre. */
       if(jeu.pret){ cacherEcranFin(); genererMonde(undefined); }
       return;
     }
@@ -10971,15 +11443,26 @@ function brancherEntrees(){
     if(e.code === 'KeyG'){ e.preventDefault(); allumerFeuIci(); }
     if(e.code === 'KeyV'){ e.preventDefault(); tirerFusee(); }
     if(e.code === 'KeyB'){ e.preventDefault(); gererPancarte(); }
-    if(e.code === 'KeyD' && !touches['ShiftLeft']){
-      /* D — se dégager. Volontairement PAS derrière un menu de débogage : si
+    if(e.code === 'KeyR'){
+      /* R — se dégager. Volontairement PAS derrière un menu de débogage : si
          le moteur coince quelqu'un, il faut pouvoir s'en sortir tout de suite,
-         sans savoir que le mode debug existe. */
+         sans savoir que le mode debug existe.
+
+         C'ÉTAIT SUR « D », ET C'ÉTAIT UNE FAUTE. D est le pas de côté à droite
+         dans les deux dispositions (WASD et ZQSD). Chaque déport à droite
+         téléportait donc le joueur, ce qui se ressent exactement comme « le
+         monde est plein d'obstacles » — on croit se cogner alors qu'on se
+         déplace tout seul. Mesuré depuis : le décor ne condamne que 1,9 % du
+         sol et la carte n'a qu'un morceau significatif. Il n'y avait pas
+         d'obstacles ; il y avait une touche. */
       const d = debloquer();
       flash(d > 0 ? 'DÉGAGÉ · ' + d.toFixed(1) + ' m' : 'AUCUNE ISSUE À PROXIMITÉ');
     }
     if(e.code === 'KeyE'){ e.preventDefault(); actionContextuelle(); }
-    if(e.code === 'CapsLock') basculerRampe();
+    /* Ramper : « C », comme l'annonce la barre d'aide. CapsLock reste accepté
+       — c'était la seule touche câblée jusqu'ici, et changer un réflexe sans
+       prévenir est pire que d'en garder deux. */
+    if(e.code === 'KeyC' || e.code === 'CapsLock') basculerRampe();
     if(e.code === 'KeyF') basculerTorche();
     // Ctrl+W et Ctrl+D sont réservés par le navigateur : on neutralise la
     // touche plutôt que de tenter un preventDefault qui ne marchera pas.
@@ -11301,6 +11784,14 @@ function simuler(dt){
       }
     },
   });
+  /* Le joueur s'est-il fait dégager tout seul ? On le DIT : un déplacement
+     qu'on n'a pas commandé et qu'on ne s'explique pas est bien plus
+     déstabilisant qu'un message. */
+  if(joueur.degageAuto > 0){
+    flash('COINCÉ — DÉGAGÉ · ' + joueur.degageAuto.toFixed(1) + ' m');
+    joueur.degageAuto = 0;
+  }
+
   // le vent emporte l'odeur, la neige l'efface — un seul appel par image
   decroitreTraces(dt, jeu.ventX, jeu.ventZ, 1 + visuel.neige*2.6*vent.freq);
 
@@ -11496,8 +11987,12 @@ async function demarrer(){
   if(location.search.includes('debug')){
     window.SCOLO = {
       SETUP, jeu, joueur, creature, jeunes, froid, directeur, monde, cachettes,
-      Grille,
+      Grille, BIOMES, lights, props,
       rapport: rapportMonde,
+      /* De quoi faire marcher le joueur depuis un outil : diag_passage.py
+         lui fait traverser de vrais ponts avec le vrai code, plutôt que de
+         croire un graphe. */
+      bloqueA, coteSol, majEtage,
       regenerer: g => genererMonde(g),
       effondrement: declencherEffondrement,
     };

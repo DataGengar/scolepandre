@@ -471,8 +471,13 @@ export const SETUP = {
     hauteur:0.69,              // 0.52 × 4/3
     cadre:0.018,               // liseré : un trait, pas une bordure
     hauteurFlottement:0.62,    // au-dessus du sol (1.10 en v3.1 : trop haut)
-    amplitudeFlottement:0.055, // le balancement (0.12 : trop agité)
-    vitesseRotation:0.85,
+    amplitudeFlottement:0.055, // le balancement vertical (0.12 : trop agité)
+
+    /* La carte fait FACE au joueur : la rotation est dans le GIF lui-même, et
+       la superposer donnait une illustration de profil une fois sur deux.
+       Il ne reste qu'un léger dandinement, en radians — sans lui, une carte
+       parfaitement immobile ressemble à une affiche collée dans l'air. */
+    balancement:0.16,
     eclatIllustration:1.30,    // l'image doit rester lisible dans la brume
     porteeRendu:58,            // mètres
   },

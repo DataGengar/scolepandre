@@ -80,16 +80,59 @@ function initialiser(){
 /* ─────────────── les textures ─────────────── */
 
 const textures = new WeakMap();   // HTMLImageElement -> WebGLTexture
+const dernierRafraichi = new WeakMap();
+
+/* ── LES GIF S'ANIMENT ─────────────────────────────────────────────────────
+   Les cartes d'Orlando sont des GIF : elles tournent sur elles-mêmes et ont
+   un reflet qui balaie. C'est tout leur intérêt, et une texture envoyée une
+   fois au GPU les fige sur leur première trame.
+
+   Il n'y a pas besoin d'un décodeur GIF. Un navigateur anime un élément img
+   tout seul, et texImage2D d'un élément image en lit LA TRAME COURANTE. Il
+   suffit donc de renvoyer la texture de temps en temps — le GIF joue.
+
+   Trois précautions, sans lesquelles ça coûterait cher :
+     · seulement les cartes PROCHES (le rendu les trie déjà par distance) ;
+     · au plus quelques-unes par image ;
+     · à cadence limitée : un GIF tourne à 10-15 trames par seconde, réenvoyer
+       à 60 Hz serait quatre fois le travail pour rien.                     */
+
+const MS_ENTRE_TRAMES = 90;    // ~11 images/s, la cadence d'un GIF
+const MAX_PAR_IMAGE = 3;       // renvois de texture par image de jeu
+const DIST_ANIMEE = 26;        // mètres : au-delà, la trame fixe suffit
+
+let renvoyesCetteImage = 0;
+
+function envoyer(t, img){
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+  gl.generateMipmap(gl.TEXTURE_2D);
+}
 
 /**
- * Envoie une image au GPU, une seule fois. Renvoie null tant que l'image n'est
- * pas complètement chargée — le sondage des dossiers est asynchrone, on ne peut
- * pas supposer qu'elle est prête.
+ * Envoie une image au GPU. Renvoie null tant qu'elle n'est pas complètement
+ * chargée — le sondage des dossiers est asynchrone, on ne peut pas supposer
+ * qu'elle est prête.
+ *
+ * @param dist  distance au joueur ; en deçà de DIST_ANIMEE, la texture est
+ *              rafraîchie pour que les GIF jouent.
  */
-export function texturePour(img){
+export function texturePour(img, dist){
   if(!img || !img.complete || !img.naturalWidth) return null;
   const dejaLa = textures.get(img);
-  if(dejaLa) return dejaLa;
+  if(dejaLa){
+    if(dist !== undefined && dist < DIST_ANIMEE
+       && renvoyesCetteImage < MAX_PAR_IMAGE){
+      const t = performance.now();
+      if(t - (dernierRafraichi.get(img) || 0) > MS_ENTRE_TRAMES){
+        dernierRafraichi.set(img, t);
+        renvoyesCetteImage++;
+        envoyer(dejaLa, img);
+      }
+    }
+    return dejaLa;
+  }
 
   initialiser();
   const t = gl.createTexture();
@@ -121,6 +164,8 @@ export function dessinerCartes(ctx){
 
   const C = SETUP.cartes;
   const PORTEE2 = C.porteeRendu * C.porteeRendu;
+  // budget de renvois de texture pour cette image (voir texturePour)
+  renvoyesCetteImage = 0;
 
   gl.useProgram(P);
   gl.uniformMatrix4fv(U.uProj, false, proj);
@@ -141,12 +186,23 @@ export function dessinerCartes(ctx){
     const rang = rangs[k.rang];
     const col = rang.couleur;
     const bob = Math.sin(temps*1.4 + k.id) * C.amplitudeFlottement;
-    const yaw = temps * C.vitesseRotation + k.id;
+
+    /* FACE AU JOUEUR, ET NON EN ROTATION.
+       Les cartes sont des GIF qui tournent DÉJÀ sur eux-mêmes. Les faire
+       pivoter en plus donnait deux rotations superposées, à des vitesses
+       différentes, et l'illustration passait la moitié du temps de profil —
+       c'est-à-dire invisible. Le moteur les présente donc simplement, et
+       laisse l'image jouer son propre mouvement.
+
+       Un léger balancement demeure : une carte parfaitement immobile face à
+       soi ressemble à une affiche collée dans l'air. */
+    const yaw = Math.atan2(k.x - cam.x, k.z - cam.z)
+              + Math.sin(temps*0.7 + k.id) * C.balancement;
     const y = k.y + bob;
     const puls = 0.84 + 0.16*Math.sin(temps*2.2 + k.id*1.7);
 
     const img = identite(k.id).img;
-    const tex = texturePour(img);
+    const tex = texturePour(img, dist);
 
     const poser = (l, ht, e) => {
       trs(modele, k.x, y, k.z, yaw, 0, 0, l, ht, 1);

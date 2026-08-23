@@ -25,7 +25,7 @@ export const RANGS = [
     id:'commune',
     nom:'Commune',
     chemin:'cartes/communes/',
-    ext:'png',
+    ext:'gif',
     couleur:[0.55,0.53,0.48],   // teinte de la carte au sol et de son cadre
     profondeurMin:0.00,
     poids:0.62,                 // part relative des tirages là où le rang est permis
@@ -34,7 +34,7 @@ export const RANGS = [
     id:'rare',
     nom:'Rare',
     chemin:'cartes/rares/',
-    ext:'png',
+    ext:'gif',
     couleur:[0.35,0.62,0.75],
     profondeurMin:0.45,
     poids:0.28,
@@ -43,7 +43,7 @@ export const RANGS = [
     id:'legendaire',
     nom:'Légendaire',
     chemin:'cartes/legendaires/',
-    ext:'png',
+    ext:'gif',
     couleur:[1.00,0.72,0.28],
     profondeurMin:0.78,
     poids:0.10,
