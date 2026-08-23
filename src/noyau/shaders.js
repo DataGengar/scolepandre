@@ -106,6 +106,7 @@ in vec2 vUv; out vec4 frag;
 uniform sampler2D uTex;
 uniform vec2 uRes;
 uniform float uTime,uGrain,uDread,uSnow,uRays,uWind,uVision,uFroid,uCoeur,uVign;
+uniform float uDesat;                      // 0 = criard, 1 = noir et blanc
 uniform vec2 uSun[3];
 uniform vec3 uSunC[3];
 uniform int uSunN;
@@ -145,6 +146,18 @@ void main(){
 
   float n=rnd(px+vec2(fract(uTime*37.0)*91.0,fract(uTime*23.0)*57.0))-0.5;
   c+=n*uGrain*(0.55+0.9*(1.0-length(c)));
+
+  /* DÉSATURATION — la dernière étape avant la vignette.
+
+     Elle passe APRÈS le brouillard et AVANT les effets d'état (froid, dread),
+     pour deux raisons : le brouillard doit garder sa propre couleur, qui est
+     ce qui distingue un smog d'une ténèbre ; et le virage rouge de la peur ou
+     le bleu de l'hypothermie doivent rester lisibles, sinon on perd le seul
+     signal qui dit qu'on est en train de mourir. */
+  if(uDesat>0.001){
+    float lum=dot(c,vec3(0.299,0.587,0.114));
+    c=mix(c,vec3(lum),uDesat);
+  }
 
   /* VIGNETTE — elle porte aussi le rétrécissement du champ dû au froid.
      uVign valait 0.92 en dur : les bords de l'écran étaient noirs et on
@@ -194,4 +207,4 @@ export const UNIS_MONDE = ['uProj','uView','uModel','uCam','uFwd','uFog','uFogD'
   'uAttLin','uAttQuad','uGainPt','uCiel'];
 
 export const UNIS_POST = ['uTex','uRes','uTime','uGrain','uDread','uSnow','uRays',
-  'uWind','uVision','uFroid','uCoeur','uVign','uSun','uSunC','uSunN'];
+  'uWind','uVision','uFroid','uCoeur','uVign','uDesat','uSun','uSunC','uSunN'];

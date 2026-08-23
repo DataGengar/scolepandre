@@ -136,9 +136,17 @@ export const SETUP = {
        écrasaient le reste de l'image dès qu'une source entrait dans le champ. */
     fog:2.10,    fogMax:3.5,
     rays:0.65,   raysMax:3.0,
-    ambiance:1.0,        // multiplicateur global de la lumière ambiante
+    ambiance:0.92,       // multiplicateur global de la lumière ambiante
     vignette:0.55,       // 0.92 en v3.0 : les bords de l'écran étaient noirs
     grain:0.115,
+
+    /* ─── DÉSATURATION ───
+        « Trop de couleurs pétantes. » Les teintes de biome et les lampes ont
+        été ramenées vers le gris à la source (voir monde/biomes.js), et une
+        dernière passe vide ce qu'il reste. À 0 le monde est criard, à 1 il est
+        en noir et blanc ; 0.45 laisse juste ce qu'il faut pour reconnaître un
+        endroit sans le trouver joli. */
+    desaturation:0.45,
     res:360,             // hauteur du tampon interne, en pixels
     detail:1.0,          // multiplicateur de polycount du décor
     fov:1.30,
@@ -164,7 +172,11 @@ export const SETUP = {
   lumiereDecor:{
     attenLin:0.07,
     attenQuad:0.020,
-    gain:2.2,
+    /* 2.2 en v3.3. Chaque cristal, chaque fenêtre, chaque braise éclairait
+       comme un projecteur ; additionnées par milliers, elles noyaient le
+       brouillard qui fait tout le travail. Une source de décor doit se VOIR
+       de loin sans ÉCLAIRER de loin. */
+    gain:1.70,
   },
 
   /* ─────────────── LUNE BRISÉE ───────────────

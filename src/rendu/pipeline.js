@@ -306,6 +306,7 @@ export function rendre(ctx){
   gl.uniform1f(uP.uCoeur, coeur);
   gl.uniform1f(uP.uRays, SETUP.image.rays);
   gl.uniform1f(uP.uVign, SETUP.image.vignette);
+  gl.uniform1f(uP.uDesat, SETUP.image.desaturation);
 
   const G = projeterGodrays(n, view, proj);
   gl.uniform1i(uP.uSunN, G.n);

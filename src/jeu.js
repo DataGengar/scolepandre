@@ -764,7 +764,7 @@ async function demarrer(){
   if(location.search.includes('debug')){
     window.SCOLO = {
       SETUP, jeu, joueur, creature, jeunes, froid, directeur, monde, cachettes,
-      Grille,
+      Grille, BIOMES, lights, props,
       rapport: rapportMonde,
       /* De quoi faire marcher le joueur depuis un outil : diag_passage.py
          lui fait traverser de vrais ponts avec le vrai code, plutôt que de

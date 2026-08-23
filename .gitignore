@@ -18,3 +18,7 @@ lanceur/icone.png
 
 panne.log
 .sauvegardes/
+apercus/
+
+# les captures de outils/apercu.py
+apercus/
