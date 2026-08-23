@@ -53,6 +53,7 @@ import {creerCreature} from './creatures/geometrie.js';
 
 import {
   joueur, touches, sons, odeur, spawnJoueur, updateJoueur, indexerColliders,
+  bloqueA, coteSol, majEtage,
   basculerRampe, emettreSon, decroitreTraces, echelleIci, emprunterEchelle,
   debloquer, sauter,
 } from './joueur/joueur.js';
@@ -193,7 +194,11 @@ function brancherEntrees(){
       if(!ouvert){ majAffichage(); document.exitPointerLock(); }
       return;
     }
-    if(e.code === 'KeyR'){        // un nouveau monde, y compris depuis le menu
+    if(e.code === 'KeyR' && (e.shiftKey || !jeu.enCours)){
+      /* MAJ+R — un nouveau monde. En partie il FAUT la touche majuscule :
+         régénérer efface tout, et ça ne doit pas être à un doigt d'écart de
+         « se dégager ». Depuis le menu ou l'écran de fin, R seul suffit —
+         il n'y a rien à perdre. */
       if(jeu.pret){ cacherEcranFin(); genererMonde(undefined); }
       return;
     }
@@ -215,15 +220,26 @@ function brancherEntrees(){
     if(e.code === 'KeyG'){ e.preventDefault(); allumerFeuIci(); }
     if(e.code === 'KeyV'){ e.preventDefault(); tirerFusee(); }
     if(e.code === 'KeyB'){ e.preventDefault(); gererPancarte(); }
-    if(e.code === 'KeyD' && !touches['ShiftLeft']){
-      /* D — se dégager. Volontairement PAS derrière un menu de débogage : si
+    if(e.code === 'KeyR'){
+      /* R — se dégager. Volontairement PAS derrière un menu de débogage : si
          le moteur coince quelqu'un, il faut pouvoir s'en sortir tout de suite,
-         sans savoir que le mode debug existe. */
+         sans savoir que le mode debug existe.
+
+         C'ÉTAIT SUR « D », ET C'ÉTAIT UNE FAUTE. D est le pas de côté à droite
+         dans les deux dispositions (WASD et ZQSD). Chaque déport à droite
+         téléportait donc le joueur, ce qui se ressent exactement comme « le
+         monde est plein d'obstacles » — on croit se cogner alors qu'on se
+         déplace tout seul. Mesuré depuis : le décor ne condamne que 1,9 % du
+         sol et la carte n'a qu'un morceau significatif. Il n'y avait pas
+         d'obstacles ; il y avait une touche. */
       const d = debloquer();
       flash(d > 0 ? 'DÉGAGÉ · ' + d.toFixed(1) + ' m' : 'AUCUNE ISSUE À PROXIMITÉ');
     }
     if(e.code === 'KeyE'){ e.preventDefault(); actionContextuelle(); }
-    if(e.code === 'CapsLock') basculerRampe();
+    /* Ramper : « C », comme l'annonce la barre d'aide. CapsLock reste accepté
+       — c'était la seule touche câblée jusqu'ici, et changer un réflexe sans
+       prévenir est pire que d'en garder deux. */
+    if(e.code === 'KeyC' || e.code === 'CapsLock') basculerRampe();
     if(e.code === 'KeyF') basculerTorche();
     // Ctrl+W et Ctrl+D sont réservés par le navigateur : on neutralise la
     // touche plutôt que de tenter un preventDefault qui ne marchera pas.
@@ -545,6 +561,14 @@ function simuler(dt){
       }
     },
   });
+  /* Le joueur s'est-il fait dégager tout seul ? On le DIT : un déplacement
+     qu'on n'a pas commandé et qu'on ne s'explique pas est bien plus
+     déstabilisant qu'un message. */
+  if(joueur.degageAuto > 0){
+    flash('COINCÉ — DÉGAGÉ · ' + joueur.degageAuto.toFixed(1) + ' m');
+    joueur.degageAuto = 0;
+  }
+
   // le vent emporte l'odeur, la neige l'efface — un seul appel par image
   decroitreTraces(dt, jeu.ventX, jeu.ventZ, 1 + visuel.neige*2.6*vent.freq);
 
@@ -742,6 +766,10 @@ async function demarrer(){
       SETUP, jeu, joueur, creature, jeunes, froid, directeur, monde, cachettes,
       Grille,
       rapport: rapportMonde,
+      /* De quoi faire marcher le joueur depuis un outil : diag_passage.py
+         lui fait traverser de vrais ponts avec le vrai code, plutôt que de
+         croire un graphe. */
+      bloqueA, coteSol, majEtage,
       regenerer: g => genererMonde(g),
       effondrement: declencherEffondrement,
     };

@@ -58,6 +58,8 @@ export function spawnJoueur(){
   joueur.gy = floorH[idx(c.x,c.z)]; joueur.vy = 0;
   joueur.yaw = rnd()*6.28; joueur.pitch = 0; joueur.held = 1;
   joueur.abrite = false; joueur.cachette = null;
+  joueur.degageAuto = 0;
+  veille.temps = 0; veille.parcouru = 0; veille.x = 0; veille.z = 0;
   joueur.prone = 0; joueur.shake = 0; joueur.chuteDepuis = null;
   joueur.surPont = false;
   odeur.length = 0; sons.length = 0;
@@ -68,12 +70,61 @@ export function spawnJoueur(){
    un tablier et `pontH[i]` sa cote : on passe DESSOUS par défaut, et DESSUS
    quand `joueur.surPont` est vrai.
 
-   On monte et on descend par les ÉCHELLES, posées aux deux bouts de chaque
-   tronçon par monde/ponts.js. La touche E est contextuelle : une cachette si
-   tu es devant, sinon une échelle si tu es dessus.
+   ── ON Y MONTE EN MARCHANT ─────────────────────────────────────────────────
+   Depuis la v4, un tablier commence et finit au niveau du sol (voir
+   monde/ponts.js). Il suffit donc de comparer sa cote à la nôtre : si l'on
+   pose le pied sur une cellule de tablier dont la cote est à portée de pas,
+   on est dessus. Aucune touche, aucune échelle, rien à apprendre.
 
-   Sortir du tablier par le côté ne bloque pas : tu quittes l'étage et tu
-   tombes. C'est un pont suspendu, pas un couloir.                          */
+   La v3 exigeait un `E` sur une cellule unique, invisible et non signalée,
+   pour monter sur une dalle flottant à trois mètres cinquante. Personne ne
+   pouvait le deviner, et personne ne l'a deviné.
+
+   Sortir du tablier par le côté ne bloque pas : on quitte l'étage et on tombe.
+   C'est une passerelle au-dessus d'un gouffre, pas un couloir.             */
+
+/**
+ * Décide si l'on est sur le tablier ou dessous. Appelé chaque image.
+ *
+ * Extrait de la gravité pour être appelable seul : `outils/diag_passage.py`
+ * s'en sert pour faire réellement traverser des ponts au joueur. Un test qui
+ * réimplémenterait cette règle ne testerait que lui-même.
+ */
+export function majEtage(){
+  const i = idx(clamp(w2c(joueur.x), 0, GW-1), clamp(w2c(joueur.z), 0, GH-1));
+
+  if(joueur.surPont){
+    if(!pont[i]) joueur.surPont = false;
+    return;
+  }
+  if(!pont[i] || joueur.vy > 0.01) return;
+
+  /* Monter en marchant. On ne s'accroche que si le tablier est à portée de
+     pas — sinon on s'y collerait en passant DESSOUS, ce qui est le cas normal
+     au milieu d'une travée. */
+  const ecart = pontH[i] - joueur.gy;
+  if(ecart <= SETUP.monde.marcheJoueur && ecart > -0.30){
+    joueur.surPont = true;
+    joueur.gy = Math.max(joueur.gy, pontH[i]);
+    joueur.vy = 0; joueur.chuteDepuis = null;
+    return;
+  }
+
+  /* LE TABLIER RATTRAPE. Au-dessus d'un gouffre, il n'y a rien d'autre sous
+     nos pieds : si une passerelle passe là, même un peu plus bas, c'est elle
+     qui nous reçoit. Sans cette clause, on traversait le pont EN TOMBANT
+     dedans — mesuré, cinq traversées sur trente-six finissaient dans le vide
+     alors qu'un tablier était juste dessous.
+
+     La restriction à `vide[i]` est ce qui rend la règle sûre : sur la terre
+     ferme, un pont qui passe deux mètres sous nos pieds ne doit surtout pas
+     nous aspirer. */
+  if(vide[i] && ecart < 0){
+    joueur.surPont = true;
+    joueur.gy = pontH[i];
+    joueur.vy = 0; joueur.chuteDepuis = null;
+  }
+}
 
 /** Cote du sol sur lequel le joueur se tient, étage courant compris. */
 export function coteSol(wx, wz){
@@ -209,6 +260,7 @@ export function updateJoueur(dt, mult, hooks){
 
   const mv = Math.hypot(joueur.vx, joueur.vz);
   joueur.vitesse = mv;
+  surveillerBlocage(dt, f !== 0 || s !== 0);
   joueur.bob += mv*dt*(rampe ? 4 : run ? 9 : 6.5);
   const cible = rampe ? J.hauteurRampe : J.hauteurOeil;
   joueur.eye = lerp(joueur.eye, cible + Math.sin(joueur.bob)*0.035*(mv>0.4?1:0),
@@ -244,10 +296,7 @@ function appliquerGravite(dt, H){
   /* Quitter le tablier par le côté : on redevient un piéton ordinaire, en
      l'air, et la gravité fait le reste. C'est ce qui rend une passerelle
      étroite réellement inquiétante. */
-  if(joueur.surPont){
-    const i = idx(clamp(w2c(joueur.x),0,GW-1), clamp(w2c(joueur.z),0,GH-1));
-    if(!pont[i]) joueur.surPont = false;
-  }
+  majEtage();
   const gt = coteSol(joueur.x, joueur.z);
 
   /* « Au sol » sert au saut. On le juge AVANT d'appliquer la gravité, et on
@@ -324,6 +373,51 @@ export function decroitreTraces(dt, ventX = 0, ventZ = 0, effacement = 1){
      · le plus près possible, pour ne pas servir de téléportation gratuite ;
      · ça fait du bruit. Se dégager n'est pas discret, et il n'y a aucune raison
        que la bête n'entende rien.                                           */
+
+/* ═══════════════ DÉTECTION DU BLOCAGE ═══════════════
+   Le joueur pousse une direction et n'avance pas : il est coincé.
+
+   La règle est délibérément stricte, parce qu'un dégagement intempestif est
+   pire que le blocage — c'est exactement ce que la touche « D » faisait, et
+   c'est insupportable. Il faut TROIS conditions réunies :
+
+     · une commande de marche est maintenue ;
+     · le déplacement cumulé reste sous 40 cm ;
+     · pendant 3 secondes pleines.
+
+   Un mur qu'on longe en biais avance toujours d'un peu ; un coin où l'on est
+   vraiment pris n'avance pas du tout. On tolère 40 cm pour ne pas déclencher
+   sur un tremblement de caméra ou une pente qu'on remonte lentement.
+
+   Ne se déclenche pas en l'air, sur un tablier, ni en cachette : dans ces
+   trois cas, ne pas avancer est normal.                                     */
+
+const veille = {temps: 0, x: 0, z: 0, parcouru: 0};
+
+const DELAI_BLOCAGE = 3.0;      // secondes de commande sans avancer
+const SEUIL_BLOCAGE = 0.40;     // mètres parcourus pendant ce temps
+
+/** Appelé chaque image par le déplacement. `commande` : une touche est tenue. */
+function surveillerBlocage(dt, commande){
+  const exempt = !commande || !joueur.auSol || joueur.surPont
+               || joueur.abrite || joueur.prone > 0;
+  if(exempt){ veille.temps = 0; veille.parcouru = 0;
+              veille.x = joueur.x; veille.z = joueur.z; return; }
+
+  veille.parcouru += Math.hypot(joueur.x - veille.x, joueur.z - veille.z);
+  veille.x = joueur.x; veille.z = joueur.z;
+  veille.temps += dt;
+
+  if(veille.temps < DELAI_BLOCAGE) return;
+
+  if(veille.parcouru > SEUIL_BLOCAGE){
+    // il avance : on repart pour un tour d'observation
+    veille.temps = 0; veille.parcouru = 0;
+    return;
+  }
+  veille.temps = 0; veille.parcouru = 0;
+  joueur.degageAuto = debloquer();     // jeu.js lit ce champ et l'annonce
+}
 
 /**
  * Repositionne le joueur sur une cellule praticable proche.
