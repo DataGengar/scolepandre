@@ -106,6 +106,16 @@ html,body{
 label{ display:block; margin:0 0 8px; color:var(--muted); font-size:11px }
 label i{ font-style:normal; color:var(--magic); float:right; font-family:var(--mono) }
 
+/* Le champ où l'on tape la valeur exacte, à droite du libellé. Discret : on
+   le cherche quand on en a besoin, il ne doit pas concurrencer le curseur. */
+input[type=number].mini{
+  float:right; width:74px; margin:-2px 0 0; padding:2px 5px;
+  font-family:var(--mono); font-size:10px; text-align:right;
+  background:var(--content-bg); color:var(--magic);
+}
+input[type=number].mini:focus{ color:var(--text-vif) }
+label::after{ content:''; display:block; clear:both }
+
 input[type=text], input[type=number], select, textarea{
   width:100%; margin-top:3px; padding:5px 7px;
   background:var(--slate); border:1px solid var(--border); border-radius:4px;

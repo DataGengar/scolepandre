@@ -34,6 +34,10 @@ export const camera = {
 };
 
 export const options = {
+  /* Rendu par la forge : reçoit l'événement du clic gauche et renvoie vrai
+     s'il l'a consommé (déplacement d'une pièce). Voir brancherSouris(). */
+  saisir: null,
+
   grille: true,
   axes: true,
   fond: [0.051, 0.067, 0.090],        // #0d1117, le --content-bg du theme
@@ -143,8 +147,18 @@ function creerJauge(){
 /** Orbite au clic gauche, panoramique au clic droit, molette pour zoomer. */
 export function brancherSouris(el){
   let bouton = -1, lx = 0, ly = 0;
-  el.addEventListener('mousedown', e => { bouton = e.button; lx = e.clientX; ly = e.clientY;
-                                          e.preventDefault(); });
+
+  el.addEventListener('mousedown', e => {
+    /* `options.saisir` laisse la forge prendre la main : si le clic tombe sur
+       une pièce, c'est un déplacement d'objet et non une rotation de vue. Sans
+       cet arbitrage, les deux gestes seraient le même et on ne pourrait pas
+       avoir les deux. */
+    if(e.button === 0 && options.saisir && options.saisir(e)){
+      bouton = -1; e.preventDefault(); return;
+    }
+    bouton = e.button; lx = e.clientX; ly = e.clientY;
+    e.preventDefault();
+  });
   addEventListener('mouseup', () => { bouton = -1; });
   addEventListener('mousemove', e => {
     if(bouton < 0) return;
@@ -329,6 +343,39 @@ export function rayonEcran(px, py){
 
   const L = Math.hypot(X, y, Z) || 1;
   return {o: positionOeil(), d: [X / L, y / L, Z / L]};
+}
+
+/**
+ * Où un rayon rencontre un plan horizontal d'altitude `y`.
+ *
+ * C'est ce qui permet de faire glisser une pièce au sol : on projette le
+ * curseur sur le plan de l'objet plutôt que d'inventer une correspondance
+ * entre pixels et mètres, qui serait fausse dès qu'on change de zoom.
+ * Renvoie null si le rayon est parallèle au plan ou part du mauvais côté.
+ */
+export function surPlanY(rayon, y){
+  const d = rayon.d[1];
+  if(Math.abs(d) < 1e-5) return null;
+  const t = (y - rayon.o[1]) / d;
+  if(t <= 0) return null;
+  return [rayon.o[0] + rayon.d[0]*t, y, rayon.o[2] + rayon.d[2]*t];
+}
+
+/**
+ * Où un rayon rencontre le plan vertical passant par `p` et face à la caméra.
+ *
+ * Sert au déplacement en hauteur : sur un plan horizontal, monter un objet est
+ * impossible ; sur le plan de l'écran, c'est le geste naturel.
+ */
+export function surPlanEcran(rayon, p){
+  const n = [Math.sin(camera.lacet), 0, Math.cos(camera.lacet)];
+  const den = rayon.d[0]*n[0] + rayon.d[1]*n[1] + rayon.d[2]*n[2];
+  if(Math.abs(den) < 1e-5) return null;
+  const t = ((p[0]-rayon.o[0])*n[0] + (p[1]-rayon.o[1])*n[1]
+           + (p[2]-rayon.o[2])*n[2]) / den;
+  if(t <= 0) return null;
+  return [rayon.o[0] + rayon.d[0]*t, rayon.o[1] + rayon.d[1]*t,
+          rayon.o[2] + rayon.d[2]*t];
 }
 
 export {libererMesh, mesh};

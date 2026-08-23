@@ -116,8 +116,25 @@ disant vaut mieux qu'une page figée.
 
 ### Commandes
 
-Clic gauche **orbiter** · clic droit **panoramique** · molette **zoom** ·
-clic net sur une pièce pour la **sélectionner** (`MAJ` pour en ajouter).
+Le bouton gauche fait deux choses, décidées à l'instant du clic :
+
+| le clic tombe | |
+|---|---|
+| **dans le vide** | la caméra orbite |
+| **sur une pièce** | on la déplace — `MAJ` pour la monter |
+
+C'est la convention de tous les éditeurs 3D, et elle s'apprend sans qu'on
+l'explique. Le déplacement projette le curseur sur un **plan** — le sol, ou
+celui de l'écran pour la hauteur — et non sur des pixels : convertir des pixels
+en mètres donnerait un objet qui décroche dès qu'on change de zoom.
+
+Clic droit **panoramique** · molette **zoom** · `MAJ`+clic pour ajouter à la
+sélection.
+
+Chaque champ a un **curseur et une case où taper**. Un curseur suffit pour
+chercher une valeur, pas pour en poser une : « 0,25 exactement » est une demande
+courante — aligner deux pièces, respecter une trame — et un curseur au pas de
+1 cm sur 40 m ne la sert pas.
 
 | touche | |
 |---|---|

@@ -41,7 +41,8 @@ const etat = {onglet: 'terrain', dernier: performance.now(),
 /* L'aide souris depend de l'onglet : ce ne sont pas les memes gestes. */
 const AIDE = {
   terrain:  'clic <b>tracer</b> · MAJ+glisser <b>deplacer</b> · molette <b>zoom</b>',
-  assets:   'gauche <b>orbite</b> · droit <b>panoramique</b> · molette <b>zoom</b>',
+  assets:   'sur une pièce <b>déplacer</b> (MAJ <b>hauteur</b>) · dans le vide '
+          + '<b>orbite</b> · droit <b>panoramique</b> · molette <b>zoom</b>',
   creature: 'gauche <b>orbite</b> · droit <b>panoramique</b> · molette <b>zoom</b>',
 };
 
@@ -579,8 +580,14 @@ function majDetail(){
   const conv = Assets.ORDRE.filter(k => k !== forme).map(k =>
     `<button class="pt" data-conv="${k}">${Assets.PRIMITIVES[k].nom}</button>`).join('');
 
-  const ligne = (c, i) => `<label>${c.libelle} <i id="av${i}">${
-      (+c.lire(q)).toFixed(c.pas >= 1 ? 0 : 2)}</i>
+  /* Curseur ET champ de saisie. Un curseur seul suffit pour chercher une
+     valeur ; il ne suffit pas pour en poser une. « 0,25 exactement » est une
+     demande courante — aligner deux pièces, respecter une trame — et un
+     curseur au pas de 0,01 sur une plage de 40 mètres ne la sert pas. */
+  const ligne = (c, i) => `<label>${c.libelle}
+      <input type="number" id="an${i}" class="mini" step="${c.pas}"
+             min="${c.mn}" max="${c.mx}" value="${(+c.lire(q)).toFixed(
+               c.pas >= 1 ? 0 : 3)}">
       <input type="range" id="ar${i}" min="${c.mn}" max="${c.mx}"
              step="${c.pas}" value="${c.lire(q)}"></label>`;
 
@@ -620,20 +627,36 @@ function majDetail(){
     <div class="rangee">${conv}</div>
   `);
 
-  // curseurs de la forme
+  // curseurs et saisies, tenus d'accord
   champs.forEach((c, i) => {
-    const r = el('ar' + i);
-    r.addEventListener('pointerdown', () => Assets.memoriser());
-    r.addEventListener('input', ev => {
-      const v = parseFloat(ev.target.value);
+    const r = el('ar' + i), n = el('an' + i);
+
+    const poser = v => {
+      if(!Number.isFinite(v)) return;
       for(const k of Assets.selection){
         const p = Assets.el().parts[k];
         if(Assets.formeDe(p) === forme) c.ecrire(p, v);
       }
-      el('av' + i).textContent = v.toFixed(c.pas >= 1 ? 0 : 2);
       Assets.salir(); majStats();
+    };
+
+    r.addEventListener('pointerdown', () => Assets.memoriser());
+    r.addEventListener('input', ev => {
+      const v = parseFloat(ev.target.value);
+      poser(v);
+      n.value = v.toFixed(c.pas >= 1 ? 0 : 3);
     });
     r.addEventListener('change', () => Projet.enregistrer());
+
+    n.addEventListener('focus', () => Assets.memoriser());
+    n.addEventListener('input', ev => {
+      const v = parseFloat(ev.target.value);
+      poser(v);
+      // le curseur suit, mais sans brider la saisie : on doit pouvoir taper
+      // une valeur hors de la plage du curseur si la forme l'accepte
+      r.value = String(Math.max(c.mn, Math.min(c.mx, v)));
+    });
+    n.addEventListener('change', () => Projet.enregistrer());
   });
 
   // couleur, éclat, émissif
@@ -839,26 +862,78 @@ function maillageSurbrillance(){
   return surM;
 }
 
-/** Le clic dans la vue 3D désigne une primitive. */
-function brancherClic3D(){
-  let bougé = false, ox = 0, oy = 0;
+/* ─────────────── désigner et déplacer à la souris ───────────────
+   Deux gestes sur le même bouton gauche, arbitrés au moment du clic :
 
-  cv.addEventListener('pointerdown', e => {
-    bougé = false; ox = e.clientX; oy = e.clientY;
-  });
-  cv.addEventListener('pointermove', e => {
-    if(Math.abs(e.clientX - ox) + Math.abs(e.clientY - oy) > 4) bougé = true;
-  });
-  cv.addEventListener('pointerup', e => {
-    // Un clic gauche NET, pas une fin d'orbite : sinon chaque rotation de la
-    // vue changerait la sélection, ce qui est insupportable.
-    if(e.button !== 0 || bougé || etat.onglet !== 'assets') return;
-    const r = cv.getBoundingClientRect();
-    const {o, d} = A3.rayonEcran((e.clientX - r.left) * (cv.width / r.width),
-                                 (e.clientY - r.top) * (cv.height / r.height));
-    const i = Assets.viser(o, d);
-    Assets.choisir(i, e.shiftKey || e.ctrlKey);
+     le clic tombe DANS LE VIDE   → orbite de la caméra
+     le clic tombe SUR UNE PIÈCE  → on la déplace
+
+   C'est la convention de tous les éditeurs 3D, et elle s'apprend sans qu'on
+   l'explique. Elle demande juste que la décision soit prise à `mousedown`,
+   avant de savoir si la souris va bouger — d'où le crochet `A3.options.saisir`.
+
+   Le déplacement projette le curseur sur un PLAN, pas sur des pixels : au sol
+   par défaut, dans le plan de l'écran avec MAJ pour monter. Convertir des
+   pixels en mètres donnerait un objet qui suit mal dès qu'on change de zoom. */
+
+function rayonSous(ev){
+  const r = cv.getBoundingClientRect();
+  return A3.rayonEcran((ev.clientX - r.left) * (cv.width / r.width),
+                       (ev.clientY - r.top) * (cv.height / r.height));
+}
+
+const glisse = {actif: false, precedent: null, y: 0, vertical: false,
+                bougé: false};
+
+function brancherClic3D(){
+
+  /* Appelé par apercu3d au mousedown gauche. Renvoyer vrai prend la main. */
+  A3.options.saisir = ev => {
+    if(etat.onglet !== 'assets') return false;
+    const rayon = rayonSous(ev);
+    const i = Assets.viser(rayon.o, rayon.d);
+    if(i < 0) return false;                    // dans le vide : à la caméra
+
+    if(!Assets.selection.has(i))
+      Assets.choisir(i, ev.shiftKey || ev.ctrlKey);
     majListe();
+
+    const parts = [...Assets.selection].map(k => Assets.el().parts[k]);
+    const b = Assets.bornesDe(parts);
+    glisse.actif = true;
+    glisse.bougé = false;
+    glisse.vertical = ev.shiftKey;
+    glisse.y = b.centre[1];
+    glisse.precedent = glisse.vertical
+      ? A3.surPlanEcran(rayon, b.centre)
+      : A3.surPlanY(rayon, glisse.y);
+    return true;
+  };
+
+  addEventListener('mousemove', ev => {
+    if(!glisse.actif || !glisse.precedent) return;
+    const rayon = rayonSous(ev);
+    const p = glisse.vertical
+      ? A3.surPlanEcran(rayon, glisse.precedent)
+      : A3.surPlanY(rayon, glisse.y);
+    if(!p) return;
+
+    let d = [p[0]-glisse.precedent[0], p[1]-glisse.precedent[1],
+             p[2]-glisse.precedent[2]];
+    if(!glisse.vertical) d[1] = 0; else { d[0] = 0; d[2] = 0; }
+    if(Math.abs(d[0]) + Math.abs(d[1]) + Math.abs(d[2]) < 1e-6) return;
+
+    if(!glisse.bougé){ Assets.memoriser(); glisse.bougé = true; }
+    Assets.transformerSelection({t: d});
+    glisse.precedent = p;
+    majStats();
+  });
+
+  addEventListener('mouseup', () => {
+    if(!glisse.actif) return;
+    glisse.actif = false;
+    if(glisse.bougé){ majDetail(); Projet.enregistrer(); }
+    glisse.precedent = null;
   });
 }
 
@@ -1011,6 +1086,10 @@ function exposer(){
   window.__PONT = Pont;
   window.__PROJET = Projet;
   window.__A3 = A3;
+  /* Rebâtir les panneaux depuis le modèle. Le test de fumée pilote les modules
+     directement ; sans ce point d'entrée, l'interface resterait sur l'état
+     précédent et le test croirait à un champ manquant. */
+  window.__RAFRAICHIR = () => { majBiblio(); majListe(); majPile(); };
   /** Le générateur a-t-il respecté la première zone du plan ? */
   window.__VERIF = () => {
     const z = plan.zones[0];

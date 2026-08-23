@@ -326,13 +326,75 @@ MOCK = """
       if(iX >= 0)  erreurs.push('le rayon du coin touche quand même');
     }
 
+    /* ── 3f. saisie exacte et glisser ── */
+    if(n === 580){
+      var A = window.__ASSETS, V = window.__A3;
+      log('--- saisie et glisser ---');
+      A.ajouterElement('essaiGeste');
+      A.vider();
+      A.ajouter('bloc');
+      A.salir();
+      window.__RAFRAICHIR();          // le panneau doit refleter le modele
+
+      /* le champ numerique doit accepter une valeur que le pas du curseur
+         n'atteint pas exactement */
+      var champ = document.getElementById('an3');   // largeur
+      if(!champ){ log('  CHAMP NUMERIQUE ABSENT'); erreurs.push('an3 absent'); }
+      else {
+        champ.value = '0.137';
+        champ.dispatchEvent(new Event('input', {bubbles:true}));
+        var sx = A.el().parts[0].sx;
+        log('  saisie 0.137 -> sx = ' + sx + (Math.abs(sx-0.137) < 1e-9 ? '  ok' : '  FAUX'));
+        if(Math.abs(sx - 0.137) > 1e-9) erreurs.push('la saisie exacte ne passe pas');
+      }
+
+      /* le plan de projection : un rayon vers le bas doit toucher y=0 */
+      var r = {o:[3, 5, 2], d:[0, -1, 0]};
+      var p = V.surPlanY(r, 0.5);
+      log('  surPlanY : ' + (p ? '[' + p.map(function(v){return v.toFixed(2);}) + ']' : 'null')
+          + (p && Math.abs(p[0]-3) < 1e-9 && Math.abs(p[1]-0.5) < 1e-9 ? '  ok' : '  FAUX'));
+      if(!p || Math.abs(p[0]-3) > 1e-9) erreurs.push('surPlanY faux');
+
+      /* le glisser complet, par les vrais evenements */
+      A.toutSelectionner();
+      var avant = A.bornes().centre.slice();
+      V.cadrer([0, 0.5, 0], 1.2);
+      var gl = document.getElementById('gl');
+      var w = gl.width || 900, h = gl.height || 700;
+      souris(gl, 'mousedown', w/2, h/2);
+      souris(window, 'mousemove', w/2 + 90, h/2 + 30);
+      souris(window, 'mouseup', w/2 + 90, h/2 + 30);
+      var apres = A.bornes().centre;
+      var d = Math.hypot(apres[0]-avant[0], apres[2]-avant[2]);
+      log('  glisser 90 px -> deplacement ' + d.toFixed(3) + ' m'
+          + (d > 0.05 ? '  ok' : '  LA PIECE N A PAS BOUGE'));
+      if(d <= 0.05) erreurs.push('le glisser ne deplace pas la piece');
+      log('  hauteur inchangee : ' + (Math.abs(apres[1]-avant[1]) < 1e-6));
+      if(Math.abs(apres[1]-avant[1]) > 1e-6)
+        erreurs.push('le glisser au sol a change la hauteur');
+
+      /* un glisser DANS LE VIDE doit tourner la camera, pas deplacer */
+      var lacet0 = V.camera.lacet;
+      var pos0 = A.bornes().centre.slice();
+      souris(gl, 'mousedown', 8, 8);
+      souris(window, 'mousemove', 120, 8);
+      souris(window, 'mouseup', 120, 8);
+      var bouge = Math.hypot(A.bornes().centre[0]-pos0[0], A.bornes().centre[2]-pos0[2]);
+      log('  clic dans le vide : camera tournee = '
+          + (Math.abs(V.camera.lacet - lacet0) > 1e-6)
+          + ', piece deplacee = ' + (bouge > 1e-6));
+      if(Math.abs(V.camera.lacet - lacet0) < 1e-6)
+        erreurs.push('le clic dans le vide ne fait pas tourner la camera');
+      if(bouge > 1e-6) erreurs.push('le clic dans le vide a deplace la piece');
+    }
+
     /* ── 4. la créature ── */
-    if(n === 600){
+    if(n === 610){
       document.getElementById('ong-creature').click();
       forcerTailles();
       log('--- créature ---');
     }
-    if(n === 660){
+    if(n === 665){
       var s = document.getElementById('crStats');
       log('  ' + (s && s.textContent ? s.textContent : 'AUCUNE STATISTIQUE'));
       var cs = document.getElementById('cs0');
@@ -342,7 +404,7 @@ MOCK = """
         log('  anneaux ramenés à 24 : ' + document.getElementById('cv0').textContent);
       }
     }
-    if(n === 700){
+    if(n === 705){
       var s2 = document.getElementById('crStats');
       log('  après changement : ' + (s2 ? s2.textContent : '—'));
     }

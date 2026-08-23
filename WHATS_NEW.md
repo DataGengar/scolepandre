@@ -130,6 +130,12 @@ session à l'autre, et régler un modificateur ne décale pas le monde.
 
 ## LE RESTE DE LA FORGE
 
+- **glisser une pièce dans la vue** : le bouton gauche orbite s'il tombe dans le
+  vide, déplace s'il tombe sur une pièce (`MAJ` pour la hauteur). Le curseur est
+  projeté sur un plan, pas converti depuis des pixels — sinon l'objet décroche
+  dès qu'on change de zoom ;
+- **un champ où taper la valeur exacte** à côté de chaque curseur. Un curseur
+  suffit pour chercher une valeur, pas pour en poser une ;
 - **bibliothèque** de plusieurs éléments par projet, piles conservées ;
 - **sélection multiple**, au clic dans la vue 3D comme dans la liste, la
   sélection surlignée en bleu ;
