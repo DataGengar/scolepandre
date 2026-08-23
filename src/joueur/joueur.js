@@ -29,6 +29,8 @@ export const joueur = {
   abrite:false,           // dans une cachette
   cachette:null,
   prone:0,                // temps restant au sol après une chute
+  auSol:true,             // pour savoir si l'on a le droit de sauter
+  sautCd:0,               // anti-rebond
   derive:0,               // tremblement de main dû au froid
   chuteDepuis:null,       // altitude du début d'une chute libre
   vitesse:0,
@@ -167,6 +169,8 @@ export function updateJoueur(dt, mult, hooks){
   const J = SETUP.joueur;
   const H = hooks || {};
 
+  joueur.sautCd = Math.max(0, joueur.sautCd - dt);
+
   // Au sol après une chute : aucun contrôle. C'est le prix de la secousse.
   if(joueur.prone > 0){
     joueur.prone -= dt;
@@ -246,6 +250,11 @@ function appliquerGravite(dt, H){
   }
   const gt = coteSol(joueur.x, joueur.z);
 
+  /* « Au sol » sert au saut. On le juge AVANT d'appliquer la gravité, et on
+     tolère un petit seuil : sur un sol légèrement irrégulier, gy oscille de
+     quelques centimètres et un test strict rendrait le saut capricieux. */
+  joueur.auSol = (joueur.gy <= gt + 0.14) && joueur.vy <= 0.01;
+
   if(joueur.gy > gt + 0.06){
     if(joueur.chuteDepuis === null) joueur.chuteDepuis = joueur.gy;
     joueur.vy -= SETUP.joueur.gravite*dt;
@@ -257,10 +266,31 @@ function appliquerGravite(dt, H){
       if(H.impactSol) H.impactSol(hauteur, -joueur.vy);
       joueur.vy = 0; joueur.chuteDepuis = null;
     }
+  } else if(joueur.vy > 0){
+    /* On MONTE : c'est un saut. Sans cette branche, le lissage vers le sol
+       ci-dessous annulait la vitesse ascendante à l'image suivante et le
+       personnage ne décollait jamais. */
+    joueur.vy -= SETUP.joueur.gravite*dt;
+    joueur.gy += joueur.vy*dt;
   } else {
     joueur.gy = lerp(joueur.gy, gt, 1 - Math.exp(-16*dt));
     joueur.vy = 0; joueur.chuteDepuis = null;
   }
+}
+
+/**
+ * Sauter. Rien ne se passe si l'on n'est pas au sol, à plat ventre, ou abrité.
+ * @returns true si le saut est parti
+ */
+export function sauter(){
+  if(!joueur.auSol || joueur.sautCd > 0) return false;
+  if(joueur.prone > 0 || joueur.abrite) return false;
+  joueur.vy = SETUP.joueur.forceSaut;
+  joueur.auSol = false;
+  joueur.sautCd = SETUP.joueur.delaiSaut;
+  // décoller fait du bruit : c'est le prix de la verticalité
+  emettreSon(joueur.x, joueur.z, SETUP.joueur.bruitSaut, false);
+  return true;
 }
 
 /**
@@ -279,6 +309,57 @@ export function decroitreTraces(dt, ventX = 0, ventZ = 0, effacement = 1){
   }
   const vie = SETUP.traces.persistanceOdeur;
   while(odeur.length && odeur[0].t * effacement > vie) odeur.shift();
+}
+
+/* ═══ DÉBLOCAGE ═══
+   Un moteur qui bâtit son terrain par champ de hauteur finit toujours par
+   coincer quelqu'un quelque part : un coin entre deux éléments de décor, une
+   marche qui s'est relevée sous les pieds après un effondrement, une cellule
+   condamnée par un pilier posé trop près. Ce n'est pas la faute du joueur, et
+   lui demander de recommencer sa partie pour ça serait grossier.
+
+   La touche D cherche donc une cellule d'accueil autour de lui, en spirale, et
+   l'y pose. Trois règles :
+     · JAMAIS dans le vide — on débloque, on ne tue pas ;
+     · le plus près possible, pour ne pas servir de téléportation gratuite ;
+     · ça fait du bruit. Se dégager n'est pas discret, et il n'y a aucune raison
+       que la bête n'entende rien.                                           */
+
+/**
+ * Repositionne le joueur sur une cellule praticable proche.
+ * @returns la distance parcourue, ou 0 si rien n'a été trouvé
+ */
+export function debloquer(){
+  const depart = {x: joueur.x, z: joueur.z};
+  const cx = w2c(joueur.x), cz = w2c(joueur.z);
+
+  for(let r = 1; r <= 24; r++){
+    let meilleur = null, md = 1e9;
+    for(let dz = -r; dz <= r; dz++) for(let dx = -r; dx <= r; dx++){
+      // uniquement le pourtour du carré de rayon r : on s'éloigne par paliers
+      if(Math.abs(dx) !== r && Math.abs(dz) !== r) continue;
+      const x = cx + dx, z = cz + dz;
+      if(!isFree(x, z)) continue;
+      const i = idx(x, z);
+      if(vide[i]) continue;                       // surtout pas un gouffre
+      if(ceilH[i] - floorH[i] < 1.0) continue;    // ni un boyau où l'on rentre pas
+      const wx = c2w(x), wz = c2w(z);
+      if(bloqueA(wx, wz, floorH[i])) continue;    // ni un coin déjà encombré
+      const d = (wx - joueur.x)**2 + (wz - joueur.z)**2;
+      if(d < md){ md = d; meilleur = {x:wx, z:wz, y:floorH[i]}; }
+    }
+    if(meilleur){
+      joueur.x = meilleur.x; joueur.z = meilleur.z;
+      joueur.gy = meilleur.y; joueur.vy = 0;
+      joueur.vx = joueur.vz = 0;
+      joueur.chuteDepuis = null;
+      joueur.surPont = false;
+      // se dégager fait du bruit : elle a le droit de l'entendre
+      emettreSon(joueur.x, joueur.z, 14, false);
+      return Math.hypot(joueur.x - depart.x, joueur.z - depart.z);
+    }
+  }
+  return 0;
 }
 
 /** Es-tu tombé assez bas pour que ce soit fini ? */

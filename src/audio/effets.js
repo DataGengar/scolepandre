@@ -26,13 +26,17 @@ export function ramasse(){
     Relevé en v3.1 — le son existait mais disparaissait sous la saturation
     générale, qui est corrigée par ailleurs (écrêteur doux dans contexte.js). */
 export function carte(rang){
+  /* Relevé une seconde fois : « augmenter le bruit lorsqu'on les ramasse car
+     il est stylé, pas trop fort non plus ». On monte les trois premières voix
+     d'environ moitié et on laisse les harmoniques hautes en retrait — c'est ce
+     qui donne du volume sans devenir criard. */
   const f = 520 + rang*260;
-  ping(f,        0.34, 0.40, 'triangle');
-  setTimeout(() => ping(f*1.5,  0.44, 0.34, 'sine'), 85);
-  setTimeout(() => ping(f*2.0,  0.55, 0.26, 'sine'), 175);
-  setTimeout(() => ping(f*3.0,  0.70, 0.16, 'sine'), 265);
+  ping(f,        0.36, 0.62, 'triangle');
+  setTimeout(() => ping(f*1.5,  0.46, 0.52, 'sine'), 85);
+  setTimeout(() => ping(f*2.0,  0.58, 0.38, 'sine'), 175);
+  setTimeout(() => ping(f*3.0,  0.72, 0.20, 'sine'), 265);
   // une nappe brève par-dessous : la prise a du corps
-  souffleFiltre(0.9, f*0.6, 0.10);
+  souffleFiltre(1.0, f*0.6, 0.16);
   if(rang >= 2){
     // légendaire : une quinte qui monte et tient
     setTimeout(() => ping(f*4.0, 1.20, 0.13, 'sine'), 360);
@@ -76,6 +80,11 @@ function souffleFiltre(duree, freq, gain){
   s.connect(f).connect(g).connect(A.bus);
   s.start(t); s.stop(t + duree + 0.05);
   s.onended = () => { try{ g.disconnect(); }catch(e){} };
+}
+
+/** Le saut : une expiration brève. Discret, mais on doit sentir l'effort. */
+export function saut(){
+  souffleFiltre(0.20, 420, 0.09);
 }
 
 /** Un feu qui prend : le frottement, puis le souffle qui s'installe. */

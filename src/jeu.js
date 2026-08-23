@@ -32,7 +32,8 @@ import {addProp} from './monde/props.js';
 import {majPaves, indexerProps, libererTousLesPaves, paves} from './monde/maillage.js';
 import {placerSortie, atteinte, objectif} from './monde/sortie.js';
 import {lireCartePNG} from './monde/import-png.js';
-import {villages, trousses, bois, fusees, dansSafe} from './monde/villages.js';
+import {villages, trousses, bois, fusees, dansSafe, dansCabane,
+        marquerDecouvert, chargerVillagesVus} from './monde/villages.js';
 import {pancartes, chargerPancartes, poser as poserPancarte,
         pancarteProche, retirer as retirerPancarte,
         lumieresPancartes} from './monde/pancartes.js';
@@ -52,6 +53,7 @@ import {creerCreature} from './creatures/geometrie.js';
 import {
   joueur, touches, sons, odeur, spawnJoueur, updateJoueur, indexerColliders,
   basculerRampe, emettreSon, decroitreTraces, echelleIci, emprunterEchelle,
+  debloquer, sauter,
 } from './joueur/joueur.js';
 import {CHUTE, tirerChuteSismique, impactSol, verifierVide, reinitialiserChute} from './joueur/chute.js';
 import {froid, updateFroid, reinitialiserFroid, intensiteVisuelle} from './joueur/froid.js';
@@ -63,7 +65,7 @@ import {
   leurres, placerLeurres, reprendreTous, ramasserLeurres, lancer, updateVol,
 } from './joueur/leurres.js';
 import {sante, reinitialiserSante, blesser, ramasserTrousse, updateSante,
-        gravite} from './joueur/sante.js';
+        gravite, soigner} from './joueur/sante.js';
 import {
   feux, fuseesActives, inventaire, reinitialiserFeu, ramasser as ramasserFeu,
   allumerFeu, lancerFusee, updateFeu, feuProche, lumieresDuFeu, chaleurDuFeu,
@@ -76,7 +78,7 @@ import {lumieresDynamiques} from './rendu/lumieres.js';
 import {dessinerScope, basculer as basculerScope} from './rendu/sismographe.js';
 import {construireMenu, ouvrirChargement, majChargement, fermerChargement,
         afficherVoile, messageMenu} from './ui/menu.js';
-import {majHUD, majFlash, flash} from './ui/hud.js';
+import {majHUD, majFlash, flash, majPancarte} from './ui/hud.js';
 
 /* ─────────────── état global de la partie ─────────────── */
 
@@ -137,6 +139,7 @@ async function genererMonde(nouvelleGraine){
   reinitialiserFeu();
   reprendreTous();
   chargerPancartes(graine());
+  chargerVillagesVus(graine());
   joueur.held = 1;
 
   jeu.biome = biomeAt(joueur.x, joueur.z);
@@ -204,10 +207,20 @@ function brancherEntrees(){
        pas — et Espace sert justement à démarrer la partie depuis le menu. */
     if(!jeu.enCours) return;
 
-    if(e.code === 'Space'){ e.preventDefault(); lancerLeurre(); }
+    /* ESPACE SAUTE. Le leurre passe au clic gauche seul — c'est le geste
+       naturel pour viser, et le monde est devenu bien trop vertical pour que
+       la barre d'espace serve à autre chose qu'à sauter. */
+    if(e.code === 'Space'){ e.preventDefault(); if(sauter()) Audio.effets.saut(); }
     if(e.code === 'KeyG'){ e.preventDefault(); allumerFeuIci(); }
     if(e.code === 'KeyV'){ e.preventDefault(); tirerFusee(); }
     if(e.code === 'KeyB'){ e.preventDefault(); gererPancarte(); }
+    if(e.code === 'KeyD' && !touches['ShiftLeft']){
+      /* D — se dégager. Volontairement PAS derrière un menu de débogage : si
+         le moteur coince quelqu'un, il faut pouvoir s'en sortir tout de suite,
+         sans savoir que le mode debug existe. */
+      const d = debloquer();
+      flash(d > 0 ? 'DÉGAGÉ · ' + d.toFixed(1) + ' m' : 'AUCUNE ISSUE À PROXIMITÉ');
+    }
     if(e.code === 'KeyE'){ e.preventDefault(); actionContextuelle(); }
     if(e.code === 'CapsLock') basculerRampe();
     if(e.code === 'KeyF') basculerTorche();
@@ -253,29 +266,33 @@ function tirerFusee(){
   else flash('PLUS DE FUSÉE');
 }
 
-/** B — poser une pancarte, ou lire / retirer celle qui est là. */
+/**
+ * B — écrire. La LECTURE est automatique : le panneau s'affiche dès qu'on est
+ * à portée (voir majPancarte, appelé dans la boucle). B sert donc à poser une
+ * pancarte neuve, ou à réécrire celle qui est déjà là. MAJ+B la retire.
+ */
 function gererPancarte(){
   if(joueur.prone > 0) return;
   const p = pancarteProche(joueur.x, joueur.z);
-  if(p){
-    // déjà une pancarte ici : on la lit, et MAJ+B la retire
-    if(touches['ShiftLeft'] || touches['ShiftRight']){
-      retirerPancarte(joueur.x, joueur.z);
-      flash('PANCARTE RETIRÉE');
-    } else {
-      flash(p.texte ? '« ' + p.texte + ' »' : 'PANCARTE VIERGE', 4);
-    }
+
+  if(p && (touches['ShiftLeft'] || touches['ShiftRight'])){
+    retirerPancarte(joueur.x, joueur.z);
+    flash('PANCARTE RETIRÉE');
     return;
   }
-  /* On relâche le pointeur pour écrire : sans ça le prompt ne reçoit pas les
-     touches, et on se retrouve à taper dans le vide. */
+
+  /* On relâche le pointeur pour écrire : sans ça la boîte de saisie ne reçoit
+     pas les touches et on tape dans le vide. Le délai laisse au navigateur le
+     temps de rendre la souris avant d'ouvrir la boîte. */
   document.exitPointerLock();
+  const ancien = p ? p.texte : '';
   setTimeout(() => {
-    const txt = prompt('Message à laisser ici (48 caractères) :', '');
-    if(txt !== null){
-      poserPancarte(joueur, txt);
-      flash('PANCARTE POSÉE');
-    }
+    const txt = prompt(p ? 'Réécrire ce panneau (48 caractères) :'
+                         : 'Message à laisser ici (48 caractères) :', ancien);
+    if(txt === null) return;
+    if(p){ retirerPancarte(joueur.x, joueur.z); }
+    poserPancarte(joueur, txt);
+    flash(p ? 'PANCARTE RÉÉCRITE' : 'PANCARTE POSÉE');
   }, 60);
 }
 
@@ -434,6 +451,8 @@ function coeur(now){
 
   compteurUI += dt;
   majFlash(dt);
+  // la lecture d'une pancarte est PASSIVE : on s'approche, on lit.
+  majPancarte(jeu.enCours ? pancarteProche(joueur.x, joueur.z) : null);
   if(compteurUI > 0.2){
     compteurUI = 0;
     majHUD({
@@ -483,6 +502,17 @@ function simuler(dt){
   joueur.torcheAllumee = torche.on;
   const brasero = refugeProche(joueur.x, joueur.gy, joueur.z);
   const safe = dansSafe(joueur.x, joueur.z);
+  if(safe && marquerDecouvert(safe)) flash('VILLAGE REPÉRÉ — il restera sur la carte', 4);
+
+  /* LA CABANE : le seul endroit où l'on récupère complètement. Ni ressource
+     consommée, ni compte à rebours — juste un abri, et le trajet pour y aller. */
+  const cabane = dansCabane(joueur.x, joueur.z);
+  if(cabane){
+    if(froid.chaleur < 99.5 || sante.pv < SETUP.sante.max - 0.5){
+      froid.chaleur = Math.min(100, froid.chaleur + 26*dt);
+      soigner(20*dt);
+    }
+  }
   const gainFeu = chaleurDuFeu(joueur.x, joueur.z);
   const auChaud = !!brasero || !!safe || gainFeu > 0;
   const F = updateFroid(dt, joueur, jeu.ventForce, auChaud, {
@@ -641,6 +671,7 @@ function dessinerImage(dt, dP){
     meshCarte: jeu.meshCarte, ventX: jeu.ventX, rangs: RANGS,
     cielOuvert: jeu.cielOuvert,
     monde: {bois, fusees, trousses, feux, fuseesActives, pancartes},
+    identite,
   });
   dessinerScope(joueur, sons, odeur, dP);
 }
