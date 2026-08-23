@@ -66,7 +66,8 @@ export function placerVillages(){
     if(total === 0 || sol/total < 0.52) continue;
 
     const y = floorH[i0];
-    const v = {x:wx, z:wz, y, rayon:V.rayon, safe:V.safeRayon, cell:i0, trousses:[]};
+    const v = {x:wx, z:wz, y, rayon:V.rayon, safe:V.safeRayon, cell:i0,
+               trousses:[], vu:false};
 
     batirVillage(v, c, RC);
     villages.push(v);
@@ -94,6 +95,7 @@ function batirVillage(v, c, RC){
     }
   };
 
+  v.angleCabane = rnd()*6.283;
   poser('maison',     ri(...V.maisons),     0.40, 1.0);
   poser('carcasse',   ri(...V.carcasses),   0.30, 1.0);
   poser('lampadaire', ri(...V.lampadaires), 0.22, 0.9);
@@ -135,6 +137,42 @@ function batirVillage(v, c, RC){
   }
   props.push({parts, cell:v.cell});
 
+  /* ── LA CABANE ──
+     « Toujours une zone / cabane / maison où se restaurer complètement et en
+     sécurité. » Une baraque de tôle au centre de la place, porte ouverte. À
+     l'intérieur, la chaleur ET la santé remontent jusqu'au maximum — c'est le
+     seul endroit du monde où l'on récupère vraiment, sans consommer de
+     ressource. Elle est fixe : le prix, c'est le trajet. */
+  {
+    const cs = Math.cos(v.angleCabane), sn = Math.sin(v.angleCabane);
+    const cx2 = v.x + cs*v.safe*0.30, cz2 = v.z + sn*v.safe*0.30;
+    v.cabane = {x:cx2, z:cz2, r:2.6};
+    const mur = [0.21,0.19,0.17], tole = [0.16,0.15,0.14];
+    const L2 = 4.0, P2 = 3.4, H2 = 2.5;
+    // trois murs pleins, le quatrième percé d'une porte
+    for(let k=0;k<4;k++){
+      const a = k*1.5708 + v.angleCabane;
+      const px = cx2 + Math.cos(a)*P2*0.5, pz = cz2 + Math.sin(a)*P2*0.5;
+      if(k === 0){                       // la façade : deux jambages
+        for(const sd of [1,-1])
+          parts.push({x:px + Math.cos(a+1.5708)*1.3*sd, y:v.y+H2*0.5,
+                      z:pz + Math.sin(a+1.5708)*1.3*sd,
+                      sx:1.3, sy:H2, sz:0.22, c:mur, r:a});
+        parts.push({x:px, y:v.y+H2-0.25, z:pz, sx:L2, sy:0.5, sz:0.22, c:mur, r:a});
+      } else {
+        parts.push({x:px, y:v.y+H2*0.5, z:pz, sx:L2, sy:H2, sz:0.24, c:mur, r:a});
+      }
+    }
+    // le toit, en tôle, légèrement de travers
+    parts.push({x:cx2, y:v.y+H2+0.12, z:cz2, sx:L2+0.6, sy:0.22, sz:P2+0.6,
+                c:tole, r:v.angleCabane+0.05});
+    // une lanterne à l'intérieur : on doit la voir depuis la place
+    parts.push({x:cx2, y:v.y+H2-0.45, z:cz2, sx:0.26, sy:0.30, sz:0.26,
+                c:[2.6,2.2,1.3], emis:1});
+    if(lights.length < SETUP.decor.maxLumieres)
+      lights.push({x:cx2, y:v.y+1.5, z:cz2, c:[1.9,1.6,1.0], ph:rnd()*6.28});
+  }
+
   /* ── LES TROUSSES ──
      Sur la place, bien visibles, en nombre limité. Elles ne repoussent pas :
      c'est ce qui fait qu'on compte ses passages. */
@@ -155,10 +193,64 @@ function batirVillage(v, c, RC){
   }
 }
 
+/* ═══ DÉCOUVERTE ═══
+   « Les villages sont des zones mortes donc pas besoin de les voir, et il n'y a
+   aucune raison de savoir où ils sont initialement. Par contre une fois
+   découvert on peut faire qu'il y a un beacon pour le retrouver sur la carte. »
+
+   Exactement ça : rien sur le sismographe au départ. On entre une fois dans la
+   place barricadée, le village est marqué, et il le reste — sauvegardé par
+   graine de monde, comme les pancartes. Le repérage se mérite.               */
+
+const CLE_VUS = 'scolopandre.villages.v1';
+let graineCourante = 0;
+
+export function chargerVillagesVus(graine){
+  graineCourante = graine >>> 0;
+  for(const v of villages) v.vu = false;
+  try{
+    const tout = JSON.parse(localStorage.getItem(CLE_VUS) || '{}');
+    const lot = tout[graineCourante] || [];
+    for(const [x, z] of lot){
+      const v = villages.find(w => Math.abs(w.x-x) < 2 && Math.abs(w.z-z) < 2);
+      if(v) v.vu = true;
+    }
+  }catch(e){}
+}
+
+function enregistrerVus(){
+  try{
+    const tout = JSON.parse(localStorage.getItem(CLE_VUS) || '{}');
+    tout[graineCourante] = villages.filter(v => v.vu)
+                                   .map(v => [Math.round(v.x), Math.round(v.z)]);
+    const cles = Object.keys(tout);
+    if(cles.length > 8) for(const k of cles.slice(0, cles.length-8)) delete tout[k];
+    localStorage.setItem(CLE_VUS, JSON.stringify(tout));
+  }catch(e){}
+}
+
+/**
+ * Appelé quand le joueur est dans une place. Renvoie le village s'il vient
+ * d'être découvert (donc une seule fois), null sinon.
+ */
+export function marquerDecouvert(v){
+  if(!v || v.vu) return null;
+  v.vu = true;
+  enregistrerVus();
+  return v;
+}
+
 /** Es-tu dans la place barricadée d'un village ? Renvoie le village, ou null. */
 export function dansSafe(x, z){
   for(const v of villages)
     if(Math.hypot(v.x - x, v.z - z) < v.safe) return v;
+  return null;
+}
+
+/** Es-tu DANS la cabane ? C'est là qu'on se restaure complètement. */
+export function dansCabane(x, z){
+  for(const v of villages)
+    if(v.cabane && Math.hypot(v.cabane.x - x, v.cabane.z - z) < v.cabane.r) return v;
   return null;
 }
 
