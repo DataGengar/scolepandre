@@ -8,6 +8,17 @@ obligatoire, un moteur maison.
 
 ---
 
+## Éditeur
+
+```sh
+python -m http.server 8000        # puis http://localhost:8000/editeur.html
+```
+
+Trois onglets, sur le moteur du jeu : **TERRAIN** (poser des zones — quel biome
+où, et ce qu'on a le droit d'y générer), **ASSETS** (composer un élément de
+décor), **CRÉATURE** (régler le scolopandre en le regardant bouger).
+Voir [`src/editeur/README.md`](src/editeur/README.md).
+
 ## Jouer
 
 ```sh
@@ -76,6 +87,7 @@ src/
   audio/              nappes, vent, cavernes, effondrements, créature
   rendu/              caméra, lumières, lune, pipeline, sismographe
   ui/                 menu, HUD, réglages
+  editeur/            ★ l'éditeur visuel (terrain, assets, créature)
 outils/               vérification, bundler, éditeur de carte, pipeline OBJ
 cartes/               tes stacks : communes/ rares/ legendaires/
 archives/             les versions monofichier v1 et v2
@@ -123,6 +135,7 @@ python outils/verifier.py     # cohérence du projet
 python outils/smoke.py        # LANCE LE JEU pour de vrai, 30 s, sans GPU
 python outils/bundler.py      # produit dist/scolopandre.html
 python outils/gabarit_carte.py # cartes d'essai dans cartes/*/
+python outils/smoke_editeur.py # LANCE L'ÉDITEUR et vérifie qu'il pilote bien
 ```
 
 `smoke.py` est l'outil important : il exécute le jeu dans Chrome headless avec

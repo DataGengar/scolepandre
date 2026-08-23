@@ -14,6 +14,7 @@ quelque chose, va dans le dossier de son domaine — pas ailleurs.
 | `audio/` | nappes, vent, cavernes, effondrements | tout le son |
 | `rendu/` | caméra, lumières, pipeline, sismographe | l'image |
 | `ui/` | menu, HUD, réglages | l'interface |
+| `editeur/` | l'éditeur visuel | tracer des zones, composer un asset |
 | `jeu.js` | assemblage + boucle | brancher un module à un autre |
 
 ## La règle qui tient l'ensemble

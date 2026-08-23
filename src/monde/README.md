@@ -6,6 +6,8 @@ construit, et l'ordre compte.
 | fichier | à ouvrir pour… |
 |---|---|
 | `index.js` | changer l'ordre de génération, lire le rapport |
+| `plan.js` | **ce que l'éditeur produit** : zones, biomes imposés, contenus autorisés |
+| `connexite.js` | composantes connexes, et les rampes qui les relient |
 | `grille.js` | les champs par cellule, les accesseurs, la granularité |
 | `biomes.js` | **la table des biomes — source unique**, partagée avec l'éditeur |
 | `generation.js` | salles, cavernes, couloirs, relaxation, plateformes |

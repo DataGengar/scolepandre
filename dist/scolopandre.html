@@ -630,7 +630,8 @@ const SETUP = {
     maxBoisPorte:6,
     dureeFeu:150,        // secondes de combustion d'un feu de camp
     rayonFeu:6,          // mètres où l'on se réchauffe
-    portéeRepulsion:9,   // mètres : les jeunes n'approchent pas
+    // la distance à laquelle les jeunes reculent est SETUP.jeunes.peurDuFeu :
+    // c'est une propriété de la bête, pas du feu.
 
     nbFusees:180,        // fusées de détresse au sol
     maxFuseesPortees:4,
@@ -1292,12 +1293,194 @@ function calculerOuverture(){
   return { CELL, CH, CHH, CHW, FLOOR, GH, GW, LEDGE, STEPUP, WALL, biome, biomeAt, biomeDe, blocked, bornes, c2w, calculerOuverture, ceilH, celluleLibre, degagement, echelle, estVide, falaise, floorH, grid, groundAt, idx, inB, isFloor, isFree, majBornes, navCost, openN, platform, pont, pontH, profondeurDe, rebuildNavCost, sky, vide, viderGrille, w2c };
 })();
 
+/* ─── src/monde/plan.js ─── */
+__M['M_monde_plan'] = (function(){
+  const { GW, GH } = __M['M_monde_grille'];
+  const { biomePourAltitude } = __M['M_monde_biomes'];
+/* ═══ MONDE / PLAN ═══
+   Le PLAN est la description que l'éditeur produit et que le générateur suit.
+   C'est la couche qui manquait : jusqu'ici le monde était entièrement décidé
+   par la stratigraphie (le biome déduit de l'altitude, et rien d'autre). On
+   pouvait régler des nombres, pas dire « ICI, c'est une glacière ».
+
+   ── LE PRINCIPE ────────────────────────────────────────────────────────────
+   Un plan est une liste de ZONES posées sur la planche. Chaque zone dit, pour
+   la portion de monde qu'elle couvre :
+
+     · quel BIOME y règne — ou « auto », c'est-à-dire : laisse la stratigraphie
+       décider, comme avant ;
+     · quelle ALTITUDE imposer — ou « auto » ;
+     · CE QU'ON A LE DROIT D'Y GÉNÉRER : villages, cachettes, gouffres, ponts,
+       cartes, décor. C'est ça, « quels endroits peuvent être générés
+       aléatoirement ou en fonction du biome spécifié ».
+     · à quelle DENSITÉ.
+
+   Hors de toute zone, le monde reste exactement ce qu'il était : procédural,
+   stratifié par altitude. Un plan vide ne change donc STRICTEMENT rien — c'est
+   la garantie qu'ajouter l'éditeur ne casse pas le jeu.
+
+   ── L'ORDRE COMPTE ─────────────────────────────────────────────────────────
+   La DERNIÈRE zone qui contient un point l'emporte. On peut donc poser une
+   grande zone « glacière » puis y découper une petite zone « village garanti »
+   par-dessus, comme des calques.
+
+   ── OÙ IL EST LU ───────────────────────────────────────────────────────────
+     monde/generation.js   biome et altitude de chaque cellule creusée
+     monde/relief.js       droit de creuser un gouffre
+     monde/villages.js     droit de poser un village
+     monde/cachettes.js    droit de creuser un trou
+     monde/props.js        densité du décor
+     carte/placement.js    droit de poser une carte
+
+   Il est produit par outils/editeur.html et rangé dans le navigateur, ou
+   importé depuis un fichier .json.                                          */
+
+
+
+
+/** Ce qu'une zone peut autoriser ou interdire. */
+const CONTENUS = ['decor', 'lumieres', 'gouffres', 'ponts', 'cachettes',
+                         'villages', 'cartes', 'creatures'];
+
+/** Une zone neuve, avec des valeurs qui ne changent rien. */
+function zoneNeuve(x, z, w, h){
+  return {
+    nom: 'zone',
+    forme: 'rect',          // 'rect' | 'ellipse'
+    x, z, w, h,             // en CELLULES
+    biome: -1,              // −1 = auto (stratigraphie par altitude)
+    altitude: null,         // null = auto ; sinon une cote en mètres
+    pente: 0,               // mètres par cellule, si altitude imposée
+    densite: 1,             // multiplicateur du décor et des lumières
+    contenu: Object.fromEntries(CONTENUS.map(c => [c, true])),
+    couleur: '#8fa88c',     // pour l'éditeur seulement
+  };
+}
+
+/** Le plan courant. Vide par défaut : le monde reste 100 % procédural. */
+const plan = {
+  version: 1,
+  nom: 'sans titre',
+  zones: [],
+};
+
+const planActif = () => plan.zones.length > 0;
+
+/* ─────────────── interrogation ─────────────── */
+
+function dansZone(z, x, cz){
+  if(x < z.x || cz < z.z || x >= z.x + z.w || cz >= z.z + z.h) return false;
+  if(z.forme !== 'ellipse') return true;
+  const u = (x - z.x - z.w/2) / (z.w/2 || 1);
+  const v = (cz - z.z - z.h/2) / (z.h/2 || 1);
+  return u*u + v*v <= 1;
+}
+
+/** La zone qui gouverne cette cellule, ou null. La dernière posée l'emporte. */
+function zoneEn(x, z){
+  for(let i = plan.zones.length - 1; i >= 0; i--)
+    if(dansZone(plan.zones[i], x, z)) return plan.zones[i];
+  return null;
+}
+
+/**
+ * Le biome d'une cellule. C'est LE point d'entrée : monde/generation.js
+ * l'appelle partout où il appelait biomePourAltitude().
+ */
+function biomeDeCellule(altitude, x, z){
+  const zn = zoneEn(x, z);
+  if(zn && zn.biome >= 0) return zn.biome;
+  return biomePourAltitude(altitude, x, z);
+}
+
+/**
+ * L'altitude à creuser. Renvoie `defaut` si aucune zone n'impose rien.
+ * Une pente permet de dessiner une rampe franche entre deux paliers.
+ */
+function altitudeDeCellule(defaut, x, z){
+  const zn = zoneEn(x, z);
+  if(!zn || zn.altitude === null || zn.altitude === undefined) return defaut;
+  if(!zn.pente) return zn.altitude;
+  // la pente court le long du plus grand côté de la zone
+  const t = zn.w >= zn.h ? (x - zn.x) : (z - zn.z);
+  return zn.altitude + t * zn.pente;
+}
+
+/**
+ * A-t-on le droit de générer ça ici ? C'est la réponse à « quels endroits
+ * peuvent être générés aléatoirement ou en fonction du biome spécifié ».
+ */
+function autorise(quoi, x, z){
+  const zn = zoneEn(x, z);
+  if(!zn) return true;                     // hors zone : le monde fait ce qu'il veut
+  return zn.contenu[quoi] !== false;
+}
+
+/** Multiplicateur de densité de décor à cet endroit. */
+function densiteEn(x, z){
+  const zn = zoneEn(x, z);
+  return zn ? (zn.densite ?? 1) : 1;
+}
+
+/* ─────────────── chargement et enregistrement ─────────────── */
+
+const CLE = 'scolopandre.plan.v1';
+
+function chargerPlan(){
+  try{
+    const brut = localStorage.getItem(CLE);
+    if(!brut) return false;
+    appliquer(JSON.parse(brut));
+    return plan.zones.length > 0;
+  }catch(e){ return false; }
+}
+
+function enregistrerPlan(){
+  try{ localStorage.setItem(CLE, JSON.stringify(plan)); return true; }
+  catch(e){ return false; }
+}
+
+function effacerPlan(){
+  plan.zones.length = 0;
+  plan.nom = 'sans titre';
+  try{ localStorage.removeItem(CLE); }catch(e){}
+}
+
+/** Remplace le plan courant par un objet lu depuis un JSON. */
+function appliquer(obj){
+  if(!obj || !Array.isArray(obj.zones)) return false;
+  plan.version = obj.version || 1;
+  plan.nom = obj.nom || 'sans titre';
+  plan.zones.length = 0;
+  for(const z of obj.zones){
+    const n = zoneNeuve(z.x|0, z.z|0, Math.max(1, z.w|0), Math.max(1, z.h|0));
+    Object.assign(n, z);
+    // on rebâtit `contenu` pour tolérer un fichier écrit par une version plus
+    // ancienne, à qui il manquerait des clés
+    n.contenu = Object.fromEntries(
+      CONTENUS.map(c => [c, z.contenu ? z.contenu[c] !== false : true]));
+    n.x = Math.max(0, Math.min(GW-1, n.x));
+    n.z = Math.max(0, Math.min(GH-1, n.z));
+    n.w = Math.max(1, Math.min(GW - n.x, n.w));
+    n.h = Math.max(1, Math.min(GH - n.z, n.h));
+    plan.zones.push(n);
+  }
+  return true;
+}
+
+/** Le plan, prêt à être écrit dans un fichier. */
+const exporter = () => JSON.stringify(plan, null, 2);
+
+  return { CONTENUS, altitudeDeCellule, appliquer, autorise, biomeDeCellule, chargerPlan, densiteEn, effacerPlan, enregistrerPlan, exporter, plan, planActif, zoneEn, zoneNeuve };
+})();
+
 /* ─── src/monde/generation.js ─── */
 __M['M_monde_generation'] = (function(){
   const { SETUP } = __M['M_setup'];
   const { lerp, clamp } = __M['M_noyau_math'];
   const { rnd, ri } = __M['M_noyau_rng'];
-  const { BIOMES, biomePourAltitude } = __M['M_monde_biomes'];
+  const { BIOMES } = __M['M_monde_biomes'];
+  const { biomeDeCellule, altitudeDeCellule } = __M['M_monde_plan'];
   const { GW, GH, CELL, WALL, FLOOR, STEPUP, grid, floorH, ceilH, openN, biome, platform, sky, falaise, vide, pont, idx, inB, isFloor, calculerOuverture, majBornes } = __M['M_monde_grille'];
 /* ═══ MONDE / GÉNÉRATION ═══
    Creuse la planche : salles, cavernes, couloirs, puis relaxation du relief.
@@ -1322,6 +1505,10 @@ __M['M_monde_generation'] = (function(){
 
 
 
+/* Le biome et l'altitude d'une cellule passent désormais par monde/plan.js.
+   Quand aucun plan n'est chargé, biomeDeCellule() retombe exactement sur
+   biomePourAltitude() : le monde procédural est inchangé au bit près. */
+
 
 
 const salles = [];
@@ -1337,7 +1524,8 @@ function carveRect(x0,z0,w,h,e){
   for(let z=z0; z<z0+h; z++) for(let x=x0; x<x0+w; x++)
     if(inB(x,z)){
       const i = idx(x,z);
-      grid[i] = FLOOR; floorH[i] = e; biome[i] = biomePourAltitude(e, x, z);
+      const y = altitudeDeCellule(e, x, z);
+      grid[i] = FLOOR; floorH[i] = y; biome[i] = biomeDeCellule(y, x, z);
     }
 }
 
@@ -1348,9 +1536,10 @@ function carveBlob(cx,cz,steps,e){
       const k = idx(x+dx, z+dz);
       grid[k] = FLOOR;
       // relief doux dans les cavernes : jamais de falaise en travers du passage
-      const h = e + Math.sin(x*0.31)*0.28 + Math.cos(z*0.27)*0.28;
+      const h = altitudeDeCellule(
+        e + Math.sin(x*0.31)*0.28 + Math.cos(z*0.27)*0.28, x+dx, z+dz);
       floorH[k] = h;
-      biome[k] = biomePourAltitude(h, x+dx, z+dz);
+      biome[k] = biomeDeCellule(h, x+dx, z+dz);
     }
     const d = ri(0,3);
     x += d===0?1 : d===1?-1 : 0;
@@ -1373,7 +1562,8 @@ function corridor(a,b,wdt){
     const e = lerp(a.e, b.e, t);
     for(let i2=0;i2<wdt;i2++) for(let j=0;j<wdt;j++) if(inB(x+i2,z+j)){
       const k = idx(x+i2, z+j);
-      grid[k]=FLOOR; floorH[k]=e; biome[k]=biomePourAltitude(e, x+i2, z+j);
+      const y = altitudeDeCellule(e, x+i2, z+j);
+      grid[k]=FLOOR; floorH[k]=y; biome[k]=biomeDeCellule(y, x+i2, z+j);
     }
     // marge d'épine autour du tracé : la relaxation a de quoi lisser la rampe
     for(let dz=-M; dz<=M+wdt; dz++) for(let dx=-M; dx<=M+wdt; dx++)
@@ -1522,7 +1712,7 @@ function creuserPlan(){
     // diagonale + dispersion : les extrêmes se retrouvent aux deux bouts
     const cx = Math.round(lerp(18, GW-19, t) + ri(-14,14));
     const cz = Math.round(lerp(GH-19, 18, t) + ri(-14,14));
-    const b = biomePourAltitude(P.e, cx, cz);
+    const b = biomeDeCellule(P.e, cx, cz);
     const grand = b === 3 || b === 2;          // dehors et le barrage sont vastes
     const w = grand ? ri(26,40) : ri(14,26), h = grand ? ri(26,40) : ri(14,26);
     const x = clamp(cx - (w>>1), 2, GW-w-3), z = clamp(cz - (h>>1), 2, GH-h-3);
@@ -1538,7 +1728,7 @@ function creuserPlan(){
     const cx = clamp(Math.round(lerp(20, GW-21, tt) + ri(-12,12)), 18, GW-19);
     const cz = clamp(Math.round(lerp(GH-21, 20, tt) + ri(-12,12)), 18, GH-19);
     carveBlob(cx, cz, ri(1400,3000), e);
-    salles.push({x:cx, z:cz, e, b: biomePourAltitude(e, cx, cz)});
+    salles.push({x:cx, z:cz, e, b: biomeDeCellule(e, cx, cz)});
   }
 
   // la chaîne suit l'ordre du plan : on ne saute jamais 60 m d'un coup
@@ -1613,6 +1803,7 @@ function finaliserRelief(){
 /* ─── src/monde/relief.js ─── */
 __M['M_monde_relief'] = (function(){
   const { SETUP } = __M['M_setup'];
+  const { autorise } = __M['M_monde_plan'];
   const { rnd, ri, rf } = __M['M_noyau_rng'];
   const { BIOMES } = __M['M_monde_biomes'];
   const { GW, GH, CELL, FLOOR, grid, floorH, openN, vide, falaise, biome, idx, inB, isFloor, isFree } = __M['M_monde_grille'];
@@ -1627,6 +1818,7 @@ __M['M_monde_relief'] = (function(){
    le vide (on ne se cogne pas contre un trou) et le joueur meurt quand il
    descend sous SETUP.relief.fondDuVide sous le sol le plus bas du monde.
    Ici on ne fait que creuser et border.                                     */
+
 
 
 
@@ -1658,6 +1850,7 @@ function creuserGouffres(lights){
   for(let essai=0; essai<40000 && gouffres.length < S.nbGouffres; essai++){
     const cx = ri(30, GW-31), cz = ri(30, GH-31);
     if(!isFree(cx,cz) || openN[idx(cx,cz)] < 0.62) continue;
+    if(!autorise('gouffres', cx, cz)) continue;      // le plan peut l'interdire
 
     const horiz = rnd() < 0.5;
     const lon = ri(LMIN, LMAX), lar = ri(WMIN, WMAX);
@@ -2004,6 +2197,7 @@ __M['M_monde_ponts'] = (function(){
   const { rnd, ri } = __M['M_noyau_rng'];
   const { GW, GH, CELL, floorH, ceilH, openN, pont, pontH, echelle, vide, idx, isFloor, celluleLibre } = __M['M_monde_grille'];
   const { gouffres } = __M['M_monde_relief'];
+  const { autorise } = __M['M_monde_plan'];
 /* ═══ MONDE / PONTS ═══
    Passerelles suspendues. On enjambe les gouffres, on longe les grandes salles.
 
@@ -2017,6 +2211,7 @@ __M['M_monde_ponts'] = (function(){
    PRIORITÉ v3 : on tente D'ABORD un pont au-dessus de chaque gouffre creusé
    par monde/relief.js. Un gouffre non franchissable coupe la carte ; un
    gouffre avec un pont est un choix (le traverser ou le contourner).       */
+
 
 
 
@@ -2057,6 +2252,7 @@ function placerPonts(props){
  *                    le but) ; sinon il doit rester au-dessus de sol praticable.
  */
 function poserTroncon(props, x0, z0, lon, horiz, surGouffre){
+  if(!autorise('ponts', x0, z0)) return false;
   let hmax = -1e9, appuis = 0;
   for(let k=0; k<lon; k++){
     const x = horiz ? x0+k : x0, z = horiz ? z0 : z0+k;
@@ -2139,6 +2335,7 @@ __M['M_monde_cachettes'] = (function(){
   const { rnd, ri, rf } = __M['M_noyau_rng'];
   const { GW, GH, CELL, FLOOR, grid, floorH, ceilH, openN, blocked, biome, vide, idx, inB, isFloor, isFree, celluleLibre } = __M['M_monde_grille'];
   const { BIOMES } = __M['M_monde_biomes'];
+  const { autorise } = __M['M_monde_plan'];
 /* ═══ MONDE / CACHETTES ═══
    Littéralement des trous. Peu dans le monde, discrètement visibles sur la
    carte.
@@ -2164,6 +2361,7 @@ __M['M_monde_cachettes'] = (function(){
 
 
 
+
 const cachettes = [];
 
 /**
@@ -2178,8 +2376,10 @@ function placerCachettes(props){
   for(let essai=0; essai<60000 && cachettes.length < S.nombre; essai++){
     const c = celluleLibre(ri);
     const i0 = idx(c.x, c.z);
-    // on veut une paroi juste à côté : la cachette se creuse dedans
-    if(openN[i0] > 0.55) continue;          // plutôt un boyau qu'une salle
+    // on veut une paroi juste à côté : la cachette se creuse dedans,
+    // et plutôt dans un boyau que dans une salle
+    if(openN[i0] > 0.55) continue;
+    if(!autorise('cachettes', c.x, c.z)) continue;
 
     let dir = null;
     for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
@@ -2268,6 +2468,7 @@ __M['M_monde_props'] = (function(){
   const { BIOMES } = __M['M_monde_biomes'];
   const { GW, GH, CELL, floorH, ceilH, openN, blocked, biome, sky, idx, isFloor, isFree, c2w, celluleLibre } = __M['M_monde_grille'];
   const { salles } = __M['M_monde_generation'];
+  const { autorise, densiteEn } = __M['M_monde_plan'];
 /* ═══ MONDE / PROPS ═══
    Le décor. Colonnades, piliers, cristaux, monolithes, troncs, gravats.
 
@@ -2286,6 +2487,7 @@ __M['M_monde_props'] = (function(){
    Un élément est une liste de `parts`. Une part est soit une boîte
    {x,y,z,sx,sy,sz,c,r,emis}, soit un prisme {tube:[p0,r0,p1,r1,cotes],c,emis}.
    monde/maillage.js sait cuire les deux.                                    */
+
 
 
 
@@ -2736,6 +2938,9 @@ function placerProps(){
   for(let k=0; k<S.semis; k++){
     const x = ri(2,GW-3), z = ri(2,GH-3), i = idx(x,z);
     if(!isFloor(x,z) || blocked[i]) continue;
+    // le plan peut vider une zone de son décor, ou l'en gaver
+    if(!autorise('decor', x, z)) continue;
+    if(rnd() > densiteEn(x, z)) continue;
     const set = BIOMES[biome[i]].props;
     const kind = set[ri(0, set.length-1)];
     // rien de bloquant dans les passages étroits : la carte doit rester ouverte
@@ -2756,6 +2961,8 @@ function placerProps(){
   for(let k=0; k<16000 && lights.length < S.maxLumieres; k++){
     const x = ri(2,GW-3), z = ri(2,GH-3), i = idx(x,z);
     if(!isFloor(x,z)) continue;
+    if(!autorise('lumieres', x, z)) continue;
+    if(rnd() > densiteEn(x, z)) continue;
     const b = BIOMES[biome[i]];
     lights.push({x:c2w(x), y:floorH[i]+0.5+rnd()*1.6, z:c2w(z), c:b.lum, ph:rnd()*6.28});
   }
@@ -2775,6 +2982,7 @@ __M['M_monde_villages'] = (function(){
   const { rnd, ri, rf } = __M['M_noyau_rng'];
   const { GW, GH, CELL, FLOOR, grid, floorH, openN, blocked, biome, vide, sky, idx, inB, isFloor, isFree, c2w, celluleLibre } = __M['M_monde_grille'];
   const { addProp, lights, props } = __M['M_monde_props'];
+  const { autorise } = __M['M_monde_plan'];
 /* ═══ MONDE / VILLAGES ENGLOUTIS ═══
    « Placer des zones d'anciens villages dépeuplés car tous mangés, mais qui
    ont une safe zone et des trousses médicales épuisables. »
@@ -2805,6 +3013,7 @@ __M['M_monde_villages'] = (function(){
 
 
 
+
 /** [{x, z, y, rayon, safe, trousses:[…]}] */
 const villages = [];
 
@@ -2827,6 +3036,7 @@ function placerVillages(){
     const i0 = idx(c.x, c.z);
     // il faut de la place : un village dans un boyau n'a pas de sens
     if(openN[i0] < 0.58) continue;
+    if(!autorise('villages', c.x, c.z)) continue;
 
     const wx = c2w(c.x), wz = c2w(c.z);
     if(villages.some(v => Math.hypot(v.x-wx, v.z-wz) < V.ecartMin)) continue;
@@ -3556,7 +3766,31 @@ function cuireTube(quad, q){
   for(let k=1;k<NC-1;k++) quad([B[0],B[k],B[k+1],B[0]],[0,1,0],[q.c,q.c,q.c,q.c]);
 }
 
-  return { batirPave, chOf, indexerProps, lampesParPave, libererPave, libererTousLesPaves, majPaves, paveCentre, paves, statsMaillage };
+
+/* ═══ CUISSON HORS PAVÉ ═══
+   Fabrique un maillage autonome à partir d'une liste de `parts`, avec
+   EXACTEMENT les mêmes primitives que le décor du jeu.
+
+   C'est ce qui permet à l'éditeur d'assets de montrer la vérité : il ne
+   réimplémente pas la géométrie, il appelle le même code. Un éditeur qui
+   redessine à sa façon finit toujours par diverger du moteur, et on ne s'en
+   aperçoit qu'en jeu.                                                       */
+function cuireParts(parts){
+  const P=[], N=[], C=[];
+  const quad = (p,n,c) => {
+    const push = (v,cc) => { P.push(v[0],v[1],v[2]); N.push(n[0],n[1],n[2]); C.push(cc[0],cc[1],cc[2]); };
+    push(p[0],c[0]); push(p[1],c[1]); push(p[2],c[2]);
+    push(p[0],c[0]); push(p[2],c[2]); push(p[3],c[3]);
+  };
+  for(const q of parts){
+    if(!q) continue;
+    if(q.tube) cuireTube(quad, q);
+    else       cuireBoite(quad, q);
+  }
+  return P.length ? mesh(P,N,C) : null;
+}
+
+  return { batirPave, chOf, cuireBoite, cuireParts, cuireTube, indexerProps, lampesParPave, libererPave, libererTousLesPaves, majPaves, paveCentre, paves, statsMaillage };
 })();
 
 /* ─── src/monde/import-png.js ─── */
@@ -3638,6 +3872,7 @@ __M['M_monde_index'] = (function(){
   const { placerVillages, placerBoisEtFusees, viderVillages, villages } = __M['M_monde_villages'];
   const { indexerProps, libererTousLesPaves, statsMaillage } = __M['M_monde_maillage'];
   const { importee } = __M['M_monde_import_png'];
+  const { plan, planActif } = __M['M_monde_plan'];
   const trousses = __M['M_monde_villages']['trousses'];
   const bois = __M['M_monde_villages']['bois'];
   const fusees = __M['M_monde_villages']['fusees'];
@@ -3651,6 +3886,7 @@ __M['M_monde_index'] = (function(){
    la génération tient en ~1,4 s (mesuré), mais rendre la main reste utile :
    sans ça la page se fige, et sur une machine lente ça dure plusieurs
    secondes. Le rapport final donne la durée réelle.                        */
+
 
 
 
@@ -3790,6 +4026,7 @@ function rapportMonde(){
     : '—';
   return {
     duree: chrono.duree.toFixed(1) + ' s',
+    plan: planActif() ? plan.nom + ' (' + plan.zones.length + ' zones)' : 'procédural',
     greedyGain: g + ' de quads en moins (sols+plafonds)',
     cellulesPlates: statsMaillage.plats + ' / '
       + (statsMaillage.plats + statsMaillage.nonPlats),
@@ -4180,6 +4417,7 @@ __M['M_carte_placement'] = (function(){
   const { ri, rnd } = __M['M_noyau_rng'];
   const { idx, floorH, blocked, c2w, celluleLibre, profondeurDe } = __M['M_monde_grille'];
   const { RANGS, rangsPermis } = __M['M_carte_rangs'];
+  const { autorise } = __M['M_monde_plan'];
   const { tirerDansRang } = __M['M_carte_catalogue'];
 /* ═══ CARTE / PLACEMENT ═══
    Répartit les cartes dans le monde. La rareté vient de la PROFONDEUR : les
@@ -4188,6 +4426,7 @@ __M['M_carte_placement'] = (function(){
    C'est la mécanique qui donne un sens à descendre, et elle se combine avec la
    géothermie du froid (joueur/froid.js) : plus bas il fait plus chaud ET les
    cartes sont meilleures — mais c'est là qu'elle vit.                       */
+
 
 
 
@@ -4206,6 +4445,7 @@ function placerCartes(){
     const c = celluleLibre(ri);
     const i = idx(c.x, c.z);
     if(blocked[i]) continue;
+    if(!autorise('cartes', c.x, c.z)) continue;
 
     const prof = profondeurDe(floorH[i]);
     const permis = rangsPermis(prof);
@@ -5383,9 +5623,17 @@ __M['M_creatures_geometrie'] = (function(){
 
 
 
-const C_SEG   = SETUP.creature.segments;
-const C_RING  = SETUP.creature.anneaux;
-const C_PAIRES= SETUP.creature.paires;
+/* Ces trois-là étaient figés à l'import (`const C_SEG = SETUP.creature.segments`),
+   ce qui rendait les curseurs d'anatomie de l'éditeur strictement inopérants :
+   on bougeait le nombre d'anneaux et rien ne changeait à l'écran. Ils sont
+   maintenant relus à chaque image. Le coût est nul — trois lectures de
+   propriété — et l'éditeur devient utile.
+
+   C_MAXV, lui, reste figé : il dimensionne les tampons GPU, alloués une fois.
+   D'où l'écrêtage dans cQuad() si l'on pousse l'anatomie trop loin. */
+const cSeg    = () => SETUP.creature.segments;
+const cRing   = () => SETUP.creature.anneaux;
+const cPaires = () => SETUP.creature.paires;
 const C_MAXV  = SETUP.creature.maxSommets;
 
 const cP  = new Float32Array(C_MAXV*3);
@@ -5474,6 +5722,8 @@ function cBulbe(p, r, col, res){
 /* ─────────────── la mère ─────────────── */
 
 function batirCreature(temps){
+  // relus à chaque image : l'éditeur peut les changer à chaud
+  const C_SEG = cSeg(), C_RING = cRing(), C_PAIRES = cPaires();
   cN_ = 0;
   lumieresTemporaires.length = 0;
 
@@ -6983,11 +7233,14 @@ function feuProche(x, z, joueur, torcheAllumee){
     if(d < portee && d < bd){ bd = d; best = {x:fx, z:fz, d}; }
   };
 
-  for(const f of feux) tester(f.x, f.z, F.portéeRepulsion);
-  for(const f of fuseesActives) tester(f.x, f.z, F.portéeRepulsion * 1.3);
+  /* La portée vient de SETUP.jeunes.peurDuFeu : c'est une propriété des
+     JEUNES, pas du feu. La ranger côté créature permet de la régler avec le
+     reste de leur comportement. */
+  const R = SETUP.jeunes.peurDuFeu;
+  for(const f of feux) tester(f.x, f.z, R);
+  for(const f of fuseesActives) tester(f.x, f.z, R * 1.45);
   // la lampe brandie : seulement si elle est allumée ET brandie
-  if(inventaire.brandit && torcheAllumee)
-    tester(joueur.x, joueur.z, F.portéeRepulsion * 0.8);
+  if(inventaire.brandit && torcheAllumee) tester(joueur.x, joueur.z, R * 0.7);
 
   return best;
 }
@@ -7016,8 +7269,11 @@ function chaleurDuFeu(x, z){
   let g = 0;
   for(const f of feux)
     if(Math.hypot(f.x-x, f.z-z) < F.rayonFeu) g = Math.max(g, SETUP.froid.gainFeu);
+  /* Une fusée éclaire dans rayonFusee mais ne réchauffe que dans son tiers :
+     c'est une torche de détresse, pas un foyer. */
   for(const f of fuseesActives)
-    if(f.posee && Math.hypot(f.x-x, f.z-z) < 3) g = Math.max(g, SETUP.froid.gainFeu*0.4);
+    if(f.posee && Math.hypot(f.x-x, f.z-z) < F.rayonFusee/3)
+      g = Math.max(g, SETUP.froid.gainFeu*0.4);
   return g;
 }
 
@@ -10210,6 +10466,7 @@ __M['M_jeu'] = (function(){
   const { majPaves, indexerProps, libererTousLesPaves, paves } = __M['M_monde_maillage'];
   const { placerSortie, atteinte, objectif } = __M['M_monde_sortie'];
   const { lireCartePNG } = __M['M_monde_import_png'];
+  const { plan, chargerPlan, planActif } = __M['M_monde_plan'];
   const { villages, trousses, bois, fusees, dansSafe, dansCabane, marquerDecouvert, chargerVillagesVus } = __M['M_monde_villages'];
   const { pancartes, chargerPancartes, poser: poserPancarte, pancarteProche, retirer: retirerPancarte, lumieresPancartes } = __M['M_monde_pancartes'];
   const { RANGS } = __M['M_carte_rangs'];
@@ -10250,6 +10507,7 @@ __M['M_jeu'] = (function(){
      les nappes, le vent, les effondrements . . src/audio/
      la caméra, les lumières, le sismographe  . src/rendu/
    ══════════════════════════════════════════════════════════════════════════ */
+
 
 
 
@@ -10731,6 +10989,10 @@ function simuler(dt){
   }
   const gainFeu = chaleurDuFeu(joueur.x, joueur.z);
   const auChaud = !!brasero || !!safe || gainFeu > 0;
+  /* La place d'un village réchauffe un peu moins vite qu'un brasero : on est
+     près des feux, pas dessus. SETUP.villages.safeChaleur porte cet écart. */
+  if(safe && !brasero && froid.chaleur < 100)
+    froid.chaleur = Math.min(100, froid.chaleur + SETUP.villages.safeChaleur*dt);
   const F = updateFroid(dt, joueur, jeu.ventForce, auChaud, {
     souffle: i => Audio.effets.souffle(i),
     coeur:   i => Audio.effets.coeur(i),
@@ -10873,7 +11135,7 @@ function dessinerImage(dt, dP){
   const P = SETUP.froid.paliers[froid.palier];
   construireVue(joueur, jeu.temps, tampon.w/tampon.h, P.vision, joueur.derive);
 
-  const gainLampe = (torche.on ? 1 : 0.07)
+  const gainLampe = (torche.on ? 1 : SETUP.lampe.gainEteinte)
     * (0.45 + 0.55*Math.min(1, (froid.chaleur/100)*2.4))
     * (joueur.abrite ? 0.35 : 1);
 
@@ -10898,6 +11160,11 @@ async function demarrer(){
   jeu.meshCarte = boite(-0.5, 0.5);
   creerCreature();
   resize();
+
+  /* Le plan de l'éditeur, s'il y en a un. Vide, le monde reste entièrement
+     procédural — c'est la garantie que l'éditeur ne change rien tant qu'on ne
+     s'en sert pas. */
+  if(chargerPlan()) console.log('PLAN', plan.nom, plan.zones.length + ' zones');
 
   chargerCollection();
   sonderStacks(() => majAffichage());

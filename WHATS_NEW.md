@@ -1,7 +1,92 @@
 # WHAT'S NEW
 
-Suivi de l'évolution du projet. Trois sections : **demandé**, **implémenté**,
-**à faire**.
+Suivi de l'évolution du projet.
+
+---
+
+# v3.3 — 23 août 2026 · l'éditeur
+
+`editeur.html`, à côté de `index.html`. Il tourne **sur le moteur du jeu** :
+mêmes shaders, mêmes primitives, même code de génération.
+
+## LA FONDATION : LE PLAN
+
+`src/monde/plan.js`. C'est la couche qui manquait — jusqu'ici le monde était
+entièrement décidé par la stratigraphie, on pouvait régler des nombres mais pas
+dire « ICI, c'est une glacière ».
+
+Un plan est une liste de **zones**. Chacune dit, pour ce qu'elle couvre :
+quel **biome** (ou `auto`), quelle **altitude** (avec pente), **ce qu'on a le
+droit d'y générer** — décor, lumières, gouffres, ponts, cachettes, villages,
+cartes, créatures — et à quelle **densité**.
+
+La dernière zone tracée l'emporte, comme des calques. **Hors zone, rien ne
+change** : un plan vide n'a strictement aucun effet, ce qui garantit que
+l'éditeur ne casse rien tant qu'on ne s'en sert pas.
+
+Sept modules du générateur le consultent : `generation`, `relief`, `villages`,
+`cachettes`, `ponts`, `props`, `carte/placement`.
+
+## LES TROIS ONGLETS
+
+**TERRAIN** — une carte de dessus. Le monde fait 1,6 km et son relief va de
+−131 à +137 m : le poser à la main en 3D serait interminable. Ce qu'on veut
+décider, ce n'est pas la forme du terrain — le générateur la fabrique bien —
+c'est *où se trouve quoi*. `Générer un aperçu` lance la vraie génération et
+photographie le résultat en couleurs de biome ; `Jouer ce monde` ouvre le jeu,
+qui relit le plan tout seul.
+
+**ASSETS** — composer un élément de décor, en 3D temps réel. Deux entrées :
+partir de primitives (`bloc`, `tube`), ou **charger un élément du jeu**. Dans ce
+second cas l'éditeur appelle la vraie fonction `addProp()` dans un bac à sable et
+récupère la géométrie produite : c'est l'élément tel qu'il apparaît en partie,
+pas une imitation. `Copier le code` sort un extrait prêt à coller dans
+`monde/props.js`.
+
+**CRÉATURE** — il n'y a volontairement pas de modeleur : le scolopandre n'est pas
+un maillage, c'est un algorithme. Son corps est reconstruit à chaque image à
+partir de sa trace et d'une quarantaine de paramètres. L'onglet expose ces
+nombres et rejoue le vrai code de `creatures/geometrie.js`.
+
+Un bug trouvé en construisant l'onglet : `C_SEG`, `C_RING` et `C_PAIRES` étaient
+lus **une seule fois à l'import**. Les curseurs d'anatomie ne faisaient donc
+rien. Relus à chaque image — vérifié, 6 904 → 5 144 triangles quand on ramène
+les anneaux de 64 à 24.
+
+## VÉRIFICATION
+
+`outils/smoke_editeur.py` joue une séance complète en headless. Le test qui
+compte est celui-ci — un éditeur qui dessine sans que le générateur suive ne
+sert à rien :
+
+```
+zone tracée : glacière, 557 × 520 cellules, villages interdits
+  cellules de sol dans la zone    : 33 367
+  dont du biome imposé            : 33 367  (100,0 %)
+  villages tombés dans la zone    : 0
+  villages ailleurs               : 7
+  21 types d'éléments testés      : tous produisent de la géométrie
+  projet enregistré puis relu     : identique
+```
+
+## AU PASSAGE
+
+`outils/verifier.py` ne connaissait qu'un point d'entrée et prenait tout
+`src/editeur/` pour du code mort. Il en connaît deux maintenant — ce qui a
+révélé quatre valeurs de `SETUP` déclarées mais jamais lues
+(`lampe.gainEteinte`, `jeunes.peurDuFeu`, `villages.safeChaleur`,
+`feu.rayonFusee`). Elles étaient doublées en dur ailleurs. Toutes branchées, et
+`feu.portéeRepulsion` supprimée puisque `jeunes.peurDuFeu` la remplace — la
+distance à laquelle une bête recule est une propriété de la bête, pas du feu.
+
+## CE QUI RESTE
+
+- **Ni le rendu ni l'audio n'ont encore été vus.** WebGL est simulé dans les
+  tests.
+- L'onglet TERRAIN n'a pas de prévisualisation 3D navigable : on passe par
+  `Jouer ce monde`.
+- L'éditeur d'assets ne sait pas encore écrire dans `props.js` tout seul : il
+  produit un extrait à coller.
 
 ---
 
