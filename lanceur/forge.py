@@ -49,6 +49,7 @@ INTERDITS = {".git", "_internal", "build", "application", "archives"}
 TAILLE_MAX = 4 * 1024 * 1024          # 4 Mo : large pour du code, borné quand même
 
 PROPS = "src/monde/props.js"
+BIOMES = "src/monde/biomes.js"
 
 
 class ErreurForge(Exception):
@@ -259,6 +260,115 @@ def enregistrer_prop(racine, nom, code):
 
 
 # ══════════════════════════════════════════════════════════════════════════
+#  SEMER UN ÉLÉMENT DANS LES BIOMES
+# ══════════════════════════════════════════════════════════════════════════
+#
+# Écrire un `case` dans props.js ne fait PAS apparaître l'élément dans le
+# monde. Le semis tire au sort dans la liste `props:[…]` du biome de la
+# cellule : tant que le nom n'y figure pas, la fonction ne sera jamais
+# appelée. C'est le dernier maillon, et le plus facile à oublier — on cherche
+# son objet pendant vingt minutes en croyant à un bug de génération.
+
+
+def _tableau_props(source, i_biome):
+    """(début, fin, contenu) du `props:[…]` du i-ème biome."""
+    # On prend les `props:[` dans l'ordre du fichier : la table est une liste
+    # littérale et chaque biome en porte exactement un. Analyser la structure
+    # serait plus savant et pas plus fiable.
+    tables = list(re.finditer(r"props\s*:\s*\[", source))
+    if i_biome < 0 or i_biome >= len(tables):
+        raise ErreurForge("biome %d inexistant (%d dans la table)"
+                          % (i_biome, len(tables)))
+    m = tables[i_biome]
+    ouvrante = source.index("[", m.start())
+    prof, i = 0, ouvrante
+    while i < len(source):
+        if source[i] == "[":
+            prof += 1
+        elif source[i] == "]":
+            prof -= 1
+            if prof == 0:
+                return ouvrante, i + 1, source[ouvrante + 1:i]
+        i += 1
+    raise ErreurForge("crochet non refermé dans biomes.js")
+
+
+def noms_biomes(racine):
+    """Les noms des biomes et ce que chacun sème, pour le panneau."""
+    src = lire(racine, BIOMES)
+    noms = re.findall(r"^\s*n\s*:\s*'([^']+)'", src, re.M)
+    sortie = []
+    for i, nom in enumerate(noms):
+        try:
+            _, _, contenu = _tableau_props(src, i)
+        except ErreurForge:
+            contenu = ""
+        sortie.append({"nom": nom,
+                       "props": re.findall(r"'([A-Za-z0-9_]+)'", contenu)})
+    return sortie
+
+
+def semer(racine, nom, biomes, poids=1, retirer=False):
+    """
+    Inscrit `nom` dans la liste `props` des biomes donnés — ou l'en retire.
+
+    `poids` est le nombre d'occurrences : la liste est tirée uniformément, donc
+    y figurer deux fois double la fréquence. C'est le mécanisme du jeu, on le
+    reprend tel quel plutôt que d'introduire une notion de poids que le moteur
+    ne connaît pas.
+    """
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,40}", nom or ""):
+        raise ErreurForge("nom d'élément invalide : %r" % nom)
+    if not retirer and nom not in lister_props(racine):
+        raise ErreurForge("« %s » n'existe pas dans props.js : écris-le "
+                          "d'abord" % nom)
+
+    chemin = resoudre(racine, BIOMES, pour_ecriture=True)
+    src = chemin.read_text(encoding="utf-8")
+    touches = []
+
+    # De la fin vers le début : sinon chaque écriture décale les indices des
+    # tables suivantes et la deuxième insertion tombe à côté.
+    for i in sorted({int(b) for b in biomes}, reverse=True):
+        deb, fin, contenu = _tableau_props(src, i)
+        noms = re.findall(r"'([A-Za-z0-9_]+)'", contenu)
+        combien = noms.count(nom)
+
+        if retirer:
+            if not combien:
+                continue
+            noms = [x for x in noms if x != nom]
+        else:
+            if combien >= poids:
+                continue
+            noms = noms + [nom] * (poids - combien)
+
+        # remise en forme : 60 colonnes, indentation d'origine
+        lignes, courante = [], "'" + noms[0] + "'" if noms else ""
+        for x in noms[1:]:
+            morceau = ", '" + x + "'"
+            if len(courante) + len(morceau) > 58:
+                lignes.append(courante + ",")
+                courante = "'" + x + "'"
+            else:
+                courante += morceau
+        if courante:
+            lignes.append(courante)
+        corps = ("\n" + " " * 11).join(lignes)
+        src = src[:deb] + "[" + corps + "]" + src[fin:]
+        touches.append(i)
+
+    if not touches:
+        return {"ok": True, "action": "rien à faire", "biomes": []}
+
+    sauve = sauvegarder(racine, chemin)
+    chemin.write_text(src, encoding="utf-8")
+    return {"ok": True, "action": "retiré" if retirer else "semé",
+            "nom": nom, "biomes": sorted(touches),
+            "sauvegarde": sauve.name if sauve else None}
+
+
+# ══════════════════════════════════════════════════════════════════════════
 #  ROUTAGE
 # ══════════════════════════════════════════════════════════════════════════
 
@@ -291,6 +401,18 @@ def traiter(racine, chemin_url, params, corps, journal=None):
             d = json.loads(corps or "{}")
             r = ecrire(racine, d.get("chemin", ""), d.get("contenu", ""))
             dire("FORGE", "écrit %s (%d o)" % (r["chemin"], r["octets"]), "success")
+            return 200, r
+
+        if route == "biomes":
+            return 200, {"ok": True, "biomes": noms_biomes(racine)}
+
+        if route == "semer":
+            d = json.loads(corps or "{}")
+            r = semer(racine, d.get("nom", ""), d.get("biomes", []),
+                      int(d.get("poids", 1)), bool(d.get("retirer", False)))
+            dire("FORGE", "%s : « %s » dans %d biome(s)"
+                 % (r["action"], d.get("nom", ""), len(r.get("biomes", []))),
+                 "success")
             return 200, r
 
         if route == "prop":

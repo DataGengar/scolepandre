@@ -79,6 +79,12 @@ et le contenu est plafonné. Ce n'est pas une protection contre un attaquant —
 il faudrait déjà être sur ce poste — c'est une protection contre une faute de
 frappe.
 
+`semer()` fait la même chose dans `src/monde/biomes.js` : il ajoute (ou retire)
+le nom dans la liste `props` des biomes choisis. Sans ça, un `case` fraîchement
+écrit ne serait jamais appelé — le générateur tire au sort dans cette liste.
+Les tables sont réécrites en gardant la mise en forme d'origine, et l'opération
+est idempotente.
+
 **Ces routes n'existent que si l'application tourne.** Ouvrir `editeur.html`
 par un `python -m http.server` reste parfaitement valable : la forge détecte
 l'absence du pont, masque le bouton d'écriture, et retombe sur le

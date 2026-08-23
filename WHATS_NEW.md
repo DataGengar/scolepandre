@@ -77,6 +77,12 @@ comptant les accolades et en sautant chaînes et commentaires. Sauvegarde
 horodatée avant chaque écriture, refus si le fichier n'est plus équilibré après
 coup, refus de tout chemin sortant du projet.
 
+**Et le dernier maillon** : `Semer` inscrit l'élément dans la liste `props` des
+biomes choisis, dans `biomes.js`. Sans ça, un `case` fraîchement écrit ne serait
+jamais appelé — le générateur tire au sort dans cette liste, et on chercherait
+son objet en croyant à un défaut de génération. La chaîne va donc maintenant de
+bout en bout : composer → écrire → semer → jouer.
+
 ## CINQ PRIMITIVES AU LIEU DE DEUX
 
 Le décor n'avait que la boîte et le prisme. Assez pour bâtir, pas pour
@@ -181,9 +187,6 @@ l'explique.
 
 - **Ni le rendu ni l'audio n'ont encore été vus.** WebGL est simulé dans tous
   les tests. C'est la limite de fond du dispositif.
-- Poser un `case` ne suffit pas à faire apparaître un élément dans le monde :
-  il faut l'ajouter à une table de semis. La console le rappelle, la forge ne
-  le fait pas encore.
 - L'onglet TERRAIN n'a toujours pas de prévisualisation 3D navigable.
 - La mère ne monte pas sur les passerelles (navigation à un seul niveau).
 

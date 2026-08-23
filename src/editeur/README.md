@@ -135,13 +135,23 @@ n'apparaît que si le lanceur tourne (voir `lanceur/README.md`). Le serveur
 remplace le `case` s'il existe, l'ajoute sinon, garde une copie horodatée dans
 `.sauvegardes/`, et refuse d'écrire si le fichier n'est plus équilibré.
 
+**`Semer`** est le dernier maillon, et le plus facile à oublier : écrire un
+`case` ne fait **pas** apparaître l'objet dans le monde. Le générateur tire au
+sort dans la liste `props` du biome de chaque cellule ; tant que le nom n'y
+figure pas, la fonction n'est jamais appelée — et on cherche son objet pendant
+vingt minutes en croyant à un défaut de génération.
+
+Coche les biomes, règle la fréquence (c'est un nombre d'occurrences dans la
+liste : y figurer deux fois double la chance), et sème. `Retirer` l'enlève de
+partout. L'opération est idempotente et se relit : les cases montrent l'état
+réel de `biomes.js`.
+
 Le code contient le **résultat**, pas la recette : le jeu ne charge aucun asset
 à l'exécution, et c'est ce qui lui permet de tenir en un seul fichier. La
 recette, elle, est conservée dans le projet.
 
-> Poser un `case` ne suffit pas à faire apparaître l'élément dans le monde : il
-> faut aussi l'ajouter à une table de semis de `props.js`. La console le
-> rappelle après chaque ajout.
+> Le monde est bâti au chargement : il faut relancer une partie pour voir
+> l'élément apparaître.
 
 ---
 

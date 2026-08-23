@@ -71,6 +71,31 @@ export async function listerProps(){
   return (await json('/_forge/props')).noms;
 }
 
+/** Les biomes et ce que chacun sème, lus dans `biomes.js`. */
+export async function biomes(){
+  return (await json('/_forge/biomes')).biomes;
+}
+
+/**
+ * Inscrit un élément dans la liste `props` des biomes donnés — ou l'en retire.
+ *
+ * C'est le dernier maillon, et le plus facile à oublier : écrire un `case`
+ * dans props.js ne fait PAS apparaître l'objet dans le monde. Le semis tire au
+ * sort dans la liste du biome de la cellule ; tant que le nom n'y figure pas,
+ * la fonction n'est jamais appelée. On cherche alors son objet pendant vingt
+ * minutes en croyant à un défaut de génération.
+ *
+ * `poids` est un nombre d'occurrences : y figurer deux fois double la
+ * fréquence. C'est le mécanisme du moteur, repris tel quel.
+ */
+export async function semer(nom, biomes, poids = 1, retirer = false){
+  return json('/_forge/semer', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({nom, biomes, poids, retirer}),
+  });
+}
+
 /**
  * Pose — ou remplace — un `case` dans `props.js`.
  *

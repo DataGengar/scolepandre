@@ -49,6 +49,11 @@ NAVIGATEURS = [
 
 # Le scénario joué dans la page. Il s'installe AVANT les modules (script
 # classique), attend que la forge soit prête, compose, puis écrit.
+#
+# ATTENTION : c'est une chaîne triple NON brute. Python y interprète les
+# séquences d'échappement AVANT que la page soit écrite — un `'` destiné
+# au JavaScript arrive dans la page en simple apostrophe et casse la
+# chaîne. Écrire les textes sans apostrophe, ou entre guillemets doubles.
 SCENARIO = """
 <script>
 (function(){
@@ -190,14 +195,31 @@ SCENARIO = """
               if(noms.indexOf('rocheEssai') < 0) erreurs.push('rocheEssai absent');
               if(noms.indexOf('barreauxEssai') < 0) erreurs.push('barreauxEssai absent');
 
-              /* le refus attendu : un nom qui sortirait du fichier */
-              var vilain = "case '../mechant': {}";
-              P.ecrireProp('../mechant', vilain).then(
-                function(){ erreurs.push('un nom invalide a ete accepte');
-                            rapporter(); },
-                function(err){ log('nom invalide refuse : '
-                                   + String(err.message).slice(0, 60));
-                               rapporter(); });
+              /* ── le dernier maillon : semer dans les biomes ── */
+              pas('semer', P.semer('rocheEssai', [0, 1], 2), function(rs){
+                log('semis : ' + rs.action + ' dans biomes '
+                    + JSON.stringify(rs.biomes));
+
+                pas('relire biomes', P.biomes(), function(bs){
+                  var compte = bs.map(function(b){
+                    return b.props.filter(function(p){
+                      return p === 'rocheEssai'; }).length; });
+                  log('occurrences par biome : ' + JSON.stringify(compte));
+                  if(compte[0] !== 2 || compte[1] !== 2)
+                    erreurs.push("le semis n a pas pose 2 occurrences");
+                  if(compte[2] !== 0)
+                    erreurs.push('le semis a debordé sur un biome non demande');
+
+                  /* le refus attendu : un nom qui sortirait du fichier */
+                  var vilain = "case '../mechant': {}";
+                  P.ecrireProp('../mechant', vilain).then(
+                    function(){ erreurs.push('un nom invalide a ete accepte');
+                                rapporter(); },
+                    function(err){ log('nom invalide refuse : '
+                                       + String(err.message).slice(0, 60));
+                                   rapporter(); });
+                });
+              });
             });
           });
         });
@@ -255,6 +277,7 @@ def main():
             [navigateur(), "--headless=new", "--disable-gpu",
              "--user-data-dir=" + str(profil), "--no-first-run",
              "--virtual-time-budget=45000", "--dump-dom",
+             "--enable-logging=stderr", "--log-level=0",
              url + "/_smoke_pont.html?debug"],
             capture_output=True, text=True, encoding="utf-8",
             errors="replace", timeout=180)
@@ -264,8 +287,19 @@ def main():
 
     m = re.search(r'<div id="RES">(.*?)</div>', dom, re.S)
     if not m:
-        print("\n  Aucun rapport. Extrait du DOM :\n")
-        print(dom[:2500])
+        # Une faute de syntaxe dans le scénario ne produit RIEN : ni rapport,
+        # ni message, juste un DOM muet. La console du navigateur, elle, le
+        # dit en une ligne — encore faut-il la demander.
+        console = [l for l in (p.stderr or "").splitlines()
+                   if "CONSOLE" in l or "Uncaught" in l]
+        if console:
+            print("\n  La page n'a rien rapporté. La console du navigateur dit :\n")
+            for l in console[:12]:
+                i = l.find("]")
+                print("    " + (l[i + 1:] if i > 0 else l).strip()[:220])
+        else:
+            print("\n  Aucun rapport, et la console est muette. Extrait du DOM :\n")
+            print(dom[:1800])
         shutil.rmtree(tmp, ignore_errors=True)
         sys.exit(1)
 
@@ -296,6 +330,12 @@ def main():
     print("    sauvegardes créées : %d" % len(sauv))
     if not sauv:
         soucis.append("aucune sauvegarde avant écriture")
+
+    biomes1 = (bac / "src/monde/biomes.js").read_text(encoding="utf-8")
+    print("    biomes.js  : %d occurrences de rocheEssai"
+          % biomes1.count("'rocheEssai'"))
+    if biomes1.count("'rocheEssai'") != 4:
+        soucis.append("biomes.js ne porte pas les 4 occurrences attendues")
 
     # ── et le fichier est-il toujours chargeable ? ──
     v = subprocess.run([sys.executable, "outils/syntaxe.py"], cwd=str(bac),

@@ -327,6 +327,21 @@ function panneauAssets(){
       <button id="aCode">Copier le code</button>
       <button id="aEcrire" class="accent" hidden>Écrire dans props.js</button>
     </div>
+
+    <div id="aSemis" hidden>
+      <h4>semer dans le monde</h4>
+      <p class="aide">Écrire le <span>case</span> ne suffit pas : le générateur
+      tire au sort dans la liste de chaque biome. Tant que l'élément n'y figure
+      pas, il n'apparaîtra jamais.</p>
+      <div class="cases" id="aBiomesCases"></div>
+      <label>Fréquence <i id="aPoidsV">1</i>
+        <input type="range" id="aPoids" min="1" max="5" step="1" value="1"></label>
+      <div class="rangee">
+        <button id="aSemer" class="accent">Semer</button>
+        <button id="aDesemer">Retirer</button>
+      </div>
+    </div>
+
     <textarea id="aSortie" rows="6" readonly
       placeholder="le code produit apparaît ici"></textarea>
   `);
@@ -347,6 +362,7 @@ function brancherAssets(){
   el('aBiblio').addEventListener('change', ev => {
     Assets.choisirElement(+ev.target.value);
     majBiblio(); majListe(); majPile(); recadrerAsset();
+    if(Pont.disponible()) majBiomesCases();
   });
   el('aNeuf').addEventListener('click', () => {
     Assets.ajouterElement(); majBiblio(); majListe(); majPile();
@@ -428,6 +444,62 @@ function brancherAssets(){
   });
 
   el('aEcrire').addEventListener('click', ecrireDansProps);
+  el('aPoids').addEventListener('input', ev => {
+    el('aPoidsV').textContent = ev.target.value;
+  });
+  el('aSemer').addEventListener('click', () => semerElement(false));
+  el('aDesemer').addEventListener('click', () => semerElement(true));
+}
+
+/* ─────────────── semis dans les biomes ─────────────── */
+
+/** Les biomes tels que biomes.js les déclare, relus après chaque semis. */
+let biomesConnus = [];
+
+async function majBiomesCases(){
+  const z = el('aBiomesCases');
+  if(!z) return;
+  try{
+    biomesConnus = await Pont.biomes();
+  }catch(err){
+    z.innerHTML = '<p class="aide">' + err.message + '</p>';
+    return;
+  }
+  const nom = Assets.el().nom;
+  z.innerHTML = biomesConnus.map((b, i) => {
+    const n = b.props.filter(p => p === nom).length;
+    return `<label class="case"><input type="checkbox" data-bi="${i}"
+      ${n ? 'checked' : ''}> ${b.nom.toLowerCase()}${
+      n > 1 ? ` <i>×${n}</i>` : ''}</label>`;
+  }).join('');
+}
+
+async function semerElement(retirer){
+  const nom = Assets.el().nom;
+  const choisis = [...el('aBiomesCases').querySelectorAll('[data-bi]')]
+    .filter(c => c.checked).map(c => +c.dataset.bi);
+
+  if(!retirer && !choisis.length){
+    alerte('SEMIS', 'coche au moins un biome');
+    return;
+  }
+  // Pour retirer, on vise TOUS les biomes : décocher une case puis cliquer
+  // « Retirer » doit enlever l'élément de partout, pas seulement de ce qui
+  // reste coché — sinon le geste ne fait rien et on ne comprend pas.
+  const cibles = retirer ? biomesConnus.map((_, i) => i) : choisis;
+
+  try{
+    const r = await Pont.semer(nom, cibles, +el('aPoids').value, retirer);
+    if(r.biomes && r.biomes.length)
+      succes('SEMIS', `« ${nom} » ${r.action} dans ${r.biomes.length} biome(s)`
+        + (r.sauvegarde ? ' · sauvegarde ' + r.sauvegarde : ''));
+    else discret('SEMIS', 'rien à faire — c\'était déjà le cas');
+    await majBiomesCases();
+    info('SEMIS', 'relance une partie pour le voir : le monde est bâti '
+      + 'au chargement');
+  }catch(err){
+    erreur('SEMIS', err.message);
+  }
 }
 
 function majTeinte(){
@@ -732,9 +804,10 @@ async function ecrireDansProps(){
     const r = await Pont.ecrireProp(nom, code);
     succes('PROPS.JS', `« ${nom} » ${r.action} (${r.lignes} lignes)`
       + (r.sauvegarde ? ' · sauvegarde ' + r.sauvegarde : ''));
+    await majBiomesCases();
     if(r.action === 'ajouté')
-      info('À FAIRE', `pour que « ${nom} » apparaisse dans le monde, ajoute-le `
-        + 'à une table de semis de props.js — le case seul ne le place pas.');
+      info('À FAIRE', `« ${nom} » existe, mais n'est encore semé nulle part. `
+        + 'Coche un biome ci-dessous et sème-le.');
   }catch(err){
     erreur('PROPS.JS', err.message);
   }
@@ -989,6 +1062,9 @@ function demarrer(){
   Pont.tester().then(ok => {
     const b = el('aEcrire');
     if(b) b.hidden = !ok;
+    const sem = el('aSemis');
+    if(sem) sem.hidden = !ok;
+    if(ok) majBiomesCases();
     if(ok) succes('PONT', 'lanceur détecté — la forge peut écrire dans props.js');
     else discret('PONT', 'lancé hors application : export par copie et '
       + 'téléchargement uniquement');
