@@ -8,3 +8,13 @@ __pycache__/
 nav_out/
 .DS_Store
 Thumbs.db
+
+# Le lanceur construit
+application/
+build/
+icon.ico
+lanceur/icone.png
+*.spec.bak
+
+panne.log
+.sauvegardes/
