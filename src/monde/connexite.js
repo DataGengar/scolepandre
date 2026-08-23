@@ -36,7 +36,7 @@ import {rnd, ri, rf} from '../noyau/rng.js';
 import {BIOMES} from './biomes.js';
 import {
   GW, GH, CELL, FLOOR, STEPUP,
-  grid, floorH, blocked, vide, platform, falaise, biome, pont,
+  grid, floorH, ceilH, blocked, vide, platform, falaise, biome, pont,
   idx, isFloor,
 } from './grille.js';
 
@@ -48,9 +48,12 @@ export const composante = new Int32Array(GW * GH);
 /** [{id, taille, cellule}] trié par taille décroissante. */
 export const morceaux = [];
 
-/* Praticable pour le JOUEUR : du sol, pas d'élément massif, pas de vide. */
+/* Praticable pour le JOUEUR : du sol, pas d'élément massif, pas de vide —
+   OU un tablier, qui porte au-dessus du vide et relie ses deux rives.
+   L'oublier faisait tailler des rampes pour franchir des gouffres qu'un pont
+   enjambait déjà. */
 const praticable = i =>
-  grid[i] === FLOOR && !blocked[i] && !vide[i];
+  pont[i] || (grid[i] === FLOOR && !blocked[i] && !vide[i]);
 
 /* Deux cellules voisines sont reliées si la marche passe DANS LES DEUX SENS.
    C'est la nuance qui compte : une corniche d'où l'on saute sans pouvoir
@@ -245,7 +248,135 @@ export function relierLeMonde(lights, props){
     analyser();                              // la topologie a changé
   }
 
+  /* Les rampes ne savent franchir qu'un dénivelé. Ce qui reste isolé l'est
+     surtout par de la ROCHE — mesuré : 60 % des frontières de poche. On
+     perce. */
+  const galeries = percerEnclaves();
+
+  analyser();
   const apres = morceaux.length;
   const isoles = morceaux.filter(m => m.taille >= S.rampeTailleMin).length;
-  return {rampes, avant, apres, isoles};
+  return {rampes, galeries, avant, apres, isoles};
+}
+
+/* ═══════════════ PERCER LES ENCLAVES ═══════════════
+
+   ── LE CONSTAT ─────────────────────────────────────────────────────────────
+   Après les rampes, il restait en moyenne quatre morceaux significatifs
+   inatteignables. `outils/diag_passage.py` a dit pourquoi, en longeant leurs
+   frontières :
+
+       roche non creusée   60 %
+       falaise             15 %
+       élément de décor    15 %
+       gouffre             10 %
+
+   Ce ne sont donc ni les ponts ni le décor : ce sont des poches que le
+   creusement a ouvertes sans jamais les raccorder. Aucune rampe ne peut rien
+   pour elles — il n'y a pas de dénivelé à franchir, il y a un mur.
+
+   ── LA MÉTHODE ─────────────────────────────────────────────────────────────
+   Un seul parcours en largeur depuis TOUTE la composante principale à la
+   fois, qui se propage à travers la roche en retenant d'où il vient. Chaque
+   poche isolée n'a plus qu'à remonter cette chaîne jusqu'au monde connu, et
+   on creuse le long du chemin.
+
+   Une seule passe pour toutes les poches, au lieu d'une recherche par poche :
+   sur 1,18 M de cellules, la différence n'est pas cosmétique.
+
+   ── CE QU'ON CREUSE ────────────────────────────────────────────────────────
+   Une galerie d'une cellule, basse. L'altitude est interpolée entre les deux
+   bouts, ce qui rabote au passage la falaise qui aurait pu s'y trouver ; et
+   un élément qui condamnait la cellule est simplement libéré. La même passe
+   règle donc les trois causes sur quatre.
+
+   Ce n'est pas un couloir décoré : c'est une fissure. Elle a exactement le
+   rôle qu'elle doit avoir — dire « on peut passer par là », sans promettre
+   que ce soit agréable.                                                     */
+
+export function percerEnclaves(){
+  const S = SETUP.relief;
+  const n = N();
+
+  analyser();
+  if(morceaux.length < 2) return 0;
+
+  // la plus grande composante est la référence : c'est « le monde »
+  const principale = morceaux[0].id;
+
+  /* Les poches qui méritent une galerie. On ignore les miettes : creuser
+     jusqu'à une alcôve de trente cellules coûte le même travail et n'ouvre
+     rien. */
+  const aRelier = morceaux.filter(m => m.id !== principale
+                                    && m.taille >= S.enclaveTailleMin);
+  if(!aRelier.length) return 0;
+
+  /* ── parcours en largeur depuis toute la composante principale ──
+     `venuDe[i]` retient la cellule d'où l'on est arrivé en i : c'est ce qui
+     permet de rebrousser chemin sans refaire de recherche. */
+  const venuDe = new Int32Array(n).fill(-1);
+  const vu = new Uint8Array(n);
+  const file = new Int32Array(n);
+  let tete = 0, queue = 0;
+
+  for(let i = 0; i < n; i++)
+    if(composante[i] === principale){ vu[i] = 1; file[queue++] = i; }
+
+  const pousser = (de, vers) => {
+    if(vu[vers]) return;
+    if(vide[vers]) return;                 // on ne perce pas au-dessus du vide
+    vu[vers] = 1; venuDe[vers] = de; file[queue++] = vers;
+  };
+
+  while(tete < queue){
+    const c = file[tete++];
+    const x = c % GW, z = (c / GW) | 0;
+    if(x > 1)      pousser(c, c - 1);
+    if(x < GW - 2) pousser(c, c + 1);
+    if(z > 1)      pousser(c, c - GW);
+    if(z < GH - 2) pousser(c, c + GW);
+  }
+
+  /* ── pour chaque poche, la cellule la plus proche du monde ── */
+  let galeries = 0;
+  for(const m of aRelier){
+    if(galeries >= S.nbGaleries) break;
+
+    // on cherche, dans la poche, la cellule que le parcours a atteinte
+    let depart = -1;
+    for(let i = 0; i < n; i++){
+      if(composante[i] !== m.id || !vu[i]) continue;
+      depart = i; break;
+    }
+    if(depart < 0) continue;               // poche murée par du vide : tant pis
+
+    if(creuserGalerie(depart, venuDe)) galeries++;
+  }
+  return galeries;
+}
+
+/** Remonte la chaîne `venuDe` depuis `depart` et creuse tout du long. */
+function creuserGalerie(depart, venuDe){
+  const chemin = [];
+  let c = depart, garde = 0;
+  while(c >= 0 && garde++ < 4000){
+    chemin.push(c);
+    c = venuDe[c];
+  }
+  if(chemin.length < 2) return false;
+
+  const hA = floorH[chemin[0]];
+  const hB = floorH[chemin[chemin.length - 1]];
+
+  for(let k = 0; k < chemin.length; k++){
+    const i = chemin[k];
+    const u = k / (chemin.length - 1);
+    // interpolation : la galerie rabote la falaise qu'elle traverse
+    const y = hA + (hB - hA) * u;
+    grid[i] = FLOOR;
+    floorH[i] = y;
+    blocked[i] = 0;                         // un élément qui condamnait cède
+    if(ceilH[i] < y + 2.0) ceilH[i] = y + 2.0;
+  }
+  return true;
 }
