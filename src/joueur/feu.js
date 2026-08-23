@@ -152,11 +152,14 @@ export function feuProche(x, z, joueur, torcheAllumee){
     if(d < portee && d < bd){ bd = d; best = {x:fx, z:fz, d}; }
   };
 
-  for(const f of feux) tester(f.x, f.z, F.portéeRepulsion);
-  for(const f of fuseesActives) tester(f.x, f.z, F.portéeRepulsion * 1.3);
+  /* La portée vient de SETUP.jeunes.peurDuFeu : c'est une propriété des
+     JEUNES, pas du feu. La ranger côté créature permet de la régler avec le
+     reste de leur comportement. */
+  const R = SETUP.jeunes.peurDuFeu;
+  for(const f of feux) tester(f.x, f.z, R);
+  for(const f of fuseesActives) tester(f.x, f.z, R * 1.45);
   // la lampe brandie : seulement si elle est allumée ET brandie
-  if(inventaire.brandit && torcheAllumee)
-    tester(joueur.x, joueur.z, F.portéeRepulsion * 0.8);
+  if(inventaire.brandit && torcheAllumee) tester(joueur.x, joueur.z, R * 0.7);
 
   return best;
 }
@@ -185,7 +188,10 @@ export function chaleurDuFeu(x, z){
   let g = 0;
   for(const f of feux)
     if(Math.hypot(f.x-x, f.z-z) < F.rayonFeu) g = Math.max(g, SETUP.froid.gainFeu);
+  /* Une fusée éclaire dans rayonFusee mais ne réchauffe que dans son tiers :
+     c'est une torche de détresse, pas un foyer. */
   for(const f of fuseesActives)
-    if(f.posee && Math.hypot(f.x-x, f.z-z) < 3) g = Math.max(g, SETUP.froid.gainFeu*0.4);
+    if(f.posee && Math.hypot(f.x-x, f.z-z) < F.rayonFusee/3)
+      g = Math.max(g, SETUP.froid.gainFeu*0.4);
   return g;
 }

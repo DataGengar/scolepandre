@@ -406,7 +406,8 @@ export const SETUP = {
     maxBoisPorte:6,
     dureeFeu:150,        // secondes de combustion d'un feu de camp
     rayonFeu:6,          // mètres où l'on se réchauffe
-    portéeRepulsion:9,   // mètres : les jeunes n'approchent pas
+    // la distance à laquelle les jeunes reculent est SETUP.jeunes.peurDuFeu :
+    // c'est une propriété de la bête, pas du feu.
 
     nbFusees:180,        // fusées de détresse au sol
     maxFuseesPortees:4,

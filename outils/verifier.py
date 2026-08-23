@@ -62,8 +62,17 @@ def avert(t):
 
 
 # ── 1 & 2 : graphe d'imports et exports réassignés ─────────────────────────
+# Le projet a DEUX points d'entrée : le jeu et l'éditeur. Ne partir que de
+# jeu.js faisait passer tout src/editeur/ pour du code mort.
+ENTREES = ["jeu.js", "editeur/editeur.js"]
+
+
 def controler_modules():
-    modules, ordre = bundler.charger(SRC / "jeu.js")
+    modules, ordre = {}, []
+    for e in ENTREES:
+        m, o = bundler.charger(SRC / e)
+        modules.update(m)
+        ordre.extend(x for x in o if x not in ordre)
 
     for e in bundler.verifier_liens(modules):
         err("IMPORT CASSÉ\n" + e)
