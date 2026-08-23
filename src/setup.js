@@ -82,15 +82,31 @@ export const SETUP = {
         morceaux du monde qui sont réellement COUPÉS les uns des autres, et ne
         pose une rampe qu'à la frontière la moins chère entre deux d'entre eux.
         D'où un nombre bien plus faible qu'en v3.1 — et chacune sert. */
+    /* ─── GALERIES DE PERÇAGE ───
+        Les rampes ne franchissent qu'un dénivelé. Ce qui restait isolé l'était
+        surtout par de la ROCHE — 60 % des frontières de poche, mesuré par
+        outils/diag_passage.py. monde/connexite.js perce donc une fissure
+        jusqu'aux poches qui en valent la peine. */
+    enclaveTailleMin:110,  // cellules : en dessous, une alcôve, on laisse
+    nbGaleries:70,         // borne haute : au-delà le monde devient un gruyère
+
     nbRampes:120,
     rampeChuteMax:11,      // au-delà, un escalier n'est plus plausible
     rampePasses:4,         // on recommence tant que ça relie encore
     rampeTailleMin:260,    // cellules : en dessous, c'est une miette
 
-    nbPonts:260,
-    pontLongMin:14,
-    pontLongMax:46,
-    pontTirantAir:3.6,   // dégagement sous le tablier
+    /* ─── PASSERELLES ───
+        Refaites en v4. Un tablier part du sol et y revient : plus de dalle
+        flottant à 3,6 m au-dessus des deux rives, plus d'échelle invisible,
+        plus de semis au hasard. Un pont franchit un gouffre, ou n'existe pas.
+        Il n'y a donc plus de « nombre de ponts » à régler : c'est le nombre de
+        gouffres franchissables qui le décide. */
+    pontPorteeMax:70,    // mètres : au-delà, aucune passerelle n'est crédible
+    pontDeniveleMax:5.0, // écart d'altitude toléré entre les deux rives
+    pontFlecheMax:1.8,   // creux au milieu — au-delà on plonge dans le trou
+    pontTeteMin:2.4,     // dégagement au-dessus du tablier, pour la tête
+    pontLargeur:2,       // cellules : 3 m. Une passerelle, pas une corde raide
+    pontEssais:14,       // décalages tentés le long de chaque gouffre
 
     mortChute:14,        // mètres de chute au-delà desquels on meurt
     degatChute:6,        // mètres au-delà desquels on est sonné
