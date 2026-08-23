@@ -18,6 +18,7 @@ import {proj, view, model, cam} from './camera.js';
 import {lpArr, lcArr, choisirLumieres, projeterGodrays} from './lumieres.js';
 import {batirCreature, batirJeune, dessinerCreatures} from '../creatures/geometrie.js';
 import {creerLune, directionLune} from './lune.js';
+import {dessinerCartes} from './carte-rendu.js';
 import {M} from '../noyau/math.js';
 
 export const pS = prog(VS, FS);
@@ -181,44 +182,9 @@ export function rendre(ctx){
     visuel.pavesVus++;
   }
 
-  /* ── CARTES ──
-     Retour de test : « les cartes n'ont plus leur bordure lumineuse ».
-     Deux causes, corrigées ensemble :
-       · le shader ne teintait PAS l'émissif (vC*uEmit au lieu de
-         vC*uTint*uEmit), donc le halo sortait blanc au lieu de porter la
-         couleur du rang — corrigé dans noyau/shaders.js ;
-       · les intensités étaient trop faibles pour survivre au fog, qui était
-         lui-même trois fois trop épais.
-     Trois passes maintenant : la face, un liseré large, et un halo très diffus
-     qui se voit à travers la brume. */
-  for(const k of cartes){
-    if(k.prise) continue;
-    const dx = k.x-joueur.x, dz = k.z-joueur.z;
-    const d2 = dx*dx + dz*dz;
-    if(d2 > 3600) continue;
-    const col = rangs[k.rang].couleur;
-    const bob = Math.sin(temps*1.6 + k.id)*0.12;
-    const puls = 0.82 + 0.18*Math.sin(temps*2.4 + k.id*1.7);
-    const yaw = temps*1.15 + k.id;
-    // la face
-    trs(model, k.x, k.y+bob, k.z, yaw, 0, 0, 0.62, 0.94, 0.045);
-    draw(meshCarte, col, 1.25*puls);
-    // le liseré : à peine plus grand, très lumineux
-    trs(model, k.x, k.y+bob, k.z, yaw, 0, 0, 0.74, 1.08, 0.02);
-    draw(meshCarte, col, 0.95*puls);
-    // le halo : large et faible, c'est lui qui perce le fog
-    trs(model, k.x, k.y+bob, k.z, yaw, 0, 0, 1.15, 1.55, 0.012);
-    draw(meshCarte, [col[0]*.5, col[1]*.5, col[2]*.5], 0.34*puls);
-  }
-
-  // ── combustible au sol
-  for(const f of combustibles){
-    if(f.pris) continue;
-    const dx = f.x-joueur.x, dz = f.z-joueur.z;
-    if(dx*dx + dz*dz > 1400) continue;
-    trs(model, f.x, f.y+Math.sin(temps*2+f.x)*0.05, f.z, temps*0.6, 0, 0, 0.30,0.30,0.30);
-    draw(meshCarte, [0.85,0.55,0.20], 0.42);
-  }
+  /* Les cartes ont leur propre programme, avec des UV et une texture : voir
+     rendu/carte-rendu.js. Elles sont dessinées après tout le reste, une fois
+     le programme du monde relâché. */
 
   /* ── OBJETS AU SOL ET FEUX ──
      Tous rendus avec la même boîte que les cartes : c'est cohérent visuellement
@@ -226,20 +192,39 @@ export function rendre(ctx){
   const proche = (x, z, r2) => { const dx = x-joueur.x, dz = z-joueur.z;
                                  return dx*dx + dz*dz < r2; };
 
+  /* Les objets à ramasser sont FINS. En v3.1 c'étaient de gros cubes de
+     40 à 55 cm posés au sol : « grossiers », et à juste titre — un fagot n'est
+     pas un dé. Chacun est maintenant fait de quelques baguettes minces, ce qui
+     coûte deux ou trois quads de plus et change tout à la lecture. */
   for(const b of monde.bois){
     if(b.pris || !proche(b.x, b.z, 1400)) continue;
-    trs(model, b.x, b.y, b.z, temps*0.3 + b.x, 0, 0.5, 0.55, 0.22, 0.22);
-    draw(meshCarte, [0.42,0.30,0.18], 0.06);
+    // trois branches croisées, presque à plat
+    for(let q=0;q<3;q++){
+      const a = q*1.05 + b.x*0.7;
+      trs(model, b.x + Math.cos(a)*0.05, b.y - 0.06 + q*0.045, b.z + Math.sin(a)*0.05,
+          a, 0, 1.5708, 0.052, 0.62, 0.052);
+      draw(meshCarte, [0.34,0.24,0.15], 0.05);
+    }
   }
   for(const f of monde.fusees){
     if(f.prise || !proche(f.x, f.z, 1400)) continue;
-    trs(model, f.x, f.y + Math.sin(temps*2 + f.x)*0.05, f.z, temps*0.9, 0, 0, 0.16,0.46,0.16);
-    draw(meshCarte, [1.0,0.35,0.30], 0.55);
+    const bob = Math.sin(temps*2 + f.x)*0.04;
+    // un tube élancé, plus une coiffe rouge : ça se lit comme une fusée
+    trs(model, f.x, f.y + bob, f.z, temps*0.9, 0, 0.35, 0.055, 0.40, 0.055);
+    draw(meshCarte, [0.72,0.70,0.66], 0.10);
+    trs(model, f.x, f.y + bob + 0.17, f.z, temps*0.9, 0, 0.35, 0.075, 0.10, 0.075);
+    draw(meshCarte, [1.3,0.30,0.22], 0.85);
   }
   for(const t of monde.trousses){
     if(t.prise || !proche(t.x, t.z, 2600)) continue;
-    trs(model, t.x, t.y + Math.sin(temps*1.7 + t.x)*0.08, t.z, temps*0.8, 0, 0, 0.42,0.30,0.30);
-    draw(meshCarte, [0.35,1.0,0.55], 0.70);
+    const bob = Math.sin(temps*1.7 + t.x)*0.055;
+    // une mallette plate, et la croix dessus
+    trs(model, t.x, t.y + bob, t.z, temps*0.5, 0, 0, 0.34, 0.11, 0.24);
+    draw(meshCarte, [0.62,0.62,0.60], 0.10);
+    trs(model, t.x, t.y + bob + 0.062, t.z, temps*0.5, 0, 0, 0.19, 0.012, 0.055);
+    draw(meshCarte, [0.30,1.1,0.55], 0.80);
+    trs(model, t.x, t.y + bob + 0.062, t.z, temps*0.5, 0, 0, 0.055, 0.012, 0.19);
+    draw(meshCarte, [0.30,1.1,0.55], 0.80);
   }
 
   /* Les feux et les fusées allumées : un cœur incandescent qui vacille. Le
@@ -280,8 +265,12 @@ export function rendre(ctx){
     const y = l.vol ? p.y : l.y;
     const dx = p.x-joueur.x, dz = p.z-joueur.z;
     if(dx*dx + dz*dz > 1400) continue;
-    trs(model, p.x, y, p.z, temps*1.4, 0, 0, 0.26,0.26,0.26);
-    draw(meshCarte, [0.75,0.68,0.42], 0.30);
+    // un caillou : trois éclats aplatis, pas un cube doré
+    const r = l.vol ? temps*7 : temps*0.4 + p.x;
+    trs(model, p.x, y, p.z, r, 0, 0.4, 0.17, 0.11, 0.14);
+    draw(meshCarte, [0.44,0.41,0.34], 0.05);
+    trs(model, p.x, y + 0.03, p.z, r + 1.1, 0, -0.3, 0.12, 0.09, 0.16);
+    draw(meshCarte, [0.52,0.48,0.40], 0.05);
   }
 
   // ── les créatures, en un seul appel
@@ -289,6 +278,14 @@ export function rendre(ctx){
   gl.uniform1f(uS.uEmit, 0.010);
   gl.uniformMatrix4fv(uS.uModel, false, IDENT);
   dessinerCreatures();
+
+  /* ── les cartes, avec leur programme texturé ──
+     Après le reste de la passe monde : elles écrivent dans le même tampon de
+     profondeur, donc elles s'occultent correctement avec le décor. */
+  if(ctx.identite) dessinerCartes({
+    proj, view, cam, cartes, rangs, identite: ctx.identite,
+    temps, fog: visuel.fog, fogD: visuel.fogD, modele: model, trs,
+  });
 
   /* ── passe écran ── */
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);

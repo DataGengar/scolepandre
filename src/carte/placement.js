@@ -42,7 +42,7 @@ export function placerCartes(){
 
     const rang = RANGS.indexOf(choisi);
     cartes.push({
-      x: c2w(c.x), y: floorH[i] + 1.1, z: c2w(c.z),
+      x: c2w(c.x), y: floorH[i] + SETUP.cartes.hauteurFlottement, z: c2w(c.z),
       rang, id: tirerDansRang(rang, ri), prise:false,
     });
   }
