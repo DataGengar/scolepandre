@@ -26,9 +26,17 @@ import {jeunes} from './jeunes.js';
 import {ST} from './etats.js';
 import {eclat, couleurPatte, interstice, couleurInterstice, poserLumieresYeux} from './lueurs.js';
 
-const C_SEG   = SETUP.creature.segments;
-const C_RING  = SETUP.creature.anneaux;
-const C_PAIRES= SETUP.creature.paires;
+/* Ces trois-là étaient figés à l'import (`const C_SEG = SETUP.creature.segments`),
+   ce qui rendait les curseurs d'anatomie de l'éditeur strictement inopérants :
+   on bougeait le nombre d'anneaux et rien ne changeait à l'écran. Ils sont
+   maintenant relus à chaque image. Le coût est nul — trois lectures de
+   propriété — et l'éditeur devient utile.
+
+   C_MAXV, lui, reste figé : il dimensionne les tampons GPU, alloués une fois.
+   D'où l'écrêtage dans cQuad() si l'on pousse l'anatomie trop loin. */
+const cSeg    = () => SETUP.creature.segments;
+const cRing   = () => SETUP.creature.anneaux;
+const cPaires = () => SETUP.creature.paires;
 const C_MAXV  = SETUP.creature.maxSommets;
 
 const cP  = new Float32Array(C_MAXV*3);
@@ -117,6 +125,8 @@ function cBulbe(p, r, col, res){
 /* ─────────────── la mère ─────────────── */
 
 export function batirCreature(temps){
+  // relus à chaque image : l'éditeur peut les changer à chaud
+  const C_SEG = cSeg(), C_RING = cRing(), C_PAIRES = cPaires();
   cN_ = 0;
   lumieresTemporaires.length = 0;
 

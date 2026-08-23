@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SCOLOPANDRE — éditeur</title>
+<!--
+  L'ÉDITEUR. Il tourne sur le moteur du jeu : mêmes shaders, mêmes primitives,
+  même code de génération. Ce qu'on y voit est ce qu'on aura en partie.
+
+  Comme le jeu, il exige un serveur (modules ES) :
+      python -m http.server 8000     puis  http://localhost:8000/editeur.html
+
+  Ce que l'éditeur produit est rangé dans le navigateur, et le jeu le relit tout
+  seul. « Jouer ce monde » ouvre simplement index.html.
+-->
+<style>
+  :root{--void:#07080a;--bone:#cfc7b4;--signal:#8fa88c;--alarm:#b4553f;
+        --dim:#6a6a64;--rule:#22252a;--fond:#0c0e11}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--void);color:var(--bone);overflow:hidden;
+    font-family:"SF Mono","Roboto Mono",Menlo,Consolas,monospace;font-size:12px;
+    -webkit-font-smoothing:antialiased}
+
+  #appli{display:grid;grid-template-rows:38px 1fr 22px;height:100%}
+
+  /* ── barre du haut ── */
+  #barre{display:flex;align-items:center;gap:8px;padding:0 12px;
+    border-bottom:1px solid var(--rule);background:var(--fond)}
+  #barre h1{font-size:11px;font-weight:400;letter-spacing:.34em;margin-right:10px}
+  .ong{padding:6px 14px;background:none;border:1px solid var(--rule);
+    color:var(--dim);font:inherit;font-size:10px;letter-spacing:.14em;cursor:pointer}
+  .ong:hover{color:var(--bone);border-color:var(--signal)}
+  .ong[aria-pressed="true"]{color:var(--bone);border-color:var(--signal);background:#11161b}
+  #barre .droite{margin-left:auto;display:flex;gap:6px}
+
+  /* ── corps ── */
+  #corps{display:grid;grid-template-columns:1fr 320px;overflow:hidden}
+  #scene{position:relative;background:#050607;overflow:hidden}
+  #scene>div{position:absolute;inset:0}
+  #gl{display:block;width:100%;height:100%}
+  #carte2d{display:block;width:100%;height:100%;cursor:crosshair}
+
+  #panneaux{border-left:1px solid var(--rule);background:var(--fond);
+    overflow-y:auto;padding:12px}
+  #panneaux h3{font-size:9px;font-weight:500;letter-spacing:.20em;color:var(--dim);
+    margin:16px 0 7px;padding-bottom:4px;border-bottom:1px solid var(--rule)}
+  #panneaux h3:first-child{margin-top:0}
+  #panneaux h4{font-size:9px;font-weight:400;letter-spacing:.16em;color:var(--dim);
+    margin:11px 0 5px}
+
+  label{display:block;margin:0 0 7px;color:var(--dim);font-size:10px}
+  label i{font-style:normal;color:var(--signal);float:right}
+  input[type=text],input[type=number],select,textarea{
+    width:100%;margin-top:2px;padding:4px 6px;background:#0a0c0f;
+    border:1px solid var(--rule);color:var(--bone);font:inherit;font-size:11px}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:2px;
+    margin-top:6px;background:var(--rule);outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;
+    background:var(--bone);cursor:ns-resize}
+  input[type=color]{width:100%;height:24px;margin-top:2px;padding:0;
+    background:none;border:1px solid var(--rule)}
+  textarea{font-size:10px;line-height:1.45;resize:vertical}
+
+  button{padding:5px 10px;background:#11141a;border:1px solid var(--rule);
+    color:var(--dim);font:inherit;font-size:10px;letter-spacing:.08em;cursor:pointer}
+  button:hover{color:var(--bone);border-color:var(--signal)}
+  button.fort{color:var(--bone);border-color:var(--signal)}
+  button[aria-pressed="true"]{color:var(--bone);border-color:var(--signal);background:#11161b}
+  .rangee{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
+  .rangee button{flex:1 1 auto}
+
+  .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px}
+  .cases{display:grid;grid-template-columns:1fr 1fr;gap:2px 8px}
+  .case{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10px}
+  .case input{width:auto;margin:0}
+  .aide{color:var(--dim);font-size:10px;line-height:1.6;margin:6px 0}
+  .aide span{color:var(--signal)}
+
+  .liste{display:flex;flex-wrap:wrap;gap:3px;max-height:130px;overflow-y:auto;
+    margin-bottom:8px}
+  .pt{padding:3px 7px;font-size:9px}
+  .pt.sel{color:var(--bone);border-color:var(--signal);background:#11161b}
+
+  #etatBarre{display:flex;align-items:center;padding:0 12px;font-size:10px;
+    letter-spacing:.08em;color:var(--dim);border-top:1px solid var(--rule);
+    background:var(--fond)}
+  #fichier{display:none}
+</style>
+</head>
+<body>
+<div id="appli">
+
+  <div id="barre">
+    <h1>ÉDITEUR</h1>
+    <button class="ong" id="ong-terrain"  aria-pressed="true">Terrain</button>
+    <button class="ong" id="ong-assets">Assets</button>
+    <button class="ong" id="ong-creature">Créature</button>
+    <div class="droite">
+      <button id="btOuvrir">Ouvrir…</button>
+      <button id="btSauver">Enregistrer</button>
+      <input type="file" id="fichier" accept=".json,application/json">
+    </div>
+  </div>
+
+  <div id="corps">
+    <div id="scene">
+      <div id="vue-terrain"><canvas id="carte2d"></canvas></div>
+      <div id="vue-assets"  hidden><div id="hote3d-assets"  style="width:100%;height:100%"></div></div>
+      <div id="vue-creature" hidden><div id="hote3d-creature" style="width:100%;height:100%"></div></div>
+      <!-- le contexte WebGL n'existe qu'une fois : editeur.js déplace ce
+           canvas dans l'onglet actif -->
+      <canvas id="gl" hidden></canvas>
+    </div>
+    <div id="panneaux">
+      <div id="pan-terrain"></div>
+      <div id="pan-assets"  hidden></div>
+      <div id="pan-creature" hidden></div>
+    </div>
+  </div>
+
+  <div id="etatBarre">—</div>
+</div>
+
+<script type="module" src="src/editeur/editeur.js"></script>
+</body>
+</html>
