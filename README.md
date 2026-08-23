@@ -8,7 +8,19 @@ obligatoire, un moteur maison.
 
 ---
 
-## Éditeur
+## L'application
+
+```sh
+python outils/construire_exe.py   # → application/Scolopandre/Scolopandre.exe
+python -m lanceur                 # ou directement, sans construire
+```
+
+Une fenêtre : **JOUER**, **Ouvrir la forge**, les vérifications, et une console
+où lire ce qui s'est passé. Elle sert le jeu par un serveur local — les modules
+ES l'exigent — et l'ouvre dans une fenêtre d'application Chrome ou Edge.
+Voir [`lanceur/README.md`](lanceur/README.md).
+
+## La forge
 
 ```sh
 python -m http.server 8000        # puis http://localhost:8000/editeur.html
@@ -16,7 +28,11 @@ python -m http.server 8000        # puis http://localhost:8000/editeur.html
 
 Trois onglets, sur le moteur du jeu : **TERRAIN** (poser des zones — quel biome
 où, et ce qu'on a le droit d'y générer), **ASSETS** (composer un élément de
-décor), **CRÉATURE** (régler le scolopandre en le regardant bouger).
+décor à partir de cinq primitives et d'une pile de modificateurs),
+**CRÉATURE** (régler le scolopandre en le regardant bouger).
+
+Lancée depuis l'application, elle **écrit directement dans
+`src/monde/props.js`**. Sinon, elle produit un extrait à coller.
 Voir [`src/editeur/README.md`](src/editeur/README.md).
 
 ## Jouer

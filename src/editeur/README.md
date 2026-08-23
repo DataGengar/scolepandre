@@ -1,67 +1,149 @@
-# editeur/ — l'éditeur visuel
+# editeur/ — la forge
 
 ```sh
-python -m http.server 8000        # puis http://localhost:8000/editeur.html
+Scolopandre.exe                   → « Ouvrir la forge »
+python -m http.server 8000        → http://localhost:8000/editeur.html
 ```
 
-Il tourne **sur le moteur du jeu** : mêmes shaders, mêmes primitives, même code
-de génération. Ce que tu vois ici est ce que tu auras en partie. Un éditeur qui
-rend autrement que le moteur ment, et on s'en aperçoit trop tard.
+Elle tourne **sur le moteur du jeu** : mêmes shaders, mêmes primitives, même
+code de génération. Ce que tu vois ici est ce que tu auras en partie. Un
+éditeur qui rend autrement que le moteur ment, et on s'en aperçoit trop tard.
 
 | fichier | rôle |
 |---|---|
 | `editeur.js` | assemblage, onglets, panneaux, boucle |
 | `apercu3d.js` | caméra orbitale + rendu, sur les shaders du jeu |
 | `terrain.js` | la carte de dessus : tracer des zones |
-| `assets.js` | composer un élément de décor |
+| `assets.js` | la forge d'éléments : bibliothèque, sélection, export |
+| `primitives.js` | la description des cinq formes, qui construit l'interface |
+| `modificateurs.js` | miroir, réseau, radial, dispersion, bruit |
 | `creature-edit.js` | régler le scolopandre en le regardant |
-| `projet.js` | enregistrer / ouvrir |
+| `pont.js` | écrire sur le disque, quand le lanceur est là |
+| `console.js` | le journal horodaté du bas |
+| `theme.css` | la palette d'Héphaïstos |
+
+---
 
 ## TERRAIN — dire où se trouve quoi
 
-Tu traces des **zones** sur la planche. Chacune dit, pour ce qu'elle couvre :
+Tu traces des **zones**. Chacune dit, pour ce qu'elle couvre : quel **biome**
+(ou `auto`, c'est-à-dire « laisse la stratigraphie décider »), quelle
+**altitude** avec sa pente, **ce qu'on a le droit d'y générer** — décor,
+lumières, gouffres, ponts, cachettes, villages, cartes, créatures — et à quelle
+**densité**.
 
-- **quel biome** y règne — ou `auto`, c'est-à-dire « laisse la stratigraphie
-  décider selon l'altitude », exactement comme un monde sans plan ;
-- **quelle altitude** imposer, avec une pente éventuelle ;
-- **ce qu'on a le droit d'y générer** : décor, lumières, gouffres, ponts,
-  cachettes, villages, cartes, créatures. C'est ça, « quels endroits peuvent
-  être générés aléatoirement ou en fonction du biome spécifié » ;
-- à **quelle densité**.
-
-**La dernière zone tracée l'emporte** : on peut poser une grande glacière, puis
-y découper un morceau plus petit par-dessus. Comme des calques.
-
-Hors zone, rien ne change : le monde reste procédural. **Un plan vide n'a
-strictement aucun effet** — c'est la garantie que l'éditeur ne casse rien tant
-qu'on ne s'en sert pas.
+**La dernière zone tracée l'emporte** : on pose une grande glacière, puis on y
+découpe un morceau. Comme des calques. Hors zone, rien ne change : **un plan
+vide n'a strictement aucun effet**, ce qui garantit que la forge ne casse rien
+tant qu'on ne s'en sert pas.
 
 `Générer un aperçu` lance la vraie génération et photographie le résultat en
-couleurs de biome. C'est la vérification : on voit tout de suite si une zone est
-trop petite pour contenir un village, ou si un biome imposé n'a produit aucune
-salle. `Jouer ce monde` ouvre le jeu, qui relit le plan tout seul.
+couleurs de biome. La console dit combien de cellules de sol chaque zone a
+produit — **et prévient si une zone n'en produit aucune**, ce que rien à
+l'écran ne montrerait.
 
-Souris : tracer au clic gauche · `MAJ`+glisser pour déplacer la vue · molette
-pour zoomer.
+Souris : clic **tracer** · `MAJ`+glisser **déplacer** · molette **zoom**.
 
-## ASSETS — composer un élément
+---
 
-Deux façons de commencer :
+## ASSETS — la forge
 
-1. **Charger un élément du jeu** — pilier, maison, carcasse, crâne… L'éditeur
-   appelle la vraie fonction `addProp()` dans un bac à sable et récupère la
-   géométrie produite. C'est l'élément tel qu'il apparaît en partie, pas une
-   imitation. C'est le mode le plus utile : la plupart du temps on ne veut pas
-   inventer, on veut corriger.
-2. **Empiler des primitives** — `bloc` (une boîte) et `tube` (un prisme à N
-   côtés entre deux points). Les deux acceptent `émissif`.
+### Les cinq formes
 
-`Copier le code` produit un extrait prêt à coller dans le `switch` de
-`monde/props.js`. Le jeu ne charge pas d'assets à l'exécution — tout y est
-procédural, et c'est ce qui lui permet de tenir en un seul fichier.
+| forme | triangles | pour quoi |
+|---|---|---|
+| **bloc** | 12 | tout ce qui est bâti |
+| **coin** | 8 | toits, rampes, éboulis, appuis |
+| **plaque** | 4 | panneaux, planches, tôles — *les objets fins* |
+| **tube** | 3N−2 | troncs, os, câbles, cannelures |
+| **roche** | 20 ou 80 | la seule forme sans arêtes vives |
 
-Souris : clic gauche pour orbiter · clic droit pour la panoramique · molette
-pour zoomer.
+`coin`, `plaque` et `roche` sont neuves en v3.4, ainsi que le **lacet** `ry`.
+Jusque-là une boîte ne pouvait que s'incliner : impossible de poser une caisse
+de biais ou d'orienter une maison autrement que face au nord. On composait donc
+tout sur les axes, et ça se voyait.
+
+Chaque forme se décrit elle-même dans `primitives.js` — ses champs, leurs
+bornes, comment les lire. Le panneau est construit à partir de cette
+description. Ajouter un paramètre, c'est ajouter une ligne, pas trois.
+
+`convertir en` change la forme en gardant position et taille : on pose un bloc,
+on se rend compte qu'un coin irait mieux, on ne ressaisit pas six nombres.
+
+### Les modificateurs
+
+C'est ce qui sépare un empilement de blocs d'un outil de composition. Une
+grille de barreaux, une cage thoracique, une palissade, un tas d'éboulis : ces
+objets ont une **règle**. Les décrire pièce par pièce, c'est copier-coller sa
+propre règle à la main.
+
+Une pile s'applique aux primitives de base :
+
+```
+base ─▶ miroir ─▶ réseau ×8 ─▶ bruit ─▶ ce qu'on voit
+```
+
+| modificateur | ce qu'il fait |
+|---|---|
+| **Miroir** | symétrie sur X ou Z. La base de tout ce qui est bâti. |
+| **Réseau** | N copies en ligne, avec pas, rotation et échelle par copie. |
+| **Radial** | N copies en couronne, orientées ou non. |
+| **Dispersion** | N copies au hasard dans un disque, graine fixe. |
+| **Bruit** | dérègle chaque part un peu. Ce qui sépare le bâti du fabriqué. |
+
+**La base reste modifiable** : change une dimension, les quarante copies
+suivent. L'ordre compte — un miroir après un réseau ne donne pas la même chose
+qu'avant. `Figer la pile` transforme le résultat en nouvelle base, pour
+retoucher trois copies sur quarante à la main.
+
+Tout ce qui tire au sort le fait sur une graine locale : un asset est identique
+d'une session à l'autre, et régler un modificateur ne décale pas le monde.
+
+Au-delà de 6 000 primitives la pile est **tronquée** plutôt que refusée : une
+pile qui explose est une pile qu'on est en train de régler, et couper net en le
+disant vaut mieux qu'une page figée.
+
+### Juger ce qu'on fait
+
+- **silhouette 1,75 m** — sans repère, on modélise des portes de trois mètres
+  sans s'en apercevoir ;
+- **éclairage jeu** — une seule lampe à l'œil, sombre, comme la lampe de poche.
+  Un caillou magnifique en studio peut être une tache noire dans un souterrain ;
+- **teinte du biome** — l'objet dans la lumière où il vivra ;
+- **budget** — `confortable` sous 200 triangles, `tendu` sous 600, `lourd`
+  au-delà. Le décor pose des milliers d'éléments par pavé ;
+- **base seule** — voir les primitives sans la pile.
+
+### Commandes
+
+Clic gauche **orbiter** · clic droit **panoramique** · molette **zoom** ·
+clic net sur une pièce pour la **sélectionner** (`MAJ` pour en ajouter).
+
+| touche | |
+|---|---|
+| `Ctrl+Z` / `Ctrl+Y` | annuler / rétablir |
+| `Ctrl+D` | dupliquer · `Suppr` supprimer · `Ctrl+A` tout |
+| flèches, `Pg↑` `Pg↓` | déplacer d'un cran (`MAJ` = ×4) |
+| `F` | recadrer |
+
+### Sortir vers le jeu
+
+`Copier le code` produit le bloc `case` complet.
+
+**`Écrire dans props.js`** le pose directement dans le jeu — le bouton
+n'apparaît que si le lanceur tourne (voir `lanceur/README.md`). Le serveur
+remplace le `case` s'il existe, l'ajoute sinon, garde une copie horodatée dans
+`.sauvegardes/`, et refuse d'écrire si le fichier n'est plus équilibré.
+
+Le code contient le **résultat**, pas la recette : le jeu ne charge aucun asset
+à l'exécution, et c'est ce qui lui permet de tenir en un seul fichier. La
+recette, elle, est conservée dans le projet.
+
+> Poser un `case` ne suffit pas à faire apparaître l'élément dans le monde : il
+> faut aussi l'ajouter à une table de semis de `props.js`. La console le
+> rappelle après chaque ajout.
+
+---
 
 ## CRÉATURE — régler le scolopandre
 
@@ -70,35 +152,42 @@ maillage, c'est un algorithme. Son corps est reconstruit à chaque image à part
 de sa trace, de son état et d'une quarantaine de paramètres. Il n'y a pas de
 sommets à déplacer, il y a des nombres à régler.
 
-L'onglet expose ces nombres et rejoue le **vrai** code de `creatures/geometrie.js`.
-Ce qui tourne là est littéralement la bête du jeu.
+L'onglet expose ces nombres et rejoue le **vrai** code de
+`creatures/geometrie.js`.
 
-L'état (`traque`, `écoute`, `poursuite`…) change la grammaire des yeux et la
-cadence des pattes. La trace est factice — en jeu le corps suit l'historique des
-positions de la tête, qui est vide à l'arrêt — et son étirement et sa courbure
-se règlent, ce qui permet de juger l'ondulation.
+---
 
 ## Enregistrement
 
-**Navigateur** — automatique, à chaque modification. Le jeu lit le plan au même
-endroit : « éditer puis jouer » ne demande aucune manipulation.
+**Navigateur** — automatique. Le jeu lit le plan au même endroit : « éditer
+puis jouer » ne demande aucune manipulation.
 
 **Fichier `.json`** — par les boutons, ou en glissant un fichier sur la page.
-C'est ce qu'on met sur le dépôt.
 
-Un projet ne conserve de `SETUP` **que les valeurs modifiées**. Enregistrer
-`SETUP` en entier figerait les défauts du jour ; en ne gardant que les écarts, un
-projet reste valable après une mise à jour du jeu.
+Un projet garde la **bibliothèque entière, piles comprises** : ce sont les
+recettes qu'on voudra reprendre. Il ne conserve de `SETUP` que les valeurs
+modifiées — enregistrer `SETUP` en entier figerait les défauts du jour, alors
+qu'en ne gardant que les écarts un projet reste valable après une mise à jour.
+
+---
 
 ## Vérification
 
 ```sh
-python outils/smoke_editeur.py
+python outils/smoke_formes.py     # les 5 primitives, sommet par sommet
+python outils/smoke_editeur.py    # une séance complète
+python outils/smoke_pont.py       # la forge écrit-elle vraiment dans le jeu ?
 ```
 
-Joue une séance complète en headless : trace une zone, lui impose un biome, lui
-interdit les villages, **génère et vérifie que le générateur a suivi**, charge
-les 21 types d'éléments, fait tourner la créature, enregistre et relit.
+`smoke_formes` compte les triangles réellement produits, cherche les sommets
+non finis et les normales nulles, et vérifie que le lacet fait tourner la
+géométrie. Une primitive fausse ne lève aucune exception : elle produit une
+forme qui « rend bizarre » dans le noir, une fois sur cinquante.
 
-Le point qui compte est le troisième : un éditeur qui dessine sans que le
-générateur suive ne sert à rien.
+`smoke_editeur` trace une zone, lui impose un biome, lui interdit les villages,
+génère, **vérifie que le générateur a suivi**, pose les cinq formes, applique
+chaque modificateur, éprouve l'annulation et la visée au clic.
+
+`smoke_pont` est le seul qui prouve que la forge sert à quelque chose : il
+compose un élément dans un vrai navigateur, l'écrit dans une copie du projet,
+et relit le fichier.

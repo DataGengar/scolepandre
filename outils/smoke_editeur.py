@@ -180,9 +180,150 @@ MOCK = """
       log('  ' + A.TYPES.length + ' types testés, ' +
           (manques.length ? 'VIDES : ' + manques.join(' ') : 'tous produisent de la géométrie'));
       A.chargerDuJeu('maison', 4, 1);
-      log('  maison : ' + A.asset.parts.length + ' primitives, '
+      log('  maison : ' + A.el().parts.length + ' primitives, '
           + A.triangles() + ' triangles');
       log('  export code : ' + (A.versCode().indexOf('parts.push') > 0 ? 'ok' : 'VIDE'));
+    }
+
+    /* ── 3b. les cinq primitives, posées et mesurées ── */
+    if(n === 548){
+      var A = window.__ASSETS;
+      log('--- primitives ---');
+      A.ajouterElement('essaiFormes');
+      A.vider();
+      var lignes = [];
+      for(var i=0;i<A.ORDRE.length;i++){
+        var forme = A.ORDRE[i];
+        var avant = A.triangles();
+        A.ajouter(forme);
+        lignes.push(forme + ' +' + (A.triangles() - avant));
+      }
+      log('  ' + lignes.join(' · ') + '  → ' + A.el().parts.length
+          + ' parts, ' + A.triangles() + ' triangles');
+      var st = A.stats();
+      log('  taille : ' + st.taille.map(function(v){return v.toFixed(2);}).join(' × ')
+          + ' m · budget ' + st.verdict);
+      var code = A.versCode();
+      var attendus = ['roche:[', 'plaque:1', 'coin:', 'tube:['];
+      var absents = attendus.filter(function(k){ return code.indexOf(k) < 0; });
+      log('  export : ' + (absents.length ? 'MANQUE ' + absents.join(' ')
+                                          : 'les 5 formes sont dans le code'));
+    }
+
+    /* ── 3c. la pile de modificateurs ── */
+    if(n === 556){
+      var A = window.__ASSETS;
+      log('--- modificateurs ---');
+      A.ajouterElement('essaiPile');
+      A.vider();
+      A.ajouter('bloc');
+      var base = A.triangles();
+      log('  base : ' + A.el().parts.length + ' part, ' + base + ' triangles');
+
+      var noms = Object.keys(A.MODIFS);
+      for(var i=0;i<noms.length;i++){
+        A.el().pile.length = 0;
+        A.ajouterModif(noms[i]);
+        A.salir();
+        var st = A.stats();
+        log('  ' + (noms[i] + '            ').slice(0,13) + ' → '
+            + st.parts + ' parts, ' + st.triangles + ' triangles'
+            + (st.tronque ? '  TRONQUÉ' : ''));
+        if(st.parts < 1) erreurs.push('modif ' + noms[i] + ' ne produit rien');
+      }
+
+      /* la pile entière, empilée : c'est le cas qui explose si l'on ne borne
+         pas — un réseau de réseaux part en puissance */
+      A.el().pile.length = 0;
+      A.ajouterModif('reseau');
+      A.ajouterModif('radial');
+      A.ajouterModif('bruit');
+      A.salir();
+      var st2 = A.stats();
+      log('  pile réseau+radial+bruit → ' + st2.parts + ' parts, '
+          + st2.triangles + ' triangles');
+      log('  étapes : ' + st2.etapes.map(function(e){
+            return e.type + '=' + (e.erreur || e.parts); }).join(' → '));
+
+      var avantFige = st2.parts;
+      var apresFige = A.figerPile();
+      log('  figer la pile : ' + avantFige + ' → ' + apresFige
+          + ' parts de base, pile ' + A.el().pile.length);
+      if(apresFige !== avantFige) erreurs.push('figerPile a changé le compte');
+    }
+
+    /* ── 3d. sélection, transformations, annulation ── */
+    if(n === 564){
+      var A = window.__ASSETS;
+      log('--- édition ---');
+      A.ajouterElement('essaiEdition');
+      A.vider();
+      A.ajouter('bloc'); A.ajouter('tube'); A.ajouter('roche');
+
+      A.toutSelectionner();
+      log('  tout sélectionner : ' + A.selection.size + ' / 3');
+
+      var b0 = A.bornes();
+      A.memoriser();
+      A.transformerSelection({t:[1, 0, 0]});
+      var b1 = A.bornes();
+      var dx = b1.centre[0] - b0.centre[0];
+      log('  translation de 1 m : Δx = ' + dx.toFixed(3)
+          + (Math.abs(dx - 1) < 0.02 ? '  ok' : '  FAUX'));
+      if(Math.abs(dx - 1) > 0.02) erreurs.push('translation incorrecte');
+
+      A.annuler();
+      var b2 = A.bornes();
+      log('  annuler : Δx = ' + (b2.centre[0] - b0.centre[0]).toFixed(3)
+          + (Math.abs(b2.centre[0] - b0.centre[0]) < 0.02 ? '  ok' : '  FAUX'));
+
+      A.retablir();
+      log('  rétablir : Δx = '
+          + (A.bornes().centre[0] - b0.centre[0]).toFixed(3));
+      A.annuler();
+
+      /* conversion : la position doit survivre au changement de forme */
+      A.selection.clear(); A.selection.add(0);
+      var c0 = A.el().parts[0];
+      var pos0 = [c0.x, c0.y, c0.z];
+      A.convertirSelection('coin');
+      var c1 = A.el().parts[0];
+      var bouge = Math.abs(c1.x-pos0[0]) + Math.abs(c1.y-pos0[1]) + Math.abs(c1.z-pos0[2]);
+      log('  bloc → coin : forme=' + A.formeDe(c1)
+          + ', déplacement ' + bouge.toFixed(3)
+          + (bouge < 0.01 ? '  ok' : '  A BOUGÉ'));
+
+      /* poser au sol */
+      A.toutSelectionner();
+      A.poserAuSol();
+      log('  poser au sol : y min = ' + A.bornes().min[1].toFixed(3));
+      if(Math.abs(A.bornes().min[1]) > 0.01) erreurs.push('poserAuSol laisse un écart');
+    }
+
+    /* ── 3e. le clic dans la vue 3D désigne bien une part ── */
+    if(n === 572){
+      var A = window.__ASSETS, V = window.__A3;
+      log('--- viser ---');
+      A.ajouterElement('essaiVisee');
+      A.vider();
+      A.ajouter('bloc');
+      A.el().parts[0].x = 0; A.el().parts[0].y = 0.5; A.el().parts[0].z = 0;
+      A.ajouterModif('miroir');       // pour vérifier que la pile est sauvegardée
+      A.salir();
+      V.cadrer([0, 0.5, 0], 1);
+
+      /* le rayon du centre de l'écran doit toucher la part, et celui d'un
+         coin doit la manquer — sinon la sélection au clic serait au hasard */
+      var gl = document.getElementById('gl');
+      var w = gl.width || 900, h = gl.height || 700;
+      var centre = V.rayonEcran(w/2, h/2);
+      var coin   = V.rayonEcran(6, 6);
+      var iC = A.viser(centre.o, centre.d);
+      var iX = A.viser(coin.o, coin.d);
+      log('  au centre : part ' + iC + (iC === 0 ? '  ok' : '  RATÉ'));
+      log('  dans le coin : part ' + iX + (iX < 0 ? '  ok (rien)' : '  FAUX POSITIF'));
+      if(iC !== 0) erreurs.push('le rayon du centre ne touche pas la part');
+      if(iX >= 0)  erreurs.push('le rayon du coin touche quand même');
     }
 
     /* ── 4. la créature ── */
@@ -218,6 +359,12 @@ MOCK = """
       log('  enregistré puis relu : ' + (ok ? 'ok' : 'ÉCHEC'));
       log('  identique après aller-retour : ' + (avant === apres ? 'oui' : 'NON'));
       log('  taille : ' + avant.length + ' octets');
+      var A = window.__ASSETS;
+      log('  bibliothèque : ' + A.biblio.elements.length + ' éléments ('
+          + A.biblio.elements.map(function(e){ return e.nom; }).join(', ') + ')');
+      var relu = PR.versObjet();
+      log('  piles conservées : ' + (relu.assets.elements.filter(function(e){
+            return e.pile && e.pile.length; }).length) + ' élément(s) avec pile');
       rapporter();
     }
   }

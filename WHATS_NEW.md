@@ -4,6 +4,191 @@ Suivi de l'évolution du projet.
 
 ---
 
+# v3.4 — 23 août 2026 · l'application, et la forge pour de vrai
+
+Deux demandes : le style d'Héphaïstos, et un `.exe` pour tester. La seconde a
+entraîné la troisième — une fois qu'un serveur local sert le jeu, la forge peut
+enfin écrire dedans.
+
+## SCOLOPANDRE.EXE
+
+```sh
+python outils/construire_exe.py     # → application/Scolopandre/Scolopandre.exe
+```
+
+Une fenêtre sombre : **JOUER**, **Ouvrir la forge**, les vérifications, et une
+console. 27 Mo, démarre en une seconde, aucune dépendance à installer.
+
+**Pourquoi une fenêtre plutôt qu'un raccourci.** Un raccourci suffirait à
+jouer ; il ne suffit pas à *rapporter*. Quand le monde ne se génère pas ou que
+le rendu se fige, il faut pouvoir dire quoi, et avoir une trace à recopier. La
+console est le vrai contenu de la fenêtre.
+
+**Pourquoi un serveur.** Le jeu est fait de modules ES ; un navigateur refuse
+`import` depuis `file://`. Écoute sur 127.0.0.1 uniquement, premier port libre
+à partir de 8757, sans cache.
+
+**Pourquoi Chrome en `--app`.** pywebview, c'est 150 Mo de dépendances et un
+WebGL en retard. Electron, c'est réécrire l'empaquetage. Chrome en mode
+application donne une fenêtre sans barre d'adresse, avec le WebGL du jour, pour
+zéro dépendance. Profil dédié sous `%LOCALAPPDATA%`, donc pas d'extensions dans
+la page et un `localStorage` qui survit.
+
+Deux pannes trouvées en le construisant, toutes deux invisibles :
+
+- l'entrée `lanceur/__main__.py` faisait un **import relatif**, ce qui ne marche
+  pas pour un script d'entrée gelé. En mode fenêtré, l'exécutable disparaissait
+  sans un mot. `lancer.py` importe en absolu **et** emballe tout : la trace part
+  désormais dans `panne.log` et dans une boîte de dialogue.
+- PyInstaller 6 range les données dans `_internal/`. Le contrôle de fin de
+  construction l'a attrapé — il est là pour ça : une donnée oubliée produit un
+  exécutable qui démarre très bien et affiche une fenêtre vide.
+
+Les données du jeu sont copiées **à plat** à côté de l'exécutable : le dossier
+construit ressemble au dépôt, et on peut corriger un module puis relancer sans
+reconstruire.
+
+## LE STYLE D'HÉPHAÏSTOS
+
+Palette « Rich Black » (`#0d1117` / `#161b22`), accent bleu `#58a6ff`,
+logotype à deux lignes dont le sous-titre est inter-lettré à la largeur du nom,
+libellés de section sur filet, console à six niveaux colorés. Les noms sont
+ceux d'Héphaïstos — `PANEL_BG`, `SECTION`, `MAGIC`, `LOG_COLORS` — pour que
+passer d'un projet à l'autre ne demande aucune traduction.
+
+Trois exemplaires de la même charte : `ui/theme.py` chez Héphaïstos,
+`src/editeur/theme.css` pour la forge, `lanceur/theme.py` pour le banc d'essai.
+
+**Le jeu garde sa palette os-et-vide.** C'est une direction artistique, pas une
+charte d'interface ; habiller un jeu d'horreur en bleu GitHub le tuerait.
+
+## LA FORGE ÉCRIT DANS LE JEU
+
+C'était le défaut de fond de la v3.3 : la forge produisait un extrait à
+recopier soi-même dans `props.js`. On le fait une fois. À la dixième, on ne le
+fait plus, et l'outil ne sert à rien.
+
+Le serveur du lanceur expose des routes `/_forge/…`. **`Écrire dans props.js`**
+pose l'élément directement dans le jeu — le bouton n'apparaît que si
+l'application tourne.
+
+Le serveur ne réécrit pas le fichier : il remplace **un** `case` du `switch`, en
+comptant les accolades et en sautant chaînes et commentaires. Sauvegarde
+horodatée avant chaque écriture, refus si le fichier n'est plus équilibré après
+coup, refus de tout chemin sortant du projet.
+
+## CINQ PRIMITIVES AU LIEU DE DEUX
+
+Le décor n'avait que la boîte et le prisme. Assez pour bâtir, pas pour
+sculpter — d'où les monolithes qui restaient des boîtes et les gravats qui
+ressemblaient à des dés.
+
+| forme | triangles | pour quoi |
+|---|---|---|
+| **coin** | 8 | toits, rampes, éboulis, appuis |
+| **plaque** | 4 | panneaux, planches — *les objets fins demandés en v3.2* |
+| **roche** | 20 / 80 | la seule forme sans arêtes vives du moteur |
+
+Et le **lacet** `ry` : jusqu'ici une boîte ne pouvait que s'incliner, jamais
+pivoter autour de la verticale. Impossible de poser une caisse de biais ou
+d'orienter une maison autrement que face au nord. On composait tout sur les
+axes, et ça se voyait.
+
+Le vocabulaire descend dans `src/monde/formes.js` : `props.js` en a besoin pour
+mesurer, la forge encore plus, et brancher la mesure avait créé un cycle
+d'import.
+
+**Un gaspillage trouvé au passage.** Une primitive qui veut un triangle passait
+un quad dont le 4ᵉ point est le 1ᵉʳ. Les deux émetteurs produisaient quand même
+deux triangles, dont un d'aire nulle — invisible, mais assemblé et rastérisé.
+La moitié du coût de chaque roche, de chaque bouchon de tube du monde entier.
+Corrigé : une comparaison par quad.
+
+## LES MODIFICATEURS
+
+C'est ce qui sépare un empilement de blocs d'un outil de composition. Une
+grille de barreaux, une cage thoracique, une palissade, un tas d'éboulis : ces
+objets ont une **règle**, et la décrire pièce par pièce revient à copier-coller
+sa propre règle à la main.
+
+```
+base ─▶ miroir ─▶ réseau ×8 ─▶ bruit ─▶ ce qu'on voit
+```
+
+**Miroir · Réseau · Radial · Dispersion · Bruit.** La base reste modifiable :
+change une dimension, les quarante copies suivent. L'ordre compte.
+`Figer la pile` transforme le résultat en nouvelle base.
+
+Tout tirage se fait sur une graine locale — un asset est identique d'une
+session à l'autre, et régler un modificateur ne décale pas le monde.
+
+## LE RESTE DE LA FORGE
+
+- **bibliothèque** de plusieurs éléments par projet, piles conservées ;
+- **sélection multiple**, au clic dans la vue 3D comme dans la liste, la
+  sélection surlignée en bleu ;
+- **annulation** `Ctrl+Z` / `Ctrl+Y`, magnétisme 5 cm, déplacement aux flèches ;
+- **conversion** d'une forme à l'autre en gardant position et taille ;
+- **silhouette de 1,75 m** — sans repère on modélise des portes de trois mètres
+  sans s'en apercevoir ;
+- **éclairage « jeu »** — une seule lampe à l'œil, sombre. Un caillou magnifique
+  en studio peut être une tache noire dans un souterrain ;
+- **budget de triangles**, `confortable` / `tendu` / `lourd` ;
+- **console** dans la forge aussi : la génération dit ce qu'elle fait, et
+  **prévient si une zone du plan n'a produit aucune cellule de sol** — ce que
+  rien à l'écran ne montrerait.
+
+## VÉRIFICATION
+
+Deux tests neufs.
+
+`outils/smoke_formes.py` contrôle les cinq primitives sommet par sommet. Une
+primitive fausse ne lève aucune exception : elle produit une forme qui « rend
+bizarre » dans le noir, une fois sur cinquante.
+
+```
+forme            tri   dit  boîte englobante    rayon
+bloc              12    12  2.00×4.00×1.00      1.000
+bloc+lacet        12    12  1.00×4.00×2.00      1.118
+coin               8     8  2.00×1.00×3.00      1.500
+plaque             4     4  1.20×0.80×0.00      0.600
+tube              22    22  0.55×2.00×0.55      0.300
+roche             20    20  0.97×0.92×0.79      0.630
+roche+sub         80    80  1.02×1.03×1.09      0.630
+roche reproductible : identique=oui, différente si autre graine=oui
+lacet 90° : 4,00×0,50 → 0,50×4,00
+```
+
+`outils/smoke_pont.py` est le seul qui prouve que la forge sert à quelque
+chose : il compose un élément dans un vrai navigateur, l'écrit dans une copie
+du projet, relit le fichier et revérifie sa syntaxe.
+
+```
+composé : 1 base → 7 parts, 84 triangles, confortable
+écriture 1 : ajouté     écriture 2 : remplacé     écriture 3 : ajouté
+props.js contient 23 case · les deux éléments sont présents
+nom invalide refusé · 3 sauvegardes · syntaxe ok
+```
+
+Ces tests ont trouvé quatre vrais défauts : les comptes de triangles annoncés
+étaient faux pour trois formes sur cinq, `etenduePart()` sous-estimait les
+formes inclinées, les quads dégénérés doublaient le coût, et **le rayon de
+sélection partait vers +Z alors que la caméra regarde vers −Z** — cliquer sur
+un objet n'aurait jamais rien sélectionné, sans que rien à l'écran ne
+l'explique.
+
+## CE QUI RESTE
+
+- **Ni le rendu ni l'audio n'ont encore été vus.** WebGL est simulé dans tous
+  les tests. C'est la limite de fond du dispositif.
+- Poser un `case` ne suffit pas à faire apparaître un élément dans le monde :
+  il faut l'ajouter à une table de semis. La console le rappelle, la forge ne
+  le fait pas encore.
+- L'onglet TERRAIN n'a toujours pas de prévisualisation 3D navigable.
+- La mère ne monte pas sur les passerelles (navigation à un seul niveau).
+
+---
+
 # v3.3 — 23 août 2026 · l'éditeur
 
 `editeur.html`, à côté de `index.html`. Il tourne **sur le moteur du jeu** :
