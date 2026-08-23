@@ -32,6 +32,7 @@ import {addProp} from './monde/props.js';
 import {majPaves, indexerProps, libererTousLesPaves, paves} from './monde/maillage.js';
 import {placerSortie, atteinte, objectif} from './monde/sortie.js';
 import {lireCartePNG} from './monde/import-png.js';
+import {plan, chargerPlan, planActif} from './monde/plan.js';
 import {villages, trousses, bois, fusees, dansSafe, dansCabane,
         marquerDecouvert, chargerVillagesVus} from './monde/villages.js';
 import {pancartes, chargerPancartes, poser as poserPancarte,
@@ -515,6 +516,10 @@ function simuler(dt){
   }
   const gainFeu = chaleurDuFeu(joueur.x, joueur.z);
   const auChaud = !!brasero || !!safe || gainFeu > 0;
+  /* La place d'un village réchauffe un peu moins vite qu'un brasero : on est
+     près des feux, pas dessus. SETUP.villages.safeChaleur porte cet écart. */
+  if(safe && !brasero && froid.chaleur < 100)
+    froid.chaleur = Math.min(100, froid.chaleur + SETUP.villages.safeChaleur*dt);
   const F = updateFroid(dt, joueur, jeu.ventForce, auChaud, {
     souffle: i => Audio.effets.souffle(i),
     coeur:   i => Audio.effets.coeur(i),
@@ -657,7 +662,7 @@ function dessinerImage(dt, dP){
   const P = SETUP.froid.paliers[froid.palier];
   construireVue(joueur, jeu.temps, tampon.w/tampon.h, P.vision, joueur.derive);
 
-  const gainLampe = (torche.on ? 1 : 0.07)
+  const gainLampe = (torche.on ? 1 : SETUP.lampe.gainEteinte)
     * (0.45 + 0.55*Math.min(1, (froid.chaleur/100)*2.4))
     * (joueur.abrite ? 0.35 : 1);
 
@@ -682,6 +687,11 @@ async function demarrer(){
   jeu.meshCarte = boite(-0.5, 0.5);
   creerCreature();
   resize();
+
+  /* Le plan de l'éditeur, s'il y en a un. Vide, le monde reste entièrement
+     procédural — c'est la garantie que l'éditeur ne change rien tant qu'on ne
+     s'en sert pas. */
+  if(chargerPlan()) console.log('PLAN', plan.nom, plan.zones.length + ' zones');
 
   chargerCollection();
   sonderStacks(() => majAffichage());

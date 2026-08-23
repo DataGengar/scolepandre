@@ -25,6 +25,7 @@ import {
   idx, inB, isFloor, isFree, celluleLibre,
 } from './grille.js';
 import {BIOMES} from './biomes.js';
+import {autorise} from './plan.js';
 
 export const cachettes = [];
 
@@ -40,8 +41,10 @@ export function placerCachettes(props){
   for(let essai=0; essai<60000 && cachettes.length < S.nombre; essai++){
     const c = celluleLibre(ri);
     const i0 = idx(c.x, c.z);
-    // on veut une paroi juste à côté : la cachette se creuse dedans
-    if(openN[i0] > 0.55) continue;          // plutôt un boyau qu'une salle
+    // on veut une paroi juste à côté : la cachette se creuse dedans,
+    // et plutôt dans un boyau que dans une salle
+    if(openN[i0] > 0.55) continue;
+    if(!autorise('cachettes', c.x, c.z)) continue;
 
     let dir = null;
     for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){

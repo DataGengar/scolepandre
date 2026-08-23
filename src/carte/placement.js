@@ -12,6 +12,7 @@ import {
   idx, floorH, blocked, c2w, celluleLibre, profondeurDe,
 } from '../monde/grille.js';
 import {RANGS, rangsPermis} from './rangs.js';
+import {autorise} from '../monde/plan.js';
 import {tirerDansRang} from './catalogue.js';
 
 /** [{x,y,z,rang,id,prise}] */
@@ -25,6 +26,7 @@ export function placerCartes(){
     const c = celluleLibre(ri);
     const i = idx(c.x, c.z);
     if(blocked[i]) continue;
+    if(!autorise('cartes', c.x, c.z)) continue;
 
     const prof = profondeurDe(floorH[i]);
     const permis = rangsPermis(prof);

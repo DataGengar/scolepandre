@@ -30,6 +30,7 @@ import {
   idx, inB, isFloor, isFree, c2w, celluleLibre,
 } from './grille.js';
 import {addProp, lights, props} from './props.js';
+import {autorise} from './plan.js';
 
 /** [{x, z, y, rayon, safe, trousses:[…]}] */
 export const villages = [];
@@ -53,6 +54,7 @@ export function placerVillages(){
     const i0 = idx(c.x, c.z);
     // il faut de la place : un village dans un boyau n'a pas de sens
     if(openN[i0] < 0.58) continue;
+    if(!autorise('villages', c.x, c.z)) continue;
 
     const wx = c2w(c.x), wz = c2w(c.z);
     if(villages.some(v => Math.hypot(v.x-wx, v.z-wz) < V.ecartMin)) continue;

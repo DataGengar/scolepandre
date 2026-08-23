@@ -25,6 +25,7 @@ import {
   idx, isFloor, isFree, c2w, celluleLibre,
 } from './grille.js';
 import {salles} from './generation.js';
+import {autorise, densiteEn} from './plan.js';
 
 export const props = [], lights = [], colliders = [];
 
@@ -469,6 +470,9 @@ export function placerProps(){
   for(let k=0; k<S.semis; k++){
     const x = ri(2,GW-3), z = ri(2,GH-3), i = idx(x,z);
     if(!isFloor(x,z) || blocked[i]) continue;
+    // le plan peut vider une zone de son décor, ou l'en gaver
+    if(!autorise('decor', x, z)) continue;
+    if(rnd() > densiteEn(x, z)) continue;
     const set = BIOMES[biome[i]].props;
     const kind = set[ri(0, set.length-1)];
     // rien de bloquant dans les passages étroits : la carte doit rester ouverte
@@ -489,6 +493,8 @@ export function placerProps(){
   for(let k=0; k<16000 && lights.length < S.maxLumieres; k++){
     const x = ri(2,GW-3), z = ri(2,GH-3), i = idx(x,z);
     if(!isFloor(x,z)) continue;
+    if(!autorise('lumieres', x, z)) continue;
+    if(rnd() > densiteEn(x, z)) continue;
     const b = BIOMES[biome[i]];
     lights.push({x:c2w(x), y:floorH[i]+0.5+rnd()*1.6, z:c2w(z), c:b.lum, ph:rnd()*6.28});
   }

@@ -19,6 +19,7 @@ import {
   idx, isFloor, celluleLibre,
 } from './grille.js';
 import {gouffres} from './relief.js';
+import {autorise} from './plan.js';
 
 /**
  * @param props  tableau du décor : chaque pont y pousse son maillage
@@ -54,6 +55,7 @@ export function placerPonts(props){
  *                    le but) ; sinon il doit rester au-dessus de sol praticable.
  */
 function poserTroncon(props, x0, z0, lon, horiz, surGouffre){
+  if(!autorise('ponts', x0, z0)) return false;
   let hmax = -1e9, appuis = 0;
   for(let k=0; k<lon; k++){
     const x = horiz ? x0+k : x0, z = horiz ? z0 : z0+k;

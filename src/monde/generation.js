@@ -20,7 +20,11 @@
 import {SETUP} from '../setup.js';
 import {lerp, clamp} from '../noyau/math.js';
 import {rnd, ri} from '../noyau/rng.js';
-import {BIOMES, biomePourAltitude} from './biomes.js';
+import {BIOMES} from './biomes.js';
+/* Le biome et l'altitude d'une cellule passent désormais par monde/plan.js.
+   Quand aucun plan n'est chargé, biomeDeCellule() retombe exactement sur
+   biomePourAltitude() : le monde procédural est inchangé au bit près. */
+import {biomeDeCellule, altitudeDeCellule} from './plan.js';
 import {
   GW, GH, CELL, WALL, FLOOR, STEPUP,
   grid, floorH, ceilH, openN, biome, platform, sky, falaise, vide, pont,
@@ -40,7 +44,8 @@ export function carveRect(x0,z0,w,h,e){
   for(let z=z0; z<z0+h; z++) for(let x=x0; x<x0+w; x++)
     if(inB(x,z)){
       const i = idx(x,z);
-      grid[i] = FLOOR; floorH[i] = e; biome[i] = biomePourAltitude(e, x, z);
+      const y = altitudeDeCellule(e, x, z);
+      grid[i] = FLOOR; floorH[i] = y; biome[i] = biomeDeCellule(y, x, z);
     }
 }
 
@@ -51,9 +56,10 @@ export function carveBlob(cx,cz,steps,e){
       const k = idx(x+dx, z+dz);
       grid[k] = FLOOR;
       // relief doux dans les cavernes : jamais de falaise en travers du passage
-      const h = e + Math.sin(x*0.31)*0.28 + Math.cos(z*0.27)*0.28;
+      const h = altitudeDeCellule(
+        e + Math.sin(x*0.31)*0.28 + Math.cos(z*0.27)*0.28, x+dx, z+dz);
       floorH[k] = h;
-      biome[k] = biomePourAltitude(h, x+dx, z+dz);
+      biome[k] = biomeDeCellule(h, x+dx, z+dz);
     }
     const d = ri(0,3);
     x += d===0?1 : d===1?-1 : 0;
@@ -76,7 +82,8 @@ function corridor(a,b,wdt){
     const e = lerp(a.e, b.e, t);
     for(let i2=0;i2<wdt;i2++) for(let j=0;j<wdt;j++) if(inB(x+i2,z+j)){
       const k = idx(x+i2, z+j);
-      grid[k]=FLOOR; floorH[k]=e; biome[k]=biomePourAltitude(e, x+i2, z+j);
+      const y = altitudeDeCellule(e, x+i2, z+j);
+      grid[k]=FLOOR; floorH[k]=y; biome[k]=biomeDeCellule(y, x+i2, z+j);
     }
     // marge d'épine autour du tracé : la relaxation a de quoi lisser la rampe
     for(let dz=-M; dz<=M+wdt; dz++) for(let dx=-M; dx<=M+wdt; dx++)
@@ -225,7 +232,7 @@ export function creuserPlan(){
     // diagonale + dispersion : les extrêmes se retrouvent aux deux bouts
     const cx = Math.round(lerp(18, GW-19, t) + ri(-14,14));
     const cz = Math.round(lerp(GH-19, 18, t) + ri(-14,14));
-    const b = biomePourAltitude(P.e, cx, cz);
+    const b = biomeDeCellule(P.e, cx, cz);
     const grand = b === 3 || b === 2;          // dehors et le barrage sont vastes
     const w = grand ? ri(26,40) : ri(14,26), h = grand ? ri(26,40) : ri(14,26);
     const x = clamp(cx - (w>>1), 2, GW-w-3), z = clamp(cz - (h>>1), 2, GH-h-3);
@@ -241,7 +248,7 @@ export function creuserPlan(){
     const cx = clamp(Math.round(lerp(20, GW-21, tt) + ri(-12,12)), 18, GW-19);
     const cz = clamp(Math.round(lerp(GH-21, 20, tt) + ri(-12,12)), 18, GH-19);
     carveBlob(cx, cz, ri(1400,3000), e);
-    salles.push({x:cx, z:cz, e, b: biomePourAltitude(e, cx, cz)});
+    salles.push({x:cx, z:cz, e, b: biomeDeCellule(e, cx, cz)});
   }
 
   // la chaîne suit l'ordre du plan : on ne saute jamais 60 m d'un coup

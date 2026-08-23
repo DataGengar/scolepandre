@@ -26,6 +26,7 @@ import {placerProps, viderDecor, props, lights, colliders} from './props.js';
 import {placerVillages, placerBoisEtFusees, viderVillages, villages} from './villages.js';
 import {indexerProps, libererTousLesPaves, statsMaillage} from './maillage.js';
 import {importee} from './import-png.js';
+import {plan, planActif} from './plan.js';
 
 export {props, lights, colliders} from './props.js';
 export {cachettes} from './cachettes.js';
@@ -151,6 +152,7 @@ export function rapportMonde(){
     : '—';
   return {
     duree: chrono.duree.toFixed(1) + ' s',
+    plan: planActif() ? plan.nom + ' (' + plan.zones.length + ' zones)' : 'procédural',
     greedyGain: g + ' de quads en moins (sols+plafonds)',
     cellulesPlates: statsMaillage.plats + ' / '
       + (statsMaillage.plats + statsMaillage.nonPlats),

@@ -11,6 +11,7 @@
    Ici on ne fait que creuser et border.                                     */
 
 import {SETUP} from '../setup.js';
+import {autorise} from './plan.js';
 import {rnd, ri, rf} from '../noyau/rng.js';
 import {BIOMES} from './biomes.js';
 import {
@@ -43,6 +44,7 @@ export function creuserGouffres(lights){
   for(let essai=0; essai<40000 && gouffres.length < S.nbGouffres; essai++){
     const cx = ri(30, GW-31), cz = ri(30, GH-31);
     if(!isFree(cx,cz) || openN[idx(cx,cz)] < 0.62) continue;
+    if(!autorise('gouffres', cx, cz)) continue;      // le plan peut l'interdire
 
     const horiz = rnd() < 0.5;
     const lon = ri(LMIN, LMAX), lar = ri(WMIN, WMAX);
