@@ -43,6 +43,18 @@ export const SETUP = {
     plafondCiel:26,
     plafondRampe:1.30,   // en dessous, il faut ramper
 
+    /* ─── QUANTIFICATION DU RELIEF ───
+        Arrondit toutes les altitudes à ce pas, en mètres. 0 = désactivé.
+
+        Ce n'est pas qu'une optimisation : ça change le LOOK. Le sol devient une
+        succession de plateaux, comme des strates de roche, au lieu d'une pente
+        continue. Le greedy meshing y gagne énormément — un sol plan fusionne,
+        un sol bruité non — et le rendu bas de gamme du jeu s'y prête.
+
+        Le pas doit rester très inférieur à la marche du joueur (1,25 m) pour
+        qu'aucune strate ne devienne infranchissable. */
+    quantifierRelief:0.25,
+
     bordVide:14,         // cellules de vide tout autour de la planche
     marcheJoueur:1.25,   // STEPUP — ce que le joueur enjambe
     corniche:1.1,        // LEDGE — au-delà, l'arête reste franche
@@ -65,9 +77,15 @@ export const SETUP = {
     gouffreLargMin:9,
     gouffreLargMax:28,
 
-    /* Rampes d'éboulis : elles FRANCHISSENT une falaise, au lieu des
-       plateformes flottantes de la v3.0 qui ne reliaient rien. */
-    nbRampes:420,
+    /* ─── RAMPES D'ÉBOULIS ───
+        Elles ne sont plus tirées au hasard : monde/connexite.js calcule les
+        morceaux du monde qui sont réellement COUPÉS les uns des autres, et ne
+        pose une rampe qu'à la frontière la moins chère entre deux d'entre eux.
+        D'où un nombre bien plus faible qu'en v3.1 — et chacune sert. */
+    nbRampes:120,
+    rampeChuteMax:11,      // au-delà, un escalier n'est plus plausible
+    rampePasses:4,         // on recommence tant que ça relie encore
+    rampeTailleMin:260,    // cellules : en dessous, c'est une miette
 
     nbPonts:260,
     pontLongMin:14,
@@ -96,8 +114,12 @@ export const SETUP = {
      Ramené à un niveau où l'on distingue le relief à 20 m et où la brume
      avale à 35 m. Les curseurs restent là pour durcir si tu veux.          */
   image:{
-    fog:1.05,    fogMax:3.5,
-    rays:1.35,   raysMax:3.0,
+    /* v3.1 avait sur-corrigé : on voyait à 40 m, ce qui vide la brume de tout
+       son intérêt. Densité doublée — la portée est donc divisée par deux,
+       ~20 m au lieu de ~40. Et les godrays étaient trop appuyés : ils
+       écrasaient le reste de l'image dès qu'une source entrait dans le champ. */
+    fog:2.10,    fogMax:3.5,
+    rays:0.65,   raysMax:3.0,
     ambiance:1.0,        // multiplicateur global de la lumière ambiante
     vignette:0.55,       // 0.92 en v3.0 : les bords de l'écran étaient noirs
     grain:0.115,
@@ -162,6 +184,20 @@ export const SETUP = {
     hauteurRampe:1.02,
     rayon:0.30,
     gravite:24,
+
+    /* ─── LE SAUT ───
+       Le monde est devenu très vertical : sans saut, une corniche de 1,60 m
+       oblige à contourner sur cinquante mètres. Mais L'ASYMÉTRIE VERTICALE EST
+       UN PILIER DU JEU — elle grimpe 2,90 m, pas toi — et un saut trop haut la
+       détruirait.
+
+       Le calcul : apex = v² / (2g) = 6.8² / 48 = 0,96 m. Comme la collision
+       compare la marche à l'altitude COURANTE, on peut donc se hisser jusqu'à
+       0,96 + 1,25 = 2,21 m en sautant. Elle en franchit 2,90. La marge de
+       0,7 m est ce qui garantit qu'il reste des endroits où elle va et pas toi. */
+    forceSaut:6.8,
+    bruitSaut:5,         // décoller n'est pas discret
+    delaiSaut:0.22,      // anti-rebond : on ne mitraille pas la barre d'espace
 
     // Chute provoquée par les secousses
     seuilChute:0.55,     // au-delà de ce tremblement, on peut tomber
@@ -396,6 +432,20 @@ export const SETUP = {
   cartes:{
     nombreDansLeMonde:420,
     essaisPlacement:48000,
+
+    /* ─── APPARENCE DANS LE MONDE ───
+       Retour de test : « cadre trop gros / vulgaire, les rendre plus fines et
+       plus esthétiques, et volant un peu moins haut ».
+       Le rapport 3:4 est celui d'une carte à collectionner ; garde-le si tu
+       changes les dimensions, sinon les illustrations seront déformées. */
+    largeur:0.52,
+    hauteur:0.69,              // 0.52 × 4/3
+    cadre:0.018,               // liseré : un trait, pas une bordure
+    hauteurFlottement:0.62,    // au-dessus du sol (1.10 en v3.1 : trop haut)
+    amplitudeFlottement:0.055, // le balancement (0.12 : trop agité)
+    vitesseRotation:0.85,
+    eclatIllustration:1.30,    // l'image doit rester lisible dans la brume
+    porteeRendu:58,            // mètres
   },
 
   /* ─────────────── DÉCOR ───────────────

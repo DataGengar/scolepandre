@@ -16,14 +16,15 @@ import {
   idx, viderGrille, calculerOuverture, majBornes, rebuildNavCost, bornes,
 } from './grille.js';
 import {
-  creuserPlan, relaxerEpine, placerRampes, finaliserRelief, poserPlafonds, salles,
+  creuserPlan, relaxerEpine, finaliserRelief, poserPlafonds, quantifierRelief, salles,
 } from './generation.js';
 import {creuserGouffres, gouffres} from './relief.js';
+import {relierLeMonde} from './connexite.js';
 import {placerPonts} from './ponts.js';
 import {placerCachettes, cachettes} from './cachettes.js';
 import {placerProps, viderDecor, props, lights, colliders} from './props.js';
 import {placerVillages, placerBoisEtFusees, viderVillages, villages} from './villages.js';
-import {indexerProps, libererTousLesPaves} from './maillage.js';
+import {indexerProps, libererTousLesPaves, statsMaillage} from './maillage.js';
 import {importee} from './import-png.js';
 
 export {props, lights, colliders} from './props.js';
@@ -60,6 +61,7 @@ export function* construireMonde(hooks){
     yield {nom:'ouverture des volumes', part:0.35};
     calculerOuverture();
     poserPlafonds();
+    quantifierRelief();
     majBornes();
     // pas de relaxation : ton relief reste le tien
   } else {
@@ -72,8 +74,6 @@ export function* construireMonde(hooks){
     yield {nom:'ouverture des volumes', part:0.55};
     calculerOuverture();
 
-    yield {nom:'rampes de franchissement', part:0.58};
-    chrono.rampes = placerRampes(lights, props);
 
     yield {nom:'gouffres et précipices', part:0.64};
     creuserGouffres(lights);
@@ -84,6 +84,17 @@ export function* construireMonde(hooks){
 
   yield {nom:'passerelles suspendues', part:0.74};
   chrono.ponts = placerPonts(props);
+
+  /* APRÈS les ponts : un pont relie déjà des morceaux, inutile d'y bâtir une
+     rampe en plus. On analyse donc la connexité une fois le monde complet, et
+     on ne comble que ce qui reste vraiment coupé. */
+  yield {nom:'liaison des morceaux isolés', part:0.79};
+  {
+    const r = relierLeMonde(lights, props);
+    chrono.rampes = r.rampes;
+    chrono.morceaux = r.avant + ' → ' + r.apres;
+    chrono.isoles = r.isoles;
+  }
 
   yield {nom:'cachettes', part:0.77};
   placerCachettes(props);
@@ -109,7 +120,8 @@ export function* construireMonde(hooks){
 }
 
 /** Compteurs remplis pendant la génération. */
-const chrono = {debut:0, duree:0, ponts:0, rampes:0, villages:0};
+const chrono = {debut:0, duree:0, ponts:0, rampes:0, villages:0,
+                morceaux:'', isoles:0};
 
 /* ─────────────── carte importée ─────────────── */
 
@@ -134,11 +146,21 @@ export function rapportMonde(){
     if(grid[i]===FLOOR) sol++;
     if(vide[i]) videN++;
   }
+  const g = statsMaillage.quadsBruts
+    ? (100 - statsMaillage.quadsEmis / statsMaillage.quadsBruts * 100).toFixed(0) + ' %'
+    : '—';
   return {
     duree: chrono.duree.toFixed(1) + ' s',
+    greedyGain: g + ' de quads en moins (sols+plafonds)',
+    cellulesPlates: statsMaillage.plats + ' / '
+      + (statsMaillage.plats + statsMaillage.nonPlats),
+    parois: statsMaillage.paroisBrutes + ' → ' + statsMaillage.paroisEmises,
+    quadsSolPlafond: statsMaillage.quadsEmis,
     salles: salles.length,
     gouffres: gouffres.length,
     rampes: chrono.rampes,
+    morceaux: chrono.morceaux,
+    isoles: chrono.isoles,
     villages: chrono.villages,
     ponts: chrono.ponts,
     cachettes: cachettes.length,

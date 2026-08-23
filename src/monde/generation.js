@@ -191,85 +191,10 @@ export function marquerFalaises(){
 
 /* ─────────────── plateformes ─────────────── */
 
-/* ═══ RAMPES DE FALAISE ═══
-   Retour de test : « les plateformes flottent juste dans l'air, ça n'a aucun
-   sens. Je voulais relier des parties de la carte séparées par des falaises,
-   pas des plateformes placées en masse et n'importe comment. »
-
-   C'était exact : la v3.0 posait des blocs surélevés au MILIEU des salles
-   dégagées, sans rien relier. Ils ne servaient qu'à donner à la créature un
-   angle d'attaque par le haut, ce qui ne se lit pas quand on joue.
-
-   Ici on ne pose plus rien au hasard. On CHERCHE les falaises — une arête où
-   le sol tombe de plus d'une enjambée — et on y taille un escalier d'éboulis
-   qui remonte, marche par marche, chacune franchissable. Le résultat se lit
-   comme un pan de paroi effondré, et il RELIE deux niveaux qui étaient coupés.
-
-   On ne creuse jamais dans la roche : on RELÈVE des cellules de sol déjà
-   praticables du côté bas. La rampe ne peut donc pas ouvrir un passage qui
-   n'existait pas dans le plan.                                              */
-export function placerRampes(lights, props){
-  const MAX = STEPUP - 0.06;              // hauteur d'une marche
-  const NB = [[1,0],[-1,0],[0,1],[0,-1]];
-  let posees = 0;
-
-  for(let essai=0; essai<26000 && posees < SETUP.relief.nbRampes; essai++){
-    const x = ri(6, GW-7), z = ri(6, GH-7);
-    const i = idx(x,z);
-    if(grid[i] !== FLOOR) continue;
-
-    // trouver un voisin nettement plus bas : c'est le pied de la falaise
-    let dir = null, bas = 0;
-    for(const [dx,dz] of NB){
-      if(!isFloor(x+dx, z+dz)) continue;
-      const n = idx(x+dx, z+dz);
-      const chute = floorH[i] - floorH[n];
-      if(chute > MAX*1.6 && chute < 9){ dir = [dx,dz]; bas = n; break; }
-    }
-    if(!dir) continue;
-
-    const chute = floorH[i] - floorH[bas];
-    const marches = Math.ceil(chute / MAX);
-    const [dx,dz] = dir;
-
-    /* Le couloir de la rampe part du bas et remonte vers la falaise. Toutes
-       les cellules traversées doivent déjà être du sol : on ne perce rien. */
-    let ok = true;
-    for(let k=1; k<=marches && ok; k++)
-      for(let s2=-1; s2<=1 && ok; s2++){
-        const px = x + dx*k + (dz ? s2 : 0), pz = z + dz*k + (dx ? s2 : 0);
-        if(!isFloor(px,pz) || pont[idx(px,pz)]) ok = false;
-      }
-    if(!ok) continue;
-
-    // les marches, de la plus haute (contre la falaise) à la plus basse
-    const base = floorH[bas];
-    for(let k=1; k<=marches; k++){
-      const y = floorH[i] - (chute * k / (marches + 1));
-      for(let s2=-1; s2<=1; s2++){
-        const px = x + dx*k + (dz ? s2 : 0), pz = z + dz*k + (dx ? s2 : 0);
-        const pi = idx(px,pz);
-        if(floorH[pi] >= y) continue;      // déjà plus haut : on ne creuse pas
-        floorH[pi] = y;
-        platform[pi] = 1;
-      }
-    }
-
-    /* Une rampe invisible dans la brume est une rampe qu'on ne trouvera
-       jamais. Deux repères lumineux au pied et au sommet : c'est le seul
-       moyen honnête de signaler un franchissement. */
-    const teinte = BIOMES[biome[i]].lum;
-    for(const [cx2, cz2, cy] of [[x, z, floorH[i]], [x+dx*marches, z+dz*marches, base]]){
-      if(lights.length >= SETUP.decor.maxLumieres) break;
-      lights.push({
-        x:(cx2+0.5)*CELL, y:cy+0.7, z:(cz2+0.5)*CELL,
-        c:[teinte[0]*1.5, teinte[1]*1.1, teinte[2]*0.8], ph:rnd()*6.28,
-      });
-    }
-    posees++;
-  }
-  return posees;
-}
+/* Les rampes de franchissement ont déménagé dans monde/connexite.js : elles
+   ne relèvent plus du décor mais de la TOPOLOGIE. Voir l'explication là-bas —
+   en résumé, les poser au hasard produisait des escaliers qui ne reliaient
+   rien, ce qui était exactement le reproche fait à la version d'avant.      */
 
 /* ─────────────── plan du monde ─────────────── */
 
@@ -360,8 +285,25 @@ export function poserPlafonds(){
   }
 }
 
+/**
+ * Arrondit le champ de hauteur à un pas fixe. Voir SETUP.monde.quantifierRelief.
+ * Appelé APRÈS la relaxation : quantifier avant reviendrait à quantifier, puis
+ * à tout réétaler, et il ne resterait rien de plan.
+ */
+export function quantifierRelief(){
+  const pas = SETUP.monde.quantifierRelief;
+  if(!pas) return;
+  const inv = 1/pas;
+  for(let i=0;i<GW*GH;i++){
+    if(grid[i] !== FLOOR) continue;
+    floorH[i] = Math.round(floorH[i]*inv)*pas;
+    ceilH[i]  = Math.round(ceilH[i]*inv)*pas;
+  }
+}
+
 /** Recalcule ouverture, bornes et falaises après une modification du relief. */
 export function finaliserRelief(){
+  quantifierRelief();
   calculerOuverture();
   poserPlafonds();
   marquerFalaises();
