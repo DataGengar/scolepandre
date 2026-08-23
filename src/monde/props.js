@@ -25,6 +25,7 @@ import {
   idx, isFloor, isFree, c2w, celluleLibre,
 } from './grille.js';
 import {salles} from './generation.js';
+import {rayonPart} from './formes.js';
 import {autorise, densiteEn} from './plan.js';
 
 export const props = [], lights = [], colliders = [];
@@ -437,10 +438,7 @@ export function addProp(kind, x, z, i){
   /* Un rayon réel par élément : la cellule n'est condamnée que si l'élément la
      remplit vraiment. La v2 bloquait 3 m de côté pour un tronc de 60 cm. */
   let ray = 0;
-  for(const q of parts){
-    if(q.tube) ray = Math.max(ray, Math.max(q.tube[1], q.tube[3]));
-    else ray = Math.max(ray, Math.max(q.sx, q.sz) * 0.5);
-  }
+  for(const q of parts) ray = Math.max(ray, rayonPart(q));
   props.push({parts, cell:i, r:ray, solide:solid});
   if(solid){
     colliders.push({x:wx, z:wz, r:Math.min(ray, 1.4)});

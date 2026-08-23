@@ -19,6 +19,7 @@ import {
   idx, isFloor, c2w, w2c,
 } from './grille.js';
 import {props, lights} from './props.js';
+import {cuirePart} from './formes.js';
 
 /* ─────────────── index spatial ─────────────── */
 
@@ -171,6 +172,12 @@ export function batirPave(k){
   const quad = (p,n,c) => {
     const push = (v,cc) => { P.push(v[0],v[1],v[2]); N.push(n[0],n[1],n[2]); C.push(cc[0],cc[1],cc[2]); };
     push(p[0],c[0]); push(p[1],c[1]); push(p[2],c[2]);
+    /* Un quad dont le 4e point EST le premier n'est qu'un triangle : les
+       primitives s'en servent pour les bouchons de tube, les flancs de coin et
+       les faces de roche. Émettre le second triangle produirait une surface
+       d'aire nulle — invisible, mais assemblée et rastérisée comme les autres.
+       Sur une roche c'est la moitié du coût pour rien. */
+    if(p[3] === p[0]) return;
     push(p[0],c[0]); push(p[2],c[2]); push(p[3],c[3]);
   };
   const h = CELL/2;
@@ -447,56 +454,13 @@ export function batirPave(k){
       if(q.emis){    // sommets clairs : le shader les remonte via uEmit global
         q.c = [Math.min(1.6,q.c[0]), Math.min(1.6,q.c[1]), Math.min(1.6,q.c[2])];
       }
-      if(q.tube) cuireTube(quad, q);
-      else       cuireBoite(quad, q);
+      cuirePart(quad, q);
     }
   }
 
   statsMaillage.paves++;
   return P.length ? mesh(P,N,C) : null;
 }
-
-/** Boîte orientée autour de Z. La primitive historique. */
-export function cuireBoite(quad, q){
-  const co = Math.cos(q.r||0), si = Math.sin(q.r||0);
-  const hx = q.sx/2, hy = q.sy/2, hz = q.sz/2;
-  const V = (sx,sy,sz) => {
-    const X = sx*hx, Y = sy*hy, Z = sz*hz;
-    return [q.x + X*co - Y*si, q.y + X*si + Y*co, q.z + Z];
-  };
-  const F = [
-    [[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1],[0,0,1]],
-    [[1,-1,-1],[-1,-1,-1],[-1,1,-1],[1,1,-1],[0,0,-1]],
-    [[1,-1,1],[1,-1,-1],[1,1,-1],[1,1,1],[co,si,0]],
-    [[-1,-1,-1],[-1,-1,1],[-1,1,1],[-1,1,-1],[-co,-si,0]],
-    [[-1,1,1],[1,1,1],[1,1,-1],[-1,1,-1],[-si,co,0]],
-    [[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,1],[si,-co,0]],
-  ];
-  for(const f of F) quad([V(...f[0]),V(...f[1]),V(...f[2]),V(...f[3])], f[4], [q.c,q.c,q.c,q.c]);
-}
-
-/** Prisme effilé à N côtés entre deux points. C'est la primitive qui fait
-    monter le polycount du décor : troncs, os, cristaux, cannelures. */
-export function cuireTube(quad, q){
-  const [p0, r0, p1, r1, cotes] = q.tube;
-  let ax = p1[0]-p0[0], ay = p1[1]-p0[1], az = p1[2]-p0[2];
-  const L = Math.hypot(ax,ay,az) || 1e-4; ax/=L; ay/=L; az/=L;
-  let ux=0, uy=1, uz=0;
-  if(Math.abs(ay) > 0.94){ ux=1; uy=0; }
-  let sx = uy*az - uz*ay, sy = uz*ax - ux*az, sz = ux*ay - uy*ax;
-  const SL = Math.hypot(sx,sy,sz) || 1; sx/=SL; sy/=SL; sz/=SL;
-  const tx = ay*sz - az*sy, ty = az*sx - ax*sz, tz = ax*sy - ay*sx;
-  const P = (p,r,cs,sn) => [p[0]+sx*cs*r+tx*sn*r, p[1]+sy*cs*r+ty*sn*r, p[2]+sz*cs*r+tz*sn*r];
-  const NC = cotes || 6, A=[], B=[];
-  for(let k=0;k<NC;k++){
-    const a = (k+0.5)/NC*6.283185, cs = Math.cos(a), sn = Math.sin(a);
-    A.push(P(p0,r0,cs,sn)); B.push(P(p1,r1,cs,sn));
-  }
-  for(let k=0;k<NC;k++){ const j=(k+1)%NC; quad([A[k],A[j],B[j],B[k]],[0,1,0],[q.c,q.c,q.c,q.c]); }
-  // bouchon supérieur, en éventail
-  for(let k=1;k<NC-1;k++) quad([B[0],B[k],B[k+1],B[0]],[0,1,0],[q.c,q.c,q.c,q.c]);
-}
-
 
 /* ═══ CUISSON HORS PAVÉ ═══
    Fabrique un maillage autonome à partir d'une liste de `parts`, avec
@@ -511,12 +475,14 @@ export function cuireParts(parts){
   const quad = (p,n,c) => {
     const push = (v,cc) => { P.push(v[0],v[1],v[2]); N.push(n[0],n[1],n[2]); C.push(cc[0],cc[1],cc[2]); };
     push(p[0],c[0]); push(p[1],c[1]); push(p[2],c[2]);
+    /* Un quad dont le 4e point EST le premier n'est qu'un triangle : les
+       primitives s'en servent pour les bouchons de tube, les flancs de coin et
+       les faces de roche. Émettre le second triangle produirait une surface
+       d'aire nulle — invisible, mais assemblée et rastérisée comme les autres.
+       Sur une roche c'est la moitié du coût pour rien. */
+    if(p[3] === p[0]) return;
     push(p[0],c[0]); push(p[2],c[2]); push(p[3],c[3]);
   };
-  for(const q of parts){
-    if(!q) continue;
-    if(q.tube) cuireTube(quad, q);
-    else       cuireBoite(quad, q);
-  }
+  for(const q of parts) cuirePart(quad, q);
   return P.length ? mesh(P,N,C) : null;
 }
