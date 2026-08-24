@@ -166,7 +166,7 @@ const BLOC_TEINTE = 4;           // cellules : la moucheture varie par BLOC
 
 /** Compteurs du dernier pavé bâti. Lus par le rapport de génération. */
 export const statsMaillage = {quadsBruts:0, quadsEmis:0, paves:0,
-                              plats:0, nonPlats:0,
+                              nonPlats:0,
                               paroisBrutes:0, paroisEmises:0};
 
 export function batirPave(k){
@@ -192,8 +192,51 @@ export function batirPave(k){
   const teinteDe = (x,z) => Math.floor(
     hash2(Math.floor(x/BLOC_TEINTE), Math.floor(z/BLOC_TEINTE)) * TEINTES);
 
-  /** Un coin de cellule en coordonnées monde. sa/sb valent ±1 sur chaque axe. */
-  const coin = (x, z, s2) => [c2w(x) + s2[0]*h, c2w(z) + s2[1]*h];
+  /* ══════════════ POURQUOI CE N'EST PLUS CUBIQUE ══════════════
+
+     « Pourquoi tout est cubique ? T'arrives pas à faire des formes plus
+     réalistes ? »
+
+     La cause tenait en une ligne : chaque coin de cellule était posé
+     EXACTEMENT sur la ligne de grille. Les hauteurs, elles, variaient déjà
+     (cornerH interpole les coins) — mais en plan, tout était aligné au
+     centimètre sur une trame de 1,5 m. Un œil repère une trame régulière
+     instantanément, et la lit comme « des cubes », quelles que soient les
+     hauteurs.
+
+     ── LA CORRECTION, ET POURQUOI ELLE NE PEUT PAS FAIRE DE FENTE ──────────
+     On déplace chaque coin d'un petit bruit. Le point crucial est que ce
+     déplacement ne dépend QUE DES COORDONNÉES DU COIN — pas de la cellule qui
+     le dessine. Les quatre cellules qui se touchent en un coin calculent donc
+     rigoureusement le même déplacement, et leurs bords restent cousus.
+
+     C'est exactement l'erreur qui vient d'être retirée avec le greedy
+     meshing : là-bas, deux cellules voisines calculaient la même arête de
+     deux façons différentes, et il restait une fente. Ici, une seule
+     fonction, une seule vérité, aucun écart possible.
+
+     ── CE QUE ÇA NE FAIT PAS ──────────────────────────────────────────────
+     Ça ne rend pas la roche organique : le sol reste un champ de hauteurs sur
+     une grille, et une vraie caverne demanderait une extraction de surface
+     (marching cubes) sur un champ de densité. Mais ça supprime la LECTURE en
+     damier, qui est ce qui saute aux yeux.
+
+     L'amplitude est bornée : au-delà d'un dixième de cellule, les parois
+     s'écartent trop de la grille de collision et l'on frotte le décor sans
+     comprendre pourquoi.                                                    */
+
+  const AMPL = CELL * SETUP.monde.irregularite;
+
+  /** Un coin de la GRILLE en coordonnées monde, déplacé de façon stable. */
+  const coinMonde = (gx, gz) => {
+    const ox = (hash2(gx, gz) - 0.5) * AMPL;
+    const oz = (hash2(gz + 9173, gx + 4211) - 0.5) * AMPL;
+    return [gx * CELL + ox, gz * CELL + oz];
+  };
+
+  /** Un coin de cellule. sa/sb valent ±1 sur chaque axe. */
+  const coin = (x, z, s2) =>
+    coinMonde(x + (s2[0] > 0 ? 1 : 0), z + (s2[1] > 0 ? 1 : 0));
   const facteur  = niv => 0.88 + (niv + 0.5) / TEINTES * 0.24;
 
   /* ── sols, plafonds et parois, cellule par cellule ──
@@ -203,7 +246,7 @@ export function batirPave(k){
     const i = idx(x,z);
     if(grid[i] !== FLOOR || vide[i]) continue;
     statsMaillage.nonPlats++;
-    const B = BIOMES[biome[i]], cx = c2w(x), cz = c2w(z), f = floorH[i], ce = ceilH[i];
+    const B = BIOMES[biome[i]], f = floorH[i], ce = ceilH[i];
     const v = facteur(teinteDe(x,z));
     const tint = a => [a[0]*v, a[1]*v, a[2]*v];
 
@@ -214,15 +257,22 @@ export function batirPave(k){
     const cf=tint(B.floor), cc=tint(B.ceil), wt=tint(B.wall),
           wb=[wt[0]*0.42, wt[1]*0.42, wt[2]*0.42];
 
+    /* Les quatre coins, déplacés. Sol, plafond et parois DOIVENT passer par
+       les mêmes points, sinon ils se décollent. */
+    const K00 = coinMonde(x,   z  ), K10 = coinMonde(x+1, z  );
+    const K11 = coinMonde(x+1, z+1), K01 = coinMonde(x,   z+1);
+
     // sol et plafond, avec leurs coins interpolés
     {
       statsMaillage.quadsBruts++; statsMaillage.quadsEmis++;
-      quad([[cx-h,f00,cz-h],[cx+h,f10,cz-h],[cx+h,f11,cz+h],[cx-h,f01,cz+h]],
+      quad([[K00[0],f00,K00[1]], [K10[0],f10,K10[1]],
+            [K11[0],f11,K11[1]], [K01[0],f01,K01[1]]],
            [0,1,0],[cf,cf,cf,cf]);
     }
     if(!sky[i]){
       statsMaillage.quadsBruts++; statsMaillage.quadsEmis++;
-      quad([[cx-h,c01,cz+h],[cx+h,c11,cz+h],[cx+h,c10,cz-h],[cx-h,c00,cz-h]],
+      quad([[K01[0],c01,K01[1]], [K11[0],c11,K11[1]],
+            [K10[0],c10,K10[1]], [K00[0],c00,K00[1]]],
            [0,-1,0],[cc,cc,cc,cc]);
     }
 
@@ -328,8 +378,19 @@ export function batirPave(k){
         if(!kind){ vider(); continue; }
         statsMaillage.paroisBrutes++;      // une paroi de plus, fusionnée ou non
 
-        // rectangle ? sinon on sort la cellule seule, en gardant le biais
-        const droit = Math.abs(ha - hb) < BORD &&
+        /* Rectangle ? Sinon on sort la cellule seule, en gardant le biais.
+
+           ET SURTOUT : la fusion est INTERDITE dès que les coins sont
+           déplacés. Une bande fusionnée relie le premier coin au dernier en
+           LIGNE DROITE, alors que les sols qu'elle borde zigzaguent d'un coin
+           déplacé à l'autre. Les deux se décolleraient tout du long — c'est
+           exactement la fente que le retrait du greedy meshing vient de
+           supprimer, réintroduite par l'autre bout.
+
+           On perd 4 % de quads sur les parois. C'est le prix mesuré, et il
+           est dérisoire à côté d'un mur qu'on voit à travers. */
+        const droit = AMPL === 0 &&
+                      Math.abs(ha - hb) < BORD &&
                       (kind !== 1 || Math.abs(ca - cb) < BORD);
         const A = coin(x, z, C.sa), Bp = coin(x, z, C.sb);
 

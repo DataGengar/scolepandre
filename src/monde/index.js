@@ -160,17 +160,13 @@ export function rapportMonde(){
     if(grid[i]===FLOOR) sol++;
     if(vide[i]) videN++;
   }
-  const g = statsMaillage.quadsBruts
-    ? (100 - statsMaillage.quadsEmis / statsMaillage.quadsBruts * 100).toFixed(0) + ' %'
-    : '—';
   return {
     duree: chrono.duree.toFixed(1) + ' s',
     plan: planActif() ? plan.nom + ' (' + plan.zones.length + ' zones)' : 'procédural',
-    greedyGain: g + ' de quads en moins (sols+plafonds)',
-    cellulesPlates: statsMaillage.plats + ' / '
-      + (statsMaillage.plats + statsMaillage.nonPlats),
-    parois: statsMaillage.paroisBrutes + ' → ' + statsMaillage.paroisEmises,
+    /* Plus de « gain glouton » : la fusion a été retirée, elle perçait des
+       fentes dans le sol. Voir l'en-tête de monde/maillage.js. */
     quadsSolPlafond: statsMaillage.quadsEmis,
+    parois: statsMaillage.paroisEmises,
     salles: salles.length,
     gouffres: gouffres.length,
     rampes: chrono.rampes,

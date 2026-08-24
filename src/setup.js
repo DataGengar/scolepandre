@@ -24,6 +24,17 @@ export const SETUP = {
 
   /* ─────────────── MONDE : dimensions et granularité ─────────────── */
   monde:{
+    /* ─── IRRÉGULARITÉ DU RELIEF ───
+        « Pourquoi tout est cubique ? » Parce que chaque coin de cellule était
+        posé exactement sur la ligne de grille : l'œil lit la trame avant de
+        lire la forme. Chaque coin est maintenant déplacé d'un bruit stable —
+        stable au sens où il ne dépend que du coin, donc les cellules voisines
+        s'accordent et rien ne se décolle.
+
+        Exprimé en fraction de cellule. 0 rend la grille parfaite d'avant ;
+        au-delà de 0,15 les parois s'écartent trop de la grille de collision
+        et l'on frotte le décor sans comprendre pourquoi. */
+    irregularite:0.11,
     cellule:1.5,         // côté d'une cellule en mètres (3.0 en v2)
     largeur:1088,        // cellules en X  → 1088 × 1.5 = 1632 m
     hauteur:1088,        // cellules en Z
