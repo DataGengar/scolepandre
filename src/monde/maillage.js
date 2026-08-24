@@ -115,36 +115,43 @@ function cornerH(x,z,ox,oz,base,arr){
   return s/n;
 }
 
-/* ═══════════════ GREEDY MESHING ═══════════════
-   Le sol d'une salle carvée est plat sur des dizaines de cellules : en émettre
-   deux triangles par cellule est un gaspillage pur. Le greedy meshing fusionne
-   les cellules voisines qui portent EXACTEMENT la même chose en un seul grand
-   rectangle, avant de produire la géométrie.
+/* ═══════════════ POURQUOI IL N'Y A PLUS DE GREEDY MESHING ═══════════════
 
-   ── LES DEUX CONDITIONS DE FUSION ──────────────────────────────────────────
-   1. La cellule doit être PLATE : ses quatre coins interpolés par cornerH()
-      valent sa propre hauteur, à epsilon près. Dès qu'un voisin est à une
-      altitude différente, cornerH biseaute le coin — et fusionner effacerait ce
-      biseau, donc les pentes douces et les corniches. Ces cellules-là restent
-      donc traitées une par une, exactement comme avant.
-   2. Elle doit partager sa clé avec sa voisine : même hauteur, même biome,
-      même NIVEAU DE TEINTE.
+   Il y en a eu un, et il a été retiré. La raison mérite d'être écrite, sinon
+   quelqu'un le réintroduira en croyant bien faire — le gain était réel.
 
-   ── LA TEINTE, LE PIÈGE ────────────────────────────────────────────────────
-   Chaque cellule était mouchetée par hash2(x,z), une valeur continue : deux
-   cellules n'avaient donc JAMAIS la même couleur, et rien n'aurait pu
-   fusionner. On quantifie la moucheture en quelques paliers. On garde la
-   variation qui casse les grands aplats, on gagne la fusion — et le tramage du
-   post-process brouille de toute façon les frontières entre paliers.
+   ── CE QU'IL FAISAIT ───────────────────────────────────────────────────────
+   Le sol d'une salle est plat sur des dizaines de cellules. Plutôt que deux
+   triangles par cellule, il fusionnait les cellules identiques en un seul
+   grand rectangle. Gain mesuré : 15 % de quads sur les sols et plafonds.
 
-   ── LES PAROIS ─────────────────────────────────────────────────────────────
-   Fusion en une dimension seulement : le long d'un mur, les cellules
-   consécutives qui montent à la même hauteur donnent un seul quad. C'est le
-   cas de tous les périmètres de salle.                                       */
+   ── POURQUOI IL PERÇAIT DES TROUS DANS LE SOL ──────────────────────────────
+   « Retirer l'algorithme de greedy meshing car les cubes sont transparents
+   parfois. » Le symptôme était exact, et voici le mécanisme.
+
+   Une cellule NON fusionnée est dessinée avec ses quatre coins interpolés par
+   `cornerH()` : c'est ce qui adoucit les pentes et biseaute les corniches. Une
+   cellule fusionnée, elle, était dessinée PLATE, à la hauteur de la première
+   cellule du rectangle.
+
+   Les deux se touchent donc le long de toute la frontière du rectangle — et
+   ne coïncident pas. Un coin interpolé quelques millimètres plus bas que le
+   rectangle plat, et il reste une fente. À travers la fente, on voit le vide.
+   D'où des sols « transparents par endroits », sans régularité apparente,
+   impossibles à reproduire à volonté.
+
+   On pouvait corriger : n'autoriser la fusion que si les VOISINES aussi sont
+   plates. Mais cela réduit encore le gain, ajoute une condition subtile à
+   tenir, et laisse le même piège tendu pour la prochaine modification du
+   relief. Un sol sans trou vaut mieux que 15 % de quads.
+
+   Tout passe donc par la passe cellule par cellule, avec ses coins
+   interpolés. La fusion 1D DES PAROIS est conservée : elle n'a pas ce défaut,
+   parce qu'un mur est vertical et n'interpole rien.
+   ══════════════════════════════════════════════════════════════════════════ */
 
 const TEINTES = 5;               // paliers de moucheture
 const BLOC_TEINTE = 4;           // cellules : la moucheture varie par BLOC
-const PLAT = 0.012;              // tolérance pour juger une cellule plate
 
 /* ── POURQUOI LA MOUCHETURE EST PAR BLOC ──
    Première tentative : hash2(x,z) par cellule, quantifié en cinq paliers. Deux
@@ -189,92 +196,13 @@ export function batirPave(k){
   const coin = (x, z, s2) => [c2w(x) + s2[0]*h, c2w(z) + s2[1]*h];
   const facteur  = niv => 0.88 + (niv + 0.5) / TEINTES * 0.24;
 
-  /* ── passe 1 : les clés ──
-     Pour chaque cellule du pavé, on note si elle est fusionnable et sous quelle
-     clé. Une clé nulle veut dire « à traiter individuellement ». */
-  const cleSol = new Float64Array(LX*LZ).fill(NaN);
-  const clePla = new Float64Array(LX*LZ).fill(NaN);
-  const vus    = new Uint8Array(LX*LZ);
-
+  /* ── sols, plafonds et parois, cellule par cellule ──
+     Les coins sont interpolés par cornerH(), ce qui adoucit pentes et
+     corniches. Les parois gardent leur fusion 1D, qui est sûre. */
   for(let z=kz0; z<kz1; z++) for(let x=kx0; x<kx1; x++){
     const i = idx(x,z);
     if(grid[i] !== FLOOR || vide[i]) continue;
-    const l = (z-kz0)*LX + (x-kx0);
-    const f = floorH[i], ce = ceilH[i];
-
-    const platSol =
-      Math.abs(cornerH(x,z,-1,-1,f,floorH) - f) < PLAT &&
-      Math.abs(cornerH(x,z, 1,-1,f,floorH) - f) < PLAT &&
-      Math.abs(cornerH(x,z, 1, 1,f,floorH) - f) < PLAT &&
-      Math.abs(cornerH(x,z,-1, 1,f,floorH) - f) < PLAT;
-    const platPla = !sky[i] &&
-      Math.abs(cornerH(x,z,-1,-1,ce,ceilH) - ce) < PLAT &&
-      Math.abs(cornerH(x,z, 1,-1,ce,ceilH) - ce) < PLAT &&
-      Math.abs(cornerH(x,z, 1, 1,ce,ceilH) - ce) < PLAT &&
-      Math.abs(cornerH(x,z,-1, 1,ce,ceilH) - ce) < PLAT;
-
-    /* La clé encode hauteur (au centimètre), biome et teinte dans un seul
-       nombre : la comparaison de fusion devient un test d'égalité. */
-    const t = teinteDe(x,z);
-    if(platSol) statsMaillage.plats++; else statsMaillage.nonPlats++;
-    if(platSol) cleSol[l] = Math.round(f*100)*1000 + biome[i]*TEINTES + t;
-    if(platPla) clePla[l] = Math.round(ce*100)*1000 + biome[i]*TEINTES + t;
-  }
-
-  /* ── passe 2 : fusion gloutonne ──
-     Pour chaque cellule non encore vue, on étend le rectangle vers la droite
-     tant que la clé tient, puis vers le bas tant que TOUTE la rangée tient.
-     C'est l'algorithme classique, en O(cellules). */
-  const gloutonner = (cles, versLeHaut) => {
-    vus.fill(0);
-    for(let lz=0; lz<LZ; lz++) for(let lx=0; lx<LX; lx++){
-      const l = lz*LX + lx;
-      if(vus[l] || Number.isNaN(cles[l])) continue;
-      const cle = cles[l];
-
-      let w = 1;
-      while(lx+w < LX && !vus[l+w] && cles[l+w] === cle) w++;
-
-      let ht = 1;
-      croissance:
-      while(lz+ht < LZ){
-        const base = (lz+ht)*LX + lx;
-        for(let q=0; q<w; q++)
-          if(vus[base+q] || cles[base+q] !== cle) break croissance;
-        ht++;
-      }
-
-      for(let dz=0; dz<ht; dz++) for(let dx=0; dx<w; dx++) vus[(lz+dz)*LX + lx+dx] = 1;
-      statsMaillage.quadsBruts += w*ht;
-      statsMaillage.quadsEmis++;
-
-      // le rectangle en coordonnées monde
-      const x0 = kx0+lx, z0 = kz0+lz;
-      const i0 = idx(x0, z0);
-      const y  = versLeHaut ? floorH[i0] : ceilH[i0];
-      const ax = c2w(x0) - h,        az = c2w(z0) - h;
-      const bx = c2w(x0+w-1) + h,    bz = c2w(z0+ht-1) + h;
-      const v = facteur(teinteDe(x0, z0));
-      const base = versLeHaut ? BIOMES[biome[i0]].floor : BIOMES[biome[i0]].ceil;
-      const col = [base[0]*v, base[1]*v, base[2]*v];
-
-      if(versLeHaut)
-        quad([[ax,y,az],[bx,y,az],[bx,y,bz],[ax,y,bz]],[0,1,0],[col,col,col,col]);
-      else
-        quad([[ax,y,bz],[bx,y,bz],[bx,y,az],[ax,y,az]],[0,-1,0],[col,col,col,col]);
-    }
-  };
-
-  gloutonner(cleSol, true);
-  gloutonner(clePla, false);
-
-  /* ── passe 3 : le reste, cellule par cellule ──
-     Tout ce qui n'était pas plat : pentes, corniches, abords de gouffre. Plus
-     TOUTES les parois, traitées ensuite avec leur propre fusion 1D. */
-  for(let z=kz0; z<kz1; z++) for(let x=kx0; x<kx1; x++){
-    const i = idx(x,z);
-    if(grid[i] !== FLOOR || vide[i]) continue;
-    const l = (z-kz0)*LX + (x-kx0);
+    statsMaillage.nonPlats++;
     const B = BIOMES[biome[i]], cx = c2w(x), cz = c2w(z), f = floorH[i], ce = ceilH[i];
     const v = facteur(teinteDe(x,z));
     const tint = a => [a[0]*v, a[1]*v, a[2]*v];
@@ -286,13 +214,13 @@ export function batirPave(k){
     const cf=tint(B.floor), cc=tint(B.ceil), wt=tint(B.wall),
           wb=[wt[0]*0.42, wt[1]*0.42, wt[2]*0.42];
 
-    // sol et plafond : uniquement s'ils n'ont pas été fusionnés
-    if(Number.isNaN(cleSol[l])){
+    // sol et plafond, avec leurs coins interpolés
+    {
       statsMaillage.quadsBruts++; statsMaillage.quadsEmis++;
       quad([[cx-h,f00,cz-h],[cx+h,f10,cz-h],[cx+h,f11,cz+h],[cx-h,f01,cz+h]],
            [0,1,0],[cf,cf,cf,cf]);
     }
-    if(!sky[i] && Number.isNaN(clePla[l])){
+    if(!sky[i]){
       statsMaillage.quadsBruts++; statsMaillage.quadsEmis++;
       quad([[cx-h,c01,cz+h],[cx+h,c11,cz+h],[cx+h,c10,cz-h],[cx-h,c00,cz-h]],
            [0,-1,0],[cc,cc,cc,cc]);

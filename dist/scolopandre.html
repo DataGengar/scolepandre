@@ -695,8 +695,13 @@ const SETUP = {
     hauteur:0.69,              // 0.52 × 4/3
     cadre:0.018,               // liseré : un trait, pas une bordure
     hauteurFlottement:0.62,    // au-dessus du sol (1.10 en v3.1 : trop haut)
-    amplitudeFlottement:0.055, // le balancement (0.12 : trop agité)
-    vitesseRotation:0.85,
+    amplitudeFlottement:0.055, // le balancement vertical (0.12 : trop agité)
+
+    /* La carte fait FACE au joueur : la rotation est dans le GIF lui-même, et
+       la superposer donnait une illustration de profil une fois sur deux.
+       Il ne reste qu'un léger dandinement, en radians — sans lui, une carte
+       parfaitement immobile ressemble à une affiche collée dans l'air. */
+    balancement:0.16,
     eclatIllustration:1.30,    // l'image doit rester lisible dans la brume
     porteeRendu:58,            // mètres
   },
@@ -4926,7 +4931,7 @@ const RANGS = [
     id:'commune',
     nom:'Commune',
     chemin:'cartes/communes/',
-    ext:'png',
+    ext:'gif',
     couleur:[0.55,0.53,0.48],   // teinte de la carte au sol et de son cadre
     profondeurMin:0.00,
     poids:0.62,                 // part relative des tirages là où le rang est permis
@@ -4935,7 +4940,7 @@ const RANGS = [
     id:'rare',
     nom:'Rare',
     chemin:'cartes/rares/',
-    ext:'png',
+    ext:'gif',
     couleur:[0.35,0.62,0.75],
     profondeurMin:0.45,
     poids:0.28,
@@ -4944,7 +4949,7 @@ const RANGS = [
     id:'legendaire',
     nom:'Légendaire',
     chemin:'cartes/legendaires/',
-    ext:'png',
+    ext:'gif',
     couleur:[1.00,0.72,0.28],
     profondeurMin:0.78,
     poids:0.10,
@@ -4971,55 +4976,130 @@ function rangsPermis(profondeur){
 __M['M_carte_catalogue'] = (function(){
   const { RANGS, NOMS_REPLI } = __M['M_carte_rangs'];
 /* ═══ CARTE / CATALOGUE ═══
-   Sondage des dossiers déclarés dans rangs.js et chargement des images.
+   Trouver les cartes présentes sur le disque, et les charger.
 
-   Le sondage est volontairement naïf : on demande 1.gif, 2.gif… au serveur
-   jusqu'à trois 404 d'affilée. Pas de manifeste à maintenir, pas d'API : tu
-   déposes des fichiers dans un dossier et ils sont dans le jeu.
+   ── POURQUOI LE SONDAGE NUMÉRIQUE A ÉTÉ ABANDONNÉ ──────────────────────────
+   La v3 demandait `1.gif`, `2.gif`, `3.gif`… jusqu'à trois échecs d'affilée.
+   Séduisant sur le papier : aucun manifeste à tenir. Mais ça impose de
+   RENOMMER ses fichiers, et le jour où les vraies cartes sont arrivées —
+   `carte_045.png`, `carte_046.png`… — le jeu n'en a trouvé aucune. Zéro. Sans
+   le moindre message : le sondage échouait trois fois et concluait « dossier
+   vide », ce qui est exactement ce qu'il était censé détecter.
 
-   Si aucun dossier n'est rempli (ou si on est en file://), CATALOGUE reste
-   vide et le reste du jeu bascule sur les noms de repli. Rien ne casse.    */
+   Un outil qui oblige à renommer cinquante fichiers pour lui plaire n'est pas
+   un outil pratique, c'est un outil qui a gagné.
+
+   ── COMMENT ON TROUVE, MAINTENANT ──────────────────────────────────────────
+   On demande le DOSSIER au serveur et on lit ce qu'il répond. Le serveur du
+   lanceur, comme `python -m http.server`, renvoie une page de liens : il
+   suffit d'en extraire les noms de fichiers image. On dépose ses fichiers, ils
+   sont dans le jeu, quel que soit leur nom.
+
+   Si le serveur ne liste pas (hébergement statique), on retombe sur l'ancien
+   sondage numérique. Rien ne casse, on perd juste la liberté de nommage.
+
+   ── L'ORDRE EST L'IDENTIFIANT ──────────────────────────────────────────────
+   Une carte est identifiée par sa place dans CATALOGUE. Le tri est donc
+   strictement déterministe — rang, puis nom — sinon une collection sauvegardée
+   désignerait d'autres cartes à la partie suivante.                         */
 
 
 
-/** [{rang:index, n:numéro, img:HTMLImageElement}] — l'ordre EST l'identifiant. */
+/** [{rang, nom, fichier, img}] — l'ordre EST l'identifiant. */
 const CATALOGUE = [];
 
-const etat = {sonde:false, enCours:false};
+const etat = {sonde:false, enCours:false, methode:''};
 
-const ECHECS_AVANT_ARRET = 3;
+/** Ce qu'on accepte comme carte. Le GIF anime ; les autres sont fixes. */
+const EXTENSIONS = ['gif', 'png', 'webp', 'jpg', 'jpeg'];
+
+const estImage = nom =>
+  EXTENSIONS.includes((nom.split('.').pop() || '').toLowerCase());
 
 /**
- * Sonde les trois dossiers en parallèle.
+ * Les noms de fichiers d'un dossier, lus dans la page d'index du serveur.
+ * @returns un tableau, vide si le serveur ne liste pas.
+ */
+async function lireDossier(chemin){
+  try{
+    const r = await fetch(chemin, {headers:{'Accept':'text/html'}});
+    if(!r.ok) return [];
+    const html = await r.text();
+    // `python -m http.server` produit <a href="carte_045.png">carte_045.png</a>
+    const noms = [];
+    for(const m of html.matchAll(/href="([^"?#]+)"/g)){
+      const brut = decodeURIComponent(m[1]).split('/').pop();
+      if(brut && estImage(brut) && !noms.includes(brut)) noms.push(brut);
+    }
+    return noms;
+  }catch(e){
+    return [];                    // hors ligne, file://, ou pas de listage
+  }
+}
+
+/** L'ancien sondage : 1.ext, 2.ext… jusqu'à trois échecs. Filet de secours. */
+function sonderNumeros(chemin, ext, sur){
+  let n = 1, echecs = 0;
+  const trouves = [];
+  const suivant = () => {
+    if(echecs >= 3){ sur(trouves); return; }
+    const f = n + '.' + ext;
+    const img = new Image();
+    img.onload  = () => { trouves.push({fichier:f, img}); echecs = 0; n++; suivant(); };
+    img.onerror = () => { echecs++; n++; suivant(); };
+    img.src = chemin + f;
+  };
+  suivant();
+}
+
+const charger = (url) => new Promise(res => {
+  const img = new Image();
+  img.onload  = () => res(img);
+  img.onerror = () => res(null);
+  img.src = url;
+});
+
+/**
+ * Remplit CATALOGUE.
  * @param apres  appelé une fois les trois dossiers épuisés
  */
-function sonderStacks(apres){
+async function sonderStacks(apres){
   if(etat.enCours) return;
   etat.enCours = true;
   CATALOGUE.length = 0;
+  let parListage = 0, parSondage = 0;
 
-  let restants = RANGS.length;
-  const fini = () => {
-    if(--restants === 0){
-      // ordre stable : rang puis numéro. Sinon l'identifiant d'une carte
-      // changerait d'une partie à l'autre et la collection serait fausse.
-      CATALOGUE.sort((a,b) => a.rang - b.rang || a.n - b.n);
-      etat.sonde = true; etat.enCours = false;
-      if(apres) apres();
+  for(let si = 0; si < RANGS.length; si++){
+    const st = RANGS[si];
+    const noms = await lireDossier(st.chemin);
+
+    if(noms.length){
+      noms.sort();                                  // déterminisme
+      const imgs = await Promise.all(noms.map(f => charger(st.chemin + f)));
+      imgs.forEach((img, k) => {
+        if(img) CATALOGUE.push({rang:si, nom:noms[k], fichier:noms[k], img});
+      });
+      parListage++;
+    } else {
+      await new Promise(res => sonderNumeros(st.chemin, st.ext, t => {
+        for(const e of t)
+          CATALOGUE.push({rang:si, nom:e.fichier, fichier:e.fichier, img:e.img});
+        res();
+      }));
+      parSondage++;
     }
-  };
+  }
 
-  RANGS.forEach((st, si) => {
-    let n = 1, echecs = 0;
-    const suivant = () => {
-      if(echecs >= ECHECS_AVANT_ARRET){ fini(); return; }
-      const img = new Image();
-      img.onload  = () => { CATALOGUE.push({rang:si, n, img}); echecs = 0; n++; suivant(); };
-      img.onerror = () => { echecs++; n++; suivant(); };
-      img.src = st.chemin + n + '.' + st.ext;
-    };
-    suivant();
-  });
+  /* Rang puis nom : l'identifiant d'une carte ne doit pas changer d'une
+     partie à l'autre, sinon la collection désigne autre chose. */
+  CATALOGUE.sort((a, b) => a.rang - b.rang || (a.nom < b.nom ? -1 : 1));
+
+  etat.sonde = true;
+  etat.enCours = false;
+  etat.methode = parListage
+    ? (parSondage ? 'listage + sondage' : 'listage du dossier')
+    : 'sondage numérique';
+  if(apres) apres();
 }
 
 /** Nombre total de cartes collectionnables dans cette installation. */
@@ -5034,7 +5114,9 @@ function total(){
 function identite(id){
   if(CATALOGUE.length && CATALOGUE[id]){
     const e = CATALOGUE[id];
-    return {rang: e.rang, nom: RANGS[e.rang].nom.toUpperCase() + ' ' + e.n, img: e.img};
+    // le nom affiché : le fichier sans extension, en capitales
+    const lisible = e.nom.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').toUpperCase();
+    return {rang: e.rang, nom: lisible, img: e.img, fichier: e.fichier};
   }
   const rang = Math.min(RANGS.length - 1, Math.floor(id / NOMS_REPLI.length));
   return {rang, nom: NOMS_REPLI[id % NOMS_REPLI.length]};
@@ -10167,16 +10249,59 @@ function initialiser(){
 /* ─────────────── les textures ─────────────── */
 
 const textures = new WeakMap();   // HTMLImageElement -> WebGLTexture
+const dernierRafraichi = new WeakMap();
+
+/* ── LES GIF S'ANIMENT ─────────────────────────────────────────────────────
+   Les cartes d'Orlando sont des GIF : elles tournent sur elles-mêmes et ont
+   un reflet qui balaie. C'est tout leur intérêt, et une texture envoyée une
+   fois au GPU les fige sur leur première trame.
+
+   Il n'y a pas besoin d'un décodeur GIF. Un navigateur anime un élément img
+   tout seul, et texImage2D d'un élément image en lit LA TRAME COURANTE. Il
+   suffit donc de renvoyer la texture de temps en temps — le GIF joue.
+
+   Trois précautions, sans lesquelles ça coûterait cher :
+     · seulement les cartes PROCHES (le rendu les trie déjà par distance) ;
+     · au plus quelques-unes par image ;
+     · à cadence limitée : un GIF tourne à 10-15 trames par seconde, réenvoyer
+       à 60 Hz serait quatre fois le travail pour rien.                     */
+
+const MS_ENTRE_TRAMES = 90;    // ~11 images/s, la cadence d'un GIF
+const MAX_PAR_IMAGE = 3;       // renvois de texture par image de jeu
+const DIST_ANIMEE = 26;        // mètres : au-delà, la trame fixe suffit
+
+let renvoyesCetteImage = 0;
+
+function envoyer(t, img){
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+  gl.generateMipmap(gl.TEXTURE_2D);
+}
 
 /**
- * Envoie une image au GPU, une seule fois. Renvoie null tant que l'image n'est
- * pas complètement chargée — le sondage des dossiers est asynchrone, on ne peut
- * pas supposer qu'elle est prête.
+ * Envoie une image au GPU. Renvoie null tant qu'elle n'est pas complètement
+ * chargée — le sondage des dossiers est asynchrone, on ne peut pas supposer
+ * qu'elle est prête.
+ *
+ * @param dist  distance au joueur ; en deçà de DIST_ANIMEE, la texture est
+ *              rafraîchie pour que les GIF jouent.
  */
-function texturePour(img){
+function texturePour(img, dist){
   if(!img || !img.complete || !img.naturalWidth) return null;
   const dejaLa = textures.get(img);
-  if(dejaLa) return dejaLa;
+  if(dejaLa){
+    if(dist !== undefined && dist < DIST_ANIMEE
+       && renvoyesCetteImage < MAX_PAR_IMAGE){
+      const t = performance.now();
+      if(t - (dernierRafraichi.get(img) || 0) > MS_ENTRE_TRAMES){
+        dernierRafraichi.set(img, t);
+        renvoyesCetteImage++;
+        envoyer(dejaLa, img);
+      }
+    }
+    return dejaLa;
+  }
 
   initialiser();
   const t = gl.createTexture();
@@ -10208,6 +10333,8 @@ function dessinerCartes(ctx){
 
   const C = SETUP.cartes;
   const PORTEE2 = C.porteeRendu * C.porteeRendu;
+  // budget de renvois de texture pour cette image (voir texturePour)
+  renvoyesCetteImage = 0;
 
   gl.useProgram(P);
   gl.uniformMatrix4fv(U.uProj, false, proj);
@@ -10228,12 +10355,23 @@ function dessinerCartes(ctx){
     const rang = rangs[k.rang];
     const col = rang.couleur;
     const bob = Math.sin(temps*1.4 + k.id) * C.amplitudeFlottement;
-    const yaw = temps * C.vitesseRotation + k.id;
+
+    /* FACE AU JOUEUR, ET NON EN ROTATION.
+       Les cartes sont des GIF qui tournent DÉJÀ sur eux-mêmes. Les faire
+       pivoter en plus donnait deux rotations superposées, à des vitesses
+       différentes, et l'illustration passait la moitié du temps de profil —
+       c'est-à-dire invisible. Le moteur les présente donc simplement, et
+       laisse l'image jouer son propre mouvement.
+
+       Un léger balancement demeure : une carte parfaitement immobile face à
+       soi ressemble à une affiche collée dans l'air. */
+    const yaw = Math.atan2(k.x - cam.x, k.z - cam.z)
+              + Math.sin(temps*0.7 + k.id) * C.balancement;
     const y = k.y + bob;
     const puls = 0.84 + 0.16*Math.sin(temps*2.2 + k.id*1.7);
 
     const img = identite(k.id).img;
-    const tex = texturePour(img);
+    const tex = texturePour(img, dist);
 
     const poser = (l, ht, e) => {
       trs(modele, k.x, y, k.z, yaw, 0, 0, l, ht, 1);

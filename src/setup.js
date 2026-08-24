@@ -134,9 +134,29 @@ export const SETUP = {
        son intérêt. Densité doublée — la portée est donc divisée par deux,
        ~20 m au lieu de ~40. Et les godrays étaient trop appuyés : ils
        écrasaient le reste de l'image dès qu'une source entrait dans le champ. */
-    fog:2.10,    fogMax:3.5,
-    rays:0.65,   raysMax:3.0,
-    ambiance:0.92,       // multiplicateur global de la lumière ambiante
+    /* ─── PORTÉE ───
+        « Toujours un peu trop lumineux, pas assez de fog, vision trop
+        lointaine : réduire de 40 %. » 2.10 → 3.50, soit un facteur 1,67 sur la
+        densité, ce qui divise la portée utile par 1,67. Mesuré :
+
+            souterrain  12,4 m → 7,4 m       barrage   17,2 m → 10,3 m
+            surface     13,4 m → 8,0 m       ville     12,4 m → 7,4 m
+
+        C'est la portée d'une lampe de poche dans une cave, et c'est le but. */
+    fog:3.50,    fogMax:5.0,
+    rays:0.55,   raysMax:3.0,
+
+    /* ─── C'EST LA TORCHE QUI ÉCLAIRE ───
+        Référence donnée par Orlando : Resident Evil Requiem, où presque toute
+        la lumière vient de la lampe qu'on tient. Tout le reste n'est qu'une
+        présence — assez pour deviner une masse, jamais assez pour lire une
+        pièce.
+
+        L'ambiante tombe donc de 0,92 à 0,45. Ce qui rend la scène lisible,
+        c'est le faisceau : là où il pointe on voit net, ailleurs on devine.
+        C'est ce qui force à BALAYER une pièce au lieu de l'embrasser, et
+        balayer une pièce, c'est se demander ce qu'il y a derrière soi. */
+    ambiance:0.45,       // multiplicateur global de la lumière ambiante
     vignette:0.55,       // 0.92 en v3.0 : les bords de l'écran étaient noirs
     grain:0.115,
 
@@ -160,10 +180,12 @@ export const SETUP = {
   lampe:{
     coneInterieur:0.955,  // cos de l'angle du cœur    (~17°)
     coneExterieur:0.74,   // cos de l'angle du bord    (~42°)
-    intensite:5.4,        // le faisceau
-    halo:0.20,            // ce qui déborde autour, très faible
+    intensite:6.8,        // le faisceau — c'est LUI qui éclaire la scène
+    halo:0.16,            // ce qui déborde autour, très faible
     portee:0.028,         // atténuation par mètre : exp(-d × portee)
-    gainEteinte:0.05,     // lampe éteinte : il reste un rien
+    /* Lampe éteinte, il ne reste presque rien : c'est le prix à payer pour
+       que l'allumer ait un sens, et pour que l'éteindre soit une décision. */
+    gainEteinte:0.03,
   },
 
   /* ─────────────── LUMIÈRES DU DÉCOR ───────────────
@@ -176,7 +198,11 @@ export const SETUP = {
        comme un projecteur ; additionnées par milliers, elles noyaient le
        brouillard qui fait tout le travail. Une source de décor doit se VOIR
        de loin sans ÉCLAIRER de loin. */
-    gain:1.70,
+    /* 2,2 en v3.3, 1,7 en v4.0, 1,05 ici. Chaque cristal et chaque fenêtre
+       éclairait comme un projecteur ; additionnées par milliers, elles
+       rendaient la lampe inutile — or c'est la lampe qui doit faire peur.
+       Une source de décor se VOIT de loin, elle n'ÉCLAIRE plus de loin. */
+    gain:1.05,
   },
 
   /* ─────────────── LUNE BRISÉE ───────────────
@@ -467,9 +493,12 @@ export const SETUP = {
        plus esthétiques, et volant un peu moins haut ».
        Le rapport 3:4 est celui d'une carte à collectionner ; garde-le si tu
        changes les dimensions, sinon les illustrations seront déformées. */
-    largeur:0.52,
-    hauteur:0.69,              // 0.52 × 4/3
-    cadre:0.018,               // liseré : un trait, pas une bordure
+    /* Plus grandes : le cadre a disparu, l'image occupe désormais toute la
+       place qu'il prenait. Rapport 3:4, celui d'une carte à collectionner —
+       garde-le si tu changes ces valeurs, sinon les illustrations seront
+       déformées. */
+    largeur:0.74,
+    hauteur:0.99,              // 0.74 × 4/3
     hauteurFlottement:0.62,    // au-dessus du sol (1.10 en v3.1 : trop haut)
     amplitudeFlottement:0.055, // le balancement vertical (0.12 : trop agité)
 

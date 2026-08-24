@@ -211,25 +211,28 @@ export function dessinerCartes(ctx){
       gl.uniform1f(U.uDist, dist);
     };
 
-    /* 1. LE HALO — large, faible, sans texture. C'est lui qu'on aperçoit dans
-       la brume avant de distinguer la carte elle-même. */
+    /* ── PLUS DE CADRE ──
+       « Retirer le cadre que tu as fait. Tu gardes que mes cartes GIF, avec la
+       lumière projetée, et la carte prend toute la place. »
+
+       Il ne reste donc que deux passes : la lueur, et l'image. Le liseré a
+       disparu — les cartes d'Orlando portent DÉJÀ leur propre bord découpé,
+       et en ajouter un revenait à encadrer un cadre.
+
+       1. LA LUEUR — large, sans texture. C'est ce qu'on aperçoit dans la brume
+          avant de distinguer la carte : elle sert à la repérer, pas à
+          l'habiller. Elle déborde donc franchement, et reste faible. */
     gl.uniform1f(U.uAvecTex, 0);
-    gl.uniform3fv(U.uTeinte, [col[0]*0.55, col[1]*0.55, col[2]*0.55]);
-    poser(C.largeur * 1.55, C.hauteur * 1.55, 0.30 * puls);
+    gl.uniform3fv(U.uTeinte, [col[0]*0.50, col[1]*0.50, col[2]*0.50]);
+    poser(C.largeur * 1.85, C.hauteur * 1.85, 0.26 * puls);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-    /* 2. LE CADRE — un liseré fin. La v3.1 en faisait une bordure de 12 cm de
-       large qui bouffait la carte : « trop gros / vulgaire ». Ici c'est
-       l'épaisseur d'un trait. */
-    gl.uniform3fv(U.uTeinte, col);
-    poser(C.largeur + C.cadre*2, C.hauteur + C.cadre*2, 1.15 * puls);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-    /* 3. L'ILLUSTRATION. */
+    /* 2. L'IMAGE, pleine taille. */
     if(tex){
       gl.bindTexture(gl.TEXTURE_2D, tex);
       gl.uniform1f(U.uAvecTex, 1);
     } else {
+      // pas encore chargée : une plaque sourde, le temps que le GIF arrive
       gl.uniform1f(U.uAvecTex, 0);
       gl.uniform3fv(U.uTeinte, [col[0]*0.30, col[1]*0.30, col[2]*0.30]);
     }

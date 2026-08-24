@@ -99,6 +99,9 @@ function batirVillage(v, c, RC){
 
   v.angleCabane = rnd()*6.283;
   poser('maison',     ri(...V.maisons),     0.40, 1.0);
+  /* Deux formes valent mieux qu'une : un village de maisons toutes pareilles
+     se lit comme une grille d'objets, pas comme un lieu. */
+  poser('hutte',      ri(...V.maisons),     0.25, 1.0);
   poser('carcasse',   ri(...V.carcasses),   0.30, 1.0);
   poser('lampadaire', ri(...V.lampadaires), 0.22, 0.9);
 

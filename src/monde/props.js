@@ -271,48 +271,148 @@ export function addProp(kind, x, z, i){
          · c'est orienté au hasard mais posé d'aplomb : une maison de travers
            lit comme un bug, pas comme une ruine.                            */
 
+    /* ══════════════ MAISONNETTE ══════════════
+       « Les villages sont toujours n'importe quoi, je ne sais pas ce que je
+       vois. Tu dois faire des maisonnettes ou des huttes inhabitées. »
+
+       LA VERSION PRÉCÉDENTE ÉTAIT UNE RUINE, et c'est ça le défaut. Quatre
+       moignons de murs arasés à des hauteurs tirées au sort entre 55 et 100 %,
+       un mur remplacé par un tas de moellons, aucun toit, trois pannes en
+       travers. Chaque élément était plausible ; l'ensemble ne ressemblait à
+       rien, parce qu'il ne restait AUCUNE forme reconnaissable.
+
+       UNE MAISON SE RECONNAÎT À SON TOIT. C'est la silhouette qui parle, pas
+       le détail. Trois choses suffisent, et il les faut toutes les trois :
+
+         · un TOIT à deux pentes — la seule forme qui dise « maison » de loin ;
+         · une PORTE sombre, à taille humaine, qui donne l'échelle ;
+         · des murs D'APLOMB et de hauteur ÉGALE.
+
+       Les maisons sont donc entières. Inhabitées, pas détruites : volets
+       clos, portes béantes, personne dedans. C'est plus inquiétant qu'un tas
+       de gravats, parce qu'une ruine est un accident tandis qu'une maison
+       intacte et vide est une absence.
+
+       Une sur cinq est effondrée, pour que le village ne fasse pas maquette.
+       Une sur cinq, pas quatre sur cinq.                                    */
     case 'maison': {
-      const larg = rf(3.2, 5.4), prof = rf(3.0, 5.0), haut = rf(2.4, 3.6);
-      const mur = [.19,.175,.16], bois = [.14,.12,.10];
-      const a = Math.round(rnd()*4) * 1.5708;      // d'aplomb, mais orientée
-      const cs = Math.cos(a), sn = Math.sin(a);
-      const loc = (u, v) => [wx + cs*u - sn*v, 0, wz + sn*u + cs*v];
+      const larg = rf(4.2, 6.0), prof = rf(3.6, 5.2);
+      const mur = [.185,.170,.152], bois = [.115,.098,.082];
+      const toit = [.135,.118,.105];
+      const HM = rf(2.5, 3.0);                 // hauteur sous gouttière
+      const HT = HM + rf(1.3, 2.1);            // faîtage
+      const ry = Math.round(rnd()*4) * 1.5708 + rf(-0.06, 0.06);
+      const cs = Math.cos(ry), sn = Math.sin(ry);
+      // repère local : u vers la façade, v sur le côté
+      const L = (u, v) => [wx + cs*u - sn*v, wz + sn*u + cs*v];
 
-      // quatre murs, dont un ou deux effondrés
-      const cotes = [[0,-prof/2, larg, 0], [0, prof/2, larg, 0],
-                     [-larg/2, 0, 0, prof], [larg/2, 0, 0, prof]];
-      const tombe = ri(0,3);
-      cotes.forEach(([ux, uz, lx, lz], k) => {
-        const p = loc(ux, uz);
-        if(k === tombe){
-          // le mur tombé : un tas de moellons en travers
-          for(let q=0;q<Math.round(5*D);q++)
-            eclat(parts, p[0]+rf(-lx/2,lx/2)+rf(-0.6,0.6),
-                  h, p[2]+rf(-lz/2,lz/2)+rf(-0.6,0.6), rf(.30,.62), mur);
-          return;
-        }
-        const hm = haut * rf(0.55, 1.0);           // arasé à hauteurs inégales
-        parts.push(bloc(p[0], h + hm/2, p[2],
-                        lx ? lx*Math.abs(cs)+0.3 : 0.3 + lz*Math.abs(sn)*0,
-                        hm,
-                        lz ? lz*Math.abs(cs)+0.3 : 0.3 + lx*Math.abs(sn)*0, mur, a));
-      });
+      const poser = (u, v, y, sx, sy, sz, c, em) => {
+        const p = L(u, v);
+        const q = bloc(p[0], h + y, p[1], sx, sy, sz, c, 0, em || 0);
+        q.ry = ry;
+        parts.push(q);
+        return q;
+      };
 
-      // une charpente crevée : trois pannes en travers, pas de toit
-      if(D >= 1) for(let q=0;q<Math.round(3*D);q++){
-        const v = (q/Math.max(1,Math.round(3*D)-1) - 0.5) * prof * 0.8;
-        const p0 = loc(-larg/2, v), p1 = loc(larg/2, v);
-        if(rnd() < 0.3) continue;                  // certaines sont tombées
-        parts.push(colonne([p0[0], h+haut*rf(0.9,1.1), p0[2]], .10,
-                           [p1[0], h+haut*rf(0.9,1.1), p1[2]], .09, bois));
+      const EP = 0.26;                          // épaisseur des murs
+      const PORTE = 1.0, HPORTE = 2.05;         // à l'échelle d'un homme
+
+      /* ── les quatre murs ──
+         La façade est percée : on la pose en trois morceaux — deux jambages
+         et un linteau — plutôt que d'y coller un rectangle sombre. Un trou
+         qu'on peut franchir du regard vaut mieux qu'un trou peint. */
+      const jamb = (larg - PORTE) / 2;
+      poser(-prof/2, -(PORTE/2 + jamb/2), HM/2, EP, HM, jamb, mur);
+      poser(-prof/2,  (PORTE/2 + jamb/2), HM/2, EP, HM, jamb, mur);
+      poser(-prof/2, 0, HPORTE + (HM-HPORTE)/2, EP, Math.max(0.1, HM-HPORTE),
+            PORTE, mur);
+
+      poser( prof/2, 0, HM/2, EP, HM, larg, mur);          // mur du fond
+      poser(0, -larg/2, HM/2, prof, HM, EP, mur);          // pignons
+      poser(0,  larg/2, HM/2, prof, HM, EP, mur);
+
+      /* ── le toit à deux pentes ──
+         Deux coins adossés. C'est LA forme qui fait lire « maison » à trente
+         mètres dans la brume, et c'est la primitive `coin` de la v3.4 qui la
+         rend possible : avant, on n'avait que des boîtes. */
+      const RISE = HT - HM, DEB = 0.42;         // débord de toiture
+      for(const sd of [1, -1]){
+        const p = L(0, sd * (larg/4 + DEB/2));
+        const c = {coin: sd, x:p[0], y:h + HM + RISE/2, z:p[1],
+                   sx: larg/2 + DEB, sy: RISE, sz: prof + DEB*2,
+                   c: toit, ry: ry + Math.PI/2};
+        parts.push(c);
+      }
+      // la panne faîtière, qui souligne l'arête
+      {
+        const a = L(-prof/2 - DEB, 0), b = L(prof/2 + DEB, 0);
+        parts.push({tube:[[a[0], h+HT, a[1]], .09, [b[0], h+HT, b[1]], .09, 5],
+                    c: bois});
       }
 
-      /* Une lueur dans l'encadrement : quelqu'un a laissé quelque chose
-         allumé, ou c'est du lichen. On ne dit pas lequel. */
-      if(rnd() < 0.55 && lights.length < SETUP.decor.maxLumieres){
-        const p = loc(0, 0);
-        parts.push(bloc(p[0], h+0.5, p[2], .5, .9, .5, [1.5,0.9,0.35], a, 1));
-        lights.push({x:p[0], y:h+1.0, z:p[2], c:[1.5,0.85,0.32], ph:rnd()*6.28});
+      /* ── volets clos, et une fenêtre ──
+         Des plaques : quatre triangles au lieu de douze, et c'est exactement
+         l'épaisseur qu'a un volet. */
+      if(D >= 1) for(const sd of [1, -1]){
+        if(rnd() < 0.3) continue;
+        const p = L(-prof/2 - 0.02, sd * larg*0.28);
+        parts.push({plaque:1, x:p[0], y:h + HM*0.58, z:p[1],
+                    sx:0.72, sy:0.86, c: bois, ry: ry + Math.PI/2});
+      }
+
+      /* ── une sur cinq s'est affaissée ──
+         Le toit glisse d'un côté et un pignon s'ouvre. On garde la silhouette
+         : c'est une maison EFFONDRÉE, pas un tas anonyme. */
+      if(rnd() < 0.2){
+        for(let q=0; q<Math.round(7*D); q++){
+          const p = L(rf(-prof/2, prof/2), rf(-larg/2, larg/2));
+          eclat(parts, p[0], h, p[1], rf(.26,.55), mur);
+        }
+      }
+
+      /* Une lueur derrière la porte. On ne dit pas ce que c'est : quelqu'un a
+         laissé quelque chose allumé, ou c'est du lichen. */
+      if(rnd() < 0.5 && lights.length < SETUP.decor.maxLumieres){
+        const p = L(0.4, 0);
+        lights.push({x:p[0], y:h+1.1, z:p[1], c:[0.95,0.55,0.22], ph:rnd()*6.28});
+      }
+      solid = false; break; }
+
+    /* ══════════════ HUTTE ══════════════
+       Plus petite, plus pauvre, plus ancienne : un tronc de cône sur des
+       pieux. Elle se lit encore mieux qu'une maison parce qu'elle n'a qu'une
+       forme — et deux formes différentes dans un village suffisent à ce qu'on
+       n'y voie plus une grille d'objets identiques. */
+    case 'hutte': {
+      const ray = rf(1.5, 2.3), HM = rf(1.8, 2.3), HT = HM + rf(1.2, 1.9);
+      const paroi = [.175,.155,.128], chaume = [.155,.132,.088];
+      const ry = rnd() * 6.283;
+      const NC = Math.max(5, Math.round(7 * D));
+
+      // le fût : un prisme large et bas
+      parts.push({tube:[[wx, h, wz], ray, [wx, h + HM, wz], ray*0.94, NC],
+                  c: paroi});
+      // le chaume : un cône, débordant
+      parts.push({tube:[[wx, h + HM - 0.08, wz], ray*1.22,
+                        [wx, h + HT, wz], 0.10, NC], c: chaume});
+
+      /* L'entrée : un bloc sombre plaqué contre le fût. Une hutte sans
+         ouverture est un champignon. */
+      {
+        const a = ry;
+        const p = [wx + Math.cos(a)*ray*0.94, wz + Math.sin(a)*ray*0.94];
+        const q = bloc(p[0], h + 0.85, p[1], 0.34, 1.7, 0.92, [.05,.045,.04]);
+        q.ry = -a;
+        parts.push(q);
+      }
+
+      // quelques pieux plantés autour — les restes d'un enclos
+      if(D >= 1) for(let q=0; q<Math.round(4*D); q++){
+        const a = rnd()*6.283, d = ray + rf(0.8, 2.2);
+        const px = wx + Math.cos(a)*d, pz = wz + Math.sin(a)*d;
+        parts.push({tube:[[px, h, pz], .07,
+                          [px + rf(-.2,.2), h + rf(.7,1.5), pz + rf(-.2,.2)],
+                          .05, 4], c: chaume});
       }
       solid = false; break; }
 

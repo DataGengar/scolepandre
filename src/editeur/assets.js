@@ -48,7 +48,7 @@ import {MODIFS, modifNeuf, evaluer, bornesDe, transformer, refleter}
 export const TYPES = [
   'pilier','arche','gravats','stalag','glace','poutre','conduit','tronc',
   'monolithe','tourFenetres','meneau','cristal','souche','os','cotes','crane',
-  'maison','carcasse','lampadaire','pylone','champignon',
+  'maison','hutte','carcasse','lampadaire','pylone','champignon',
 ];
 
 /**
