@@ -61,6 +61,28 @@ function setState(s){
   if(s === ST.LISTEN) creature.listenT = 1.4 + rnd()*2.1;
 }
 
+/**
+ * Un coup l'a fait reculer.
+ *
+ * ELLE NE PERD PAS DE VIE, et n'en perdra pas : tout le jeu tient sur le fait
+ * qu'elle est inarrêtable. Ce que fait une arme, c'est ACHETER DU TEMPS — on
+ * la met en retrait pour quelques secondes, et sa croyance sur notre position
+ * est brouillée, pas effacée. Elle sait toujours à peu près où l'on est ; elle
+ * n'y va simplement plus tout de suite.
+ *
+ * @param secondes  durée de repli. Zéro veut dire « ça ne l'a pas impressionnée ».
+ */
+export function repousserMere(secondes){
+  if(secondes <= 0) return false;
+  setState(ST.RETREAT);
+  /* On remonte stateT pour que la durée demandée décide, et non les 7 s en dur
+     du cas RETREAT : c'est l'arme qui fixe le répit, pas la machine d'états. */
+  creature.stateT = Math.max(0, 7 - secondes);
+  creature.belief.conf *= 0.35;
+  creature.chaseT = 0;
+  return true;
+}
+
 /* ─────────────── perception ─────────────── */
 
 /**

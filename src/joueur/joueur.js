@@ -163,41 +163,109 @@ export function emprunterEchelle(){
   return true;
 }
 
-/* ─────────────── collision ─────────────── */
+/* ═══════════════ COLLISION ═══════════════
+
+   ── CE QUI CLOCHAIT (v4) ───────────────────────────────────────────────────
+   « Je suis souvent bloqué entre deux objets », et « les hitbox sont trop
+   grosses et ne correspondent pas à l'objet ». Les deux constats n'en font
+   qu'un, et la cause était double :
+
+     1. UN SEUL CERCLE PAR ÉLÉMENT. Un lampadaire, une voiture couchée, une
+        poutre de barrage : tous recevaient un disque au sol, de rayon égal à
+        leur part la plus large, plafonné à 1,40 m. On se cognait donc à deux
+        mètres d'une carcasse, et sous une poutre suspendue à quatre mètres de
+        haut. C'est corrigé dans monde/props.js : une hitbox par PART, en
+        forme de capsule — un segment, un rayon, un étage. Voir `capsulePart`
+        dans monde/formes.js.
+
+     2. AUCUN GLISSEMENT. Le déplacement était testé axe par axe : si X et Z
+        étaient tous deux refusés — ce qui arrive dès qu'on aborde un obstacle
+        de biais — on s'arrêtait net. Entre deux objets, les deux axes sont
+        refusés en permanence : c'est exactement « coincé entre deux objets ».
+
+   ── CE QU'ON FAIT MAINTENANT ───────────────────────────────────────────────
+   Le RELIEF garde le test axe par axe : il est aligné sur la grille, et longer
+   un mur de roche y glisse déjà correctement.
+
+   Les ÉLÉMENTS, eux, ne bloquent plus : ils REPOUSSENT. On avance, puis on
+   sort le joueur de ce qu'il chevauche, le long de la normale. Deux objets qui
+   se touchent presque le recrachent d'un côté au lieu de le pincer, et aborder
+   un tronc de biais fait glisser dessus sans une ligne de plus. Le prix : on
+   peut pénétrer d'un centimètre pendant une image. À 5,6 m/s et soixante
+   images par seconde un pas fait 9 cm — rien ne peut être traversé.        */
 
 let collParCell = new Map();
 
+/**
+ * Range chaque capsule dans TOUTES les cellules que sa boîte englobante
+ * touche, élargie du rayon du joueur. Une requête ne consulte donc qu'une
+ * cellule — la sienne — sans jamais rater un objet long.
+ *
+ * La v4 rangeait un cercle dans les neuf cellules autour de son centre :
+ * correct pour un pilier, faux pour un mur de cinq mètres.
+ */
 export function indexerColliders(){
   collParCell = new Map();
+  const R = SETUP.joueur.rayon;
   for(const co of colliders){
-    const cx = w2c(co.x), cz = w2c(co.z);
-    for(let dz=-1;dz<=1;dz++) for(let dx=-1;dx<=1;dx++){
-      const k = idx(clamp(cx+dx,0,GW-1), clamp(cz+dz,0,GH-1));
-      if(!collParCell.has(k)) collParCell.set(k, []);
-      collParCell.get(k).push(co);
+    const m = co.r + R;
+    const cx0 = clamp(w2c(Math.min(co.x0, co.x1) - m), 0, GW-1);
+    const cx1 = clamp(w2c(Math.max(co.x0, co.x1) + m), 0, GW-1);
+    const cz0 = clamp(w2c(Math.min(co.z0, co.z1) - m), 0, GH-1);
+    const cz1 = clamp(w2c(Math.max(co.z0, co.z1) + m), 0, GH-1);
+    for(let z = cz0; z <= cz1; z++) for(let x = cx0; x <= cx1; x++){
+      const k = idx(x, z);
+      let lot = collParCell.get(k);
+      if(!lot) collParCell.set(k, lot = []);
+      lot.push(co);
     }
   }
 }
 
-function heurteElement(nx, nz){
-  const k = idx(clamp(w2c(nx),0,GW-1), clamp(w2c(nz),0,GH-1));
-  const lot = collParCell.get(k);
+/** Hauteur du corps. En rampant elle tombe à un mètre : on passe alors sous ce
+    qu'on ne franchit pas debout, ce qui donne enfin une raison de plus de se
+    mettre à plat ventre. */
+const hauteurCorps = () => joueur.eye + SETUP.joueur.margeTete;
+
+/** Cette capsule est-elle à hauteur de corps, pour des pieds à la cote `gy` ? */
+function aHauteur(co, gy){
+  if(co.y1 < gy + SETUP.monde.marcheJoueur) return false;   // on l'enjambe
+  if(co.y0 > gy + hauteurCorps()) return false;             // on passe dessous
+  return true;
+}
+
+/* Projeté du point sur le segment de la capsule. Un tableau de module plutôt
+   qu'une allocation : appelé des dizaines de fois par image. */
+const PROJ = [0, 0];
+
+function distanceCapsule2(px, pz, co){
+  const dx = co.x1 - co.x0, dz = co.z1 - co.z0;
+  const l2 = dx*dx + dz*dz;
+  let t = l2 > 1e-9 ? ((px - co.x0)*dx + (pz - co.z0)*dz) / l2 : 0;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  PROJ[0] = co.x0 + dx*t; PROJ[1] = co.z0 + dz*t;
+  const ex = px - PROJ[0], ez = pz - PROJ[1];
+  return ex*ex + ez*ez;
+}
+
+const lotEn = (x, z) =>
+  collParCell.get(idx(clamp(w2c(x), 0, GW-1), clamp(w2c(z), 0, GH-1)));
+
+/** Un élément de décor occupe-t-il ce point, à cette hauteur de pieds ? */
+export function heurteElement(nx, nz, gy){
+  const lot = lotEn(nx, nz);
   if(!lot) return false;
   const R = SETUP.joueur.rayon;
   for(const co of lot){
-    const dx = nx-co.x, dz = nz-co.z, rr = co.r + R;
-    if(dx*dx + dz*dz < rr*rr) return true;
+    if(!aHauteur(co, gy)) continue;
+    const rr = co.r + R;
+    if(distanceCapsule2(nx, nz, co) < rr*rr) return true;
   }
   return false;
 }
 
-export function bloqueA(nx, nz, depuis){
-  /* Sur un tablier, on est au-dessus de tout : ni le relief ni les éléments du
-     sol ne peuvent nous arrêter. Seul le bord du tablier compte, et il ne
-     bloque pas — il laisse tomber. */
-  if(joueur.surPont) return false;
-
-  if(heurteElement(nx,nz)) return true;
+/** Le RELIEF seul : mur de roche, ou marche trop haute. */
+export function heurteTerrain(nx, nz, depuis){
   const r = SETUP.joueur.rayon;
   for(const [ox,oz] of [[r,0],[-r,0],[0,r],[0,-r],
                         [r*.7,r*.7],[-r*.7,r*.7],[r*.7,-r*.7],[-r*.7,-r*.7]]){
@@ -208,6 +276,60 @@ export function bloqueA(nx, nz, depuis){
     if(floorH[idx(cx,cz)] - depuis > SETUP.monde.marcheJoueur) return true;
   }
   return false;
+}
+
+/**
+ * Le point est-il occupé ? Relief ET décor.
+ *
+ * Le déplacement n'appelle plus cette fonction pour le décor — il repousse
+ * (voir `repousser`). Elle reste la question qu'on pose AVANT de poser
+ * quelqu'un quelque part : le déblocage, et les outils de diagnostic.
+ */
+export function bloqueA(nx, nz, depuis){
+  /* Sur un tablier, on est au-dessus de tout : ni le relief ni les éléments du
+     sol ne peuvent nous arrêter. Seul le bord du tablier compte, et il ne
+     bloque pas — il laisse tomber. */
+  if(joueur.surPont) return false;
+  return heurteElement(nx, nz, depuis) || heurteTerrain(nx, nz, depuis);
+}
+
+/**
+ * Sort le joueur des éléments qu'il chevauche, en le poussant le long de la
+ * normale. C'est ce qui remplace le blocage, et ce qui rend le pincement
+ * impossible : deux objets serrés produisent deux poussées, dont la somme
+ * fait sortir par le côté ouvert.
+ *
+ * Trois passes : sortir d'un objet peut faire entrer dans son voisin. On ne
+ * pousse jamais DANS la roche, sinon on troquerait un blocage contre un mur.
+ */
+function repousser(gy){
+  if(joueur.surPont) return;
+  const R = SETUP.joueur.rayon;
+  for(let passe = 0; passe < 3; passe++){
+    const lot = lotEn(joueur.x, joueur.z);
+    if(!lot) return;
+    let bouge = false;
+    for(const co of lot){
+      if(!aHauteur(co, gy)) continue;
+      const rr = co.r + R;
+      const d2 = distanceCapsule2(joueur.x, joueur.z, co);
+      if(d2 >= rr*rr) continue;
+      let ex = joueur.x - PROJ[0], ez = joueur.z - PROJ[1];
+      let d = Math.sqrt(d2);
+      if(d < 1e-3){
+        /* Pile sur l'axe de la capsule. Il faut sortir par une direction, et
+           elle doit être STABLE : tirée au hasard, on vibrerait sur place. */
+        ex = (co.z1 - co.z0) || 1; ez = -(co.x1 - co.x0);
+        d = Math.hypot(ex, ez) || 1;
+      }
+      const k = (rr - d) / d;
+      const px = joueur.x + ex*k, pz = joueur.z + ez*k;
+      if(heurteTerrain(px, pz, gy)) continue;
+      joueur.x = px; joueur.z = pz;
+      bouge = true;
+    }
+    if(!bouge) return;
+  }
 }
 
 /* ─────────────── déplacement ─────────────── */
@@ -253,8 +375,14 @@ export function updateJoueur(dt, mult, hooks){
   joueur.vz = lerp(joueur.vz, (fz*f + rz*s)*spd, 1 - Math.exp(-14*dt));
 
   const nx = joueur.x + joueur.vx*dt, nz = joueur.z + joueur.vz*dt;
-  if(!bloqueA(nx, joueur.z, joueur.gy)) joueur.x = nx; else joueur.vx = 0;
-  if(!bloqueA(joueur.x, nz, joueur.gy)) joueur.z = nz; else joueur.vz = 0;
+  /* Le relief bloque axe par axe — il est aligné sur la grille, on y glisse.
+     Le décor, lui, laisse entrer puis repousse : c'est ce qui rend le
+     contournement automatique, et le pincement impossible. */
+  if(joueur.surPont || !heurteTerrain(nx, joueur.z, joueur.gy)) joueur.x = nx;
+  else joueur.vx = 0;
+  if(joueur.surPont || !heurteTerrain(joueur.x, nz, joueur.gy)) joueur.z = nz;
+  else joueur.vz = 0;
+  repousser(joueur.gy);
 
   appliquerGravite(dt, H);
 
@@ -367,12 +495,25 @@ export function decroitreTraces(dt, ventX = 0, ventZ = 0, effacement = 1){
    condamnée par un pilier posé trop près. Ce n'est pas la faute du joueur, et
    lui demander de recommencer sa partie pour ça serait grossier.
 
-   La touche D cherche donc une cellule d'accueil autour de lui, en spirale, et
-   l'y pose. Trois règles :
+   La touche R cherche donc une cellule d'accueil autour de lui, en spirale, et
+   l'y pose. Quatre règles :
      · JAMAIS dans le vide — on débloque, on ne tue pas ;
+     · ON DOIT POUVOIR EN REPARTIR (v5) ;
      · le plus près possible, pour ne pas servir de téléportation gratuite ;
      · ça fait du bruit. Se dégager n'est pas discret, et il n'y a aucune raison
-       que la bête n'entende rien.                                           */
+       que la bête n'entende rien.
+
+   ── POURQUOI LA DEUXIÈME RÈGLE A ÉTÉ AJOUTÉE ───────────────────────────────
+   Retour de test : « je suis souvent bloqué entre 2 objets et le R de
+   déblocage ne change rien ». Il changeait pourtant quelque chose — il
+   déplaçait bel et bien le joueur — mais sur la cellule LIBRE LA PLUS PROCHE,
+   c'est-à-dire, quand on est pincé entre deux troncs, sur l'autre case du
+   même pincement. On ressortait un mètre plus loin, toujours coincé, et le
+   message « DÉGAGÉ » avait l'air de se moquer du monde.
+
+   Une cellule d'accueil doit donc offrir une ISSUE : on compte, autour d'elle,
+   combien des huit directions laissent réellement partir. En dessous de
+   SETUP.joueur.issuesMin, ce n'est pas un dégagement, c'est un autre piège.  */
 
 /* ═══════════════ DÉTECTION DU BLOCAGE ═══════════════
    Le joueur pousse une direction et n'avance pas : il est coincé.
@@ -420,37 +561,65 @@ function surveillerBlocage(dt, commande){
 }
 
 /**
- * Repositionne le joueur sur une cellule praticable proche.
+ * Combien des huit directions laissent partir d'un point donné ?
+ *
+ * On sonde à un pas de marche — pas à un centimètre : sortir d'un pincement
+ * demande de pouvoir vraiment s'éloigner, pas de frémir.
+ */
+function issues(wx, wz, gy){
+  const P = SETUP.joueur.pasIssue;
+  let n = 0;
+  for(let k = 0; k < 8; k++){
+    const a = k * 0.7854;
+    if(!bloqueA(wx + Math.cos(a)*P, wz + Math.sin(a)*P, gy)) n++;
+  }
+  return n;
+}
+
+/**
+ * Repositionne le joueur sur une cellule praticable proche D'OÙ L'ON PEUT
+ * REPARTIR.
+ *
+ * Deux tours de spirale : le premier n'accepte qu'une cellule franchement
+ * ouverte ; si le monde n'en offre aucune à portée, le second se contente de
+ * la première cellule libre venue — mieux vaut un dégagement imparfait que
+ * « AUCUNE ISSUE » et une partie perdue.
+ *
  * @returns la distance parcourue, ou 0 si rien n'a été trouvé
  */
 export function debloquer(){
   const depart = {x: joueur.x, z: joueur.z};
   const cx = w2c(joueur.x), cz = w2c(joueur.z);
+  const MIN = SETUP.joueur.issuesMin;
 
-  for(let r = 1; r <= 24; r++){
-    let meilleur = null, md = 1e9;
-    for(let dz = -r; dz <= r; dz++) for(let dx = -r; dx <= r; dx++){
-      // uniquement le pourtour du carré de rayon r : on s'éloigne par paliers
-      if(Math.abs(dx) !== r && Math.abs(dz) !== r) continue;
-      const x = cx + dx, z = cz + dz;
-      if(!isFree(x, z)) continue;
-      const i = idx(x, z);
-      if(vide[i]) continue;                       // surtout pas un gouffre
-      if(ceilH[i] - floorH[i] < 1.0) continue;    // ni un boyau où l'on rentre pas
-      const wx = c2w(x), wz = c2w(z);
-      if(bloqueA(wx, wz, floorH[i])) continue;    // ni un coin déjà encombré
-      const d = (wx - joueur.x)**2 + (wz - joueur.z)**2;
-      if(d < md){ md = d; meilleur = {x:wx, z:wz, y:floorH[i]}; }
-    }
-    if(meilleur){
-      joueur.x = meilleur.x; joueur.z = meilleur.z;
-      joueur.gy = meilleur.y; joueur.vy = 0;
-      joueur.vx = joueur.vz = 0;
-      joueur.chuteDepuis = null;
-      joueur.surPont = false;
-      // se dégager fait du bruit : elle a le droit de l'entendre
-      emettreSon(joueur.x, joueur.z, 14, false);
-      return Math.hypot(joueur.x - depart.x, joueur.z - depart.z);
+  for(let exigeant = 1; exigeant >= 0; exigeant--){
+    for(let r = 1; r <= 24; r++){
+      let meilleur = null, md = 1e9;
+      for(let dz = -r; dz <= r; dz++) for(let dx = -r; dx <= r; dx++){
+        // uniquement le pourtour du carré de rayon r : on s'éloigne par paliers
+        if(Math.abs(dx) !== r && Math.abs(dz) !== r) continue;
+        const x = cx + dx, z = cz + dz;
+        if(!isFree(x, z)) continue;
+        const i = idx(x, z);
+        if(vide[i]) continue;                       // surtout pas un gouffre
+        if(ceilH[i] - floorH[i] < 1.0) continue;    // ni un boyau où l'on rentre pas
+        const wx = c2w(x), wz = c2w(z);
+        if(bloqueA(wx, wz, floorH[i])) continue;    // ni un coin déjà encombré
+        // et surtout : une cellule d'où l'on peut REPARTIR
+        if(exigeant && issues(wx, wz, floorH[i]) < MIN) continue;
+        const d = (wx - joueur.x)**2 + (wz - joueur.z)**2;
+        if(d < md){ md = d; meilleur = {x:wx, z:wz, y:floorH[i]}; }
+      }
+      if(meilleur){
+        joueur.x = meilleur.x; joueur.z = meilleur.z;
+        joueur.gy = meilleur.y; joueur.vy = 0;
+        joueur.vx = joueur.vz = 0;
+        joueur.chuteDepuis = null;
+        joueur.surPont = false;
+        // se dégager fait du bruit : elle a le droit de l'entendre
+        emettreSon(joueur.x, joueur.z, 14, false);
+        return Math.hypot(joueur.x - depart.x, joueur.z - depart.z);
+      }
     }
   }
   return 0;

@@ -279,6 +279,48 @@ export function rendre(ctx){
   gl.uniformMatrix4fv(uS.uModel, false, IDENT);
   dessinerCreatures();
 
+  /* ── l'ARME EN MAIN ──
+     Dessinée dans la passe monde, donc éclairée par la lampe qu'on tient et
+     par ce qui se trouve autour : c'est ce qui la rattache à la scène. Mais
+     avec un `uEmit` léger et sans brouillard propre — elle est à cinquante
+     centimètres de l'œil, la noyer dans la brume n'aurait aucun sens.
+
+     Le tampon de profondeur est effacé juste avant : une arme tenue ne doit
+     jamais être coupée par une paroi qu'on frôle. C'est la convention de tous
+     les jeux à la première personne, et on la remarque surtout quand elle
+     manque. */
+  if(ctx.armeMesh && ctx.armeModele){
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.uniform3fv(uS.uTint, [1,1,1]);
+    gl.uniform1f(uS.uEmit, 0.05);
+    gl.uniformMatrix4fv(uS.uModel, false, ctx.armeModele);
+    gl.bindVertexArray(ctx.armeMesh.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, ctx.armeMesh.count);
+    gl.bindVertexArray(null);
+    gl.uniform1f(uS.uEmit, 0);
+  }
+
+  /* ── l'ARME EN MAIN ──
+     Dessinée dans la passe monde, donc éclairée par la lampe qu'on tient et
+     par ce qui se trouve autour : c'est ce qui la rattache à la scène. Mais
+     avec un `uEmit` léger et sans brouillard propre — elle est à cinquante
+     centimètres de l'œil, la noyer dans la brume n'aurait aucun sens.
+
+     Le tampon de profondeur est effacé juste avant : une arme tenue ne doit
+     jamais être coupée par une paroi qu'on frôle. C'est la convention de tous
+     les jeux à la première personne, et on la remarque surtout quand elle
+     manque. */
+  if(ctx.armeMesh && ctx.armeModele){
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.uniform3fv(uS.uTint, [1,1,1]);
+    gl.uniform1f(uS.uEmit, 0.05);
+    gl.uniformMatrix4fv(uS.uModel, false, ctx.armeModele);
+    gl.bindVertexArray(ctx.armeMesh.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, ctx.armeMesh.count);
+    gl.bindVertexArray(null);
+    gl.uniform1f(uS.uEmit, 0);
+  }
+
   /* ── les cartes, avec leur programme texturé ──
      Après le reste de la passe monde : elles écrivent dans le même tampon de
      profondeur, donc elles s'occultent correctement avec le décor. */

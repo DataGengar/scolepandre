@@ -298,6 +298,86 @@ export function etenduePart(q){
   return Math.max(ex, ez) / 2;
 }
 
+/* ═══════════════ LA HITBOX D'UNE PART ═══════════════
+   « Les hitbox sont trop grosses et ne correspondent pas à l'objet. » C'était
+   exact, et la cause tenait en une ligne de props.js : un élément de décor
+   entier — dix, vingt parts — recevait UN SEUL cercle, de rayon égal à sa
+   part la plus large, plafonné à 1,40 m, posé au sol et sans hauteur.
+
+   Conséquences, toutes vérifiables en jeu :
+     · une poutre suspendue à quatre mètres bloquait au niveau du sol ;
+     · un lampadaire bloquait sur le rayon de sa CROSSE, à sept mètres de
+       haut, soit un mètre autour du mât ;
+     · une voiture couchée bloquait un disque d'1,40 m alors qu'elle est
+       longue et étroite ;
+     · et le joueur, lui, ne fait que 0,30 m de rayon : ce n'est pas lui qui
+       est trop gros.
+
+   Une part est donc mesurée POUR CE QU'ELLE EST : une CAPSULE — un segment
+   horizontal, un rayon autour, et l'étage qu'elle occupe.
+
+     {x0,z0, x1,z1, r, y0,y1}
+
+   Le segment est l'axe long de la forme, le rayon sa demi-épaisseur. Un mur
+   de 5 m sur 26 cm devient un segment de 4,74 m et 13 cm de rayon, et non un
+   disque de 2,5 m. Une colonne devient un disque de son vrai rayon. Et `y0`
+   `y1` disent à quelle hauteur ça se passe : on enjambe ce qui est sous le
+   pas, on passe sous ce qui est au-dessus de la tête.                       */
+
+/**
+ * La capsule de collision d'une part, ou `null` si elle est trop menue pour
+ * mériter d'arrêter quelqu'un (éclats de verre, cannelures, brindilles).
+ *
+ * Écrit dans `out` plutôt que d'allouer : le décor en compte des dizaines de
+ * milliers, et cette fonction est appelée une fois par part à la génération.
+ */
+export function capsulePart(q, out){
+  if(!q) return null;
+  const o = out || {};
+
+  if(q.tube){
+    const [p0, r0, p1, r1] = q.tube;
+    const r = Math.max(r0, r1);
+    if(r < 0.09) return null;
+    o.x0 = p0[0]; o.z0 = p0[2]; o.x1 = p1[0]; o.z1 = p1[2]; o.r = r;
+    o.y0 = Math.min(p0[1], p1[1]) - r*0.2;
+    o.y1 = Math.max(p0[1], p1[1]) + r*0.2;
+    return o;
+  }
+
+  if(q.roche){
+    const r = q.roche[0];
+    if(r < 0.09) return null;
+    o.x0 = o.x1 = q.x; o.z0 = o.z1 = q.z; o.r = r;
+    o.y0 = q.y - r; o.y1 = q.y + r;
+    return o;
+  }
+
+  /* Boîte, coin, plaque. La plaque n'a pas d'épaisseur : on lui en donne une
+     symbolique, sinon un volet fermé laisserait passer. */
+  const sx = q.sx || 0, sy = q.sy || 0, sz = q.plaque ? 0.06 : (q.sz || 0);
+  if(Math.max(sx, sz) < 0.18) return null;
+
+  /* L'inclinaison `r` couche la boîte dans le plan XY : la hauteur qu'elle
+     occupe réellement mêle sy et sx. On majore, une hitbox trop courte étant
+     pire qu'une hitbox trop haute — on traverserait l'objet par le haut. */
+  const co = Math.abs(Math.cos(q.r || 0)), si = Math.abs(Math.sin(q.r || 0));
+  const hy = (sy*co + sx*si) / 2;
+  const ex = sx*co + sy*si;                 // étendue sur X après inclinaison
+
+  // l'axe long, tourné par le lacet
+  const cy = Math.cos(q.ry || 0), sn = Math.sin(q.ry || 0);
+  let demi, rayon, dx, dz;
+  if(ex >= sz){ demi = (ex - sz) / 2; rayon = sz / 2; dx = cy;  dz = sn; }
+  else        { demi = (sz - ex) / 2; rayon = ex / 2; dx = -sn; dz = cy; }
+
+  o.x0 = q.x - dx*demi; o.z0 = q.z - dz*demi;
+  o.x1 = q.x + dx*demi; o.z1 = q.z + dz*demi;
+  o.r = Math.max(0.05, rayon);
+  o.y0 = q.y - hy; o.y1 = q.y + hy;
+  return o;
+}
+
 /** Le répartiteur : une part, la bonne primitive. Un seul endroit à toucher
     quand une forme s'ajoute — le pavé et la forge passent tous deux par ici. */
 export function cuirePart(quad, q){

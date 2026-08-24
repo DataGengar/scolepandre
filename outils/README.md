@@ -5,6 +5,10 @@
 | outil | ce qu'il fait |
 |---|---|
 | `verifier.py` | **à lancer avant chaque commit** — cohérence du projet |
+| `carte_monde.py` | **la planche vue d'en haut** : matière et relief ombré |
+| `diag_collision.py` | se cogne-t-on ? le « R » dégage-t-il vraiment ? |
+| `diag_passage.py` | le monde est-il traversable à pied ? |
+| `apercu.py` | ce que le joueur VOIT, une image par biome |
 | `syntaxe.py` | équilibre des délimiteurs dans tous les `.js` |
 | `smoke.py` | **exécute vraiment le jeu** dans Chrome headless, sans GPU |
 | `bundler.py` | `src/` → `dist/scoleopandre.html`, fichier unique |
@@ -18,6 +22,20 @@
     python outils/verifier.py
     python outils/smoke.py
     python outils/bundler.py
+
+## Régler le terrain sans jouer
+
+`carte_monde.py` produit la planche entière en une image, et accepte des
+surcharges de réglage — c'est ce qui permet de comparer deux mondes au lieu de
+modifier le code entre deux captures :
+
+    python outils/carte_monde.py --graine 3
+    python outils/carte_monde.py --graine 3 --suffixe _large \
+        --reglage terrain.seuilGalerie=0.72
+
+`--graine` est **réellement** rejouable depuis la v5 : le jeu lit
+`?graine=` dans l'URL, ce qu'il ne faisait pas avant (les outils annonçaient
+une graine et photographiaient un monde différent à chaque lancement).
 
 `smoke.py` est le plus utile : il lance le jeu pour de vrai avec un faux WebGL,
 joue 30 secondes tout seul (marche, leurre, cachette, effondrement, froid

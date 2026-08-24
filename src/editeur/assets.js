@@ -49,6 +49,7 @@ export const TYPES = [
   'pilier','arche','gravats','stalag','glace','poutre','conduit','tronc',
   'monolithe','tourFenetres','meneau','cristal','souche','os','cotes','crane',
   'maison','hutte','carcasse','lampadaire','pylone','champignon',
+  'armePiedDeBiche','armeThunderbolt',
 ];
 
 /**

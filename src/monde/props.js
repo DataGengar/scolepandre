@@ -25,7 +25,7 @@ import {
   idx, isFloor, isFree, c2w, celluleLibre,
 } from './grille.js';
 import {salles} from './generation.js';
-import {rayonPart} from './formes.js';
+import {rayonPart, capsulePart} from './formes.js';
 import {autorise, densiteEn} from './plan.js';
 
 export const props = [], lights = [], colliders = [];
@@ -54,7 +54,7 @@ function eclat(out, x,y,z, taille, c){
 export function addProp(kind, x, z, i){
   const b = BIOMES[biome[i]], wx = c2w(x), wz = c2w(z), h = floorH[i];
   const D = SETUP.image.detail;
-  let solid = true, parts = [];
+  let solid = true, dur = false, parts = [];
 
   switch(kind){
     case 'pilier': {
@@ -416,6 +416,75 @@ export function addProp(kind, x, z, i){
       }
       solid = false; break; }
 
+    /* ══════════════ LES ARMES ══════════════
+       Elles vivent ici, avec le décor, et ce n'est pas un rangement par
+       défaut : c'est ce qui les rend éditables dans la forge sans une ligne
+       de code en plus. La forge charge un élément par son nom, le retouche,
+       et le réécrit. Une arme est un élément comme un autre — sauf qu'on la
+       tient.
+
+       Elles sont donc bâties À L'ORIGINE, couchées le long de +X, la poignée
+       vers l'arrière. joueur/vue-arme.js les prend telles quelles et les
+       place devant la caméra ; monde/props.js les pose au sol quand elles
+       traînent dans le monde. Une seule géométrie pour les deux cas. */
+
+    case 'armePiedDeBiche': {
+      const acier = [.26,.255,.25], rouille = [.30,.16,.09];
+      const L = 0.92;                       // longueur totale, en mètres
+      // le fût, légèrement conique
+      parts.push({tube:[[wx - L*0.45, h+0.04, wz], .022,
+                        [wx + L*0.34, h+0.04, wz], .018, 6], c: acier});
+      // le col courbe, en trois segments : c'est lui qui dit « pied-de-biche »
+      const col = [[0.34, 0.04], [0.44, 0.055], [0.50, 0.095], [0.52, 0.15]];
+      for(let k=0; k<col.length-1; k++)
+        parts.push({tube:[[wx + L*col[k][0],   h + col[k][1],   wz], .018,
+                          [wx + L*col[k+1][0], h + col[k+1][1], wz], .016, 5],
+                    c: acier});
+      // la fourche, fendue
+      for(const sd of [1,-1])
+        parts.push({coin: 1, x: wx + L*0.545, y: h + 0.165, z: wz + sd*0.016,
+                    sx:0.075, sy:0.045, sz:0.016, c: acier, ry: 0});
+      // le talon aplati, à l'autre bout
+      parts.push({x: wx - L*0.47, y: h+0.04, z: wz,
+                  sx:0.075, sy:0.012, sz:0.038, c: acier, r:0.22});
+      // la poignée, usée
+      parts.push({tube:[[wx - L*0.30, h+0.04, wz], .028,
+                        [wx - L*0.05, h+0.04, wz], .027, 6], c: rouille});
+      solid = false; break; }
+
+    case 'armeThunderbolt': {
+      const corps = [.19,.20,.22], cuivre = [.34,.21,.11];
+      const arc   = [0.45, 0.80, 2.20];     // émissif : l'arc électrique
+      const L = 0.66;
+
+      // le canon : deux rails parallèles, et c'est entre eux que ça claque
+      for(const sd of [1,-1])
+        parts.push({tube:[[wx - L*0.05, h+0.05, wz + sd*0.030], .014,
+                          [wx + L*0.52, h+0.05, wz + sd*0.030], .012, 5],
+                    c: cuivre});
+      // l'arc entre les rails, à la bouche
+      parts.push({tube:[[wx + L*0.50, h+0.05, wz - 0.028], .008,
+                        [wx + L*0.50, h+0.05, wz + 0.028], .008, 4],
+                  c: arc, emis: 1});
+      // le bloc : la masse de l'arme
+      parts.push({x: wx - L*0.10, y: h+0.05, z: wz,
+                  sx: L*0.42, sy: 0.10, sz: 0.075, c: corps});
+      // la crosse, inclinée
+      parts.push({x: wx - L*0.40, y: h+0.015, z: wz,
+                  sx: 0.20, sy: 0.055, sz: 0.058, c: corps, r: 0.16});
+      // la poignée, sous le bloc
+      parts.push({x: wx - L*0.14, y: h-0.035, z: wz,
+                  sx: 0.055, sy: 0.12, sz: 0.05, c: corps, r: -0.20});
+      // la cellule, qui luit faiblement quand elle est chargée
+      parts.push({x: wx - L*0.02, y: h+0.115, z: wz,
+                  sx: 0.11, sy: 0.035, sz: 0.05,
+                  c: [arc[0]*0.5, arc[1]*0.5, arc[2]*0.5], emis: 1});
+
+      if(lights.length < SETUP.decor.maxLumieres)
+        lights.push({x:wx + L*0.4, y:h+0.12, z:wz,
+                     c:[0.16,0.28,0.72], ph:rnd()*6.28});
+      solid = false; break; }
+
     case 'carcasse': {
       // une voiture, sur le flanc ou sur le toit. Jamais à l'endroit.
       const L = rf(3.6, 4.6), W = rf(1.6, 1.9), H = rf(1.2, 1.5);
@@ -448,8 +517,10 @@ export function addProp(kind, x, z, i){
         parts.push(bloc(wx, h+H*0.7, wz, .18,.06,.18, [2.0,1.9,1.5], 0, 1));
         lights.push({x:wx, y:h+H*0.8, z:wz, c:[0.9,0.85,0.62], ph:rnd()*6.28});
       }
-      colliders.push({x:wx, z:wz, r:Math.min(L*0.4, 1.4)});
-      solid = false; break; }
+      /* Une voiture est longue et étroite. Le disque d'1,40 m qu'elle posait
+         avant débordait de deux mètres à l'avant comme à l'arrière : on se
+         cognait dans le vide. Elle prend maintenant la forme de ses parts. */
+      dur = true; solid = false; break; }
 
     case 'lampadaire': {
       const ht = rf(4.5, 7.0);
@@ -540,9 +611,47 @@ export function addProp(kind, x, z, i){
   let ray = 0;
   for(const q of parts) ray = Math.max(ray, rayonPart(q));
   props.push({parts, cell:i, r:ray, solide:solid});
-  if(solid){
-    colliders.push({x:wx, z:wz, r:Math.min(ray, 1.4)});
-    if(ray >= CELL * 0.78) blocked[i] = 1;   // seuls les vrais massifs coupent la nav
+  if(solid || dur){
+    /* ── PAS DE BOUCHON DANS UN BOYAU ──
+       Un élément massif au milieu d'une galerie de deux cellules de large, ce
+       n'est pas du décor : c'est un mur, et tout ce qu'il y a derrière devient
+       inatteignable. Ça ne se voyait pas en v4, dont les couloirs étaient
+       larges et les salles rectangulaires. Sur le réseau de galeries de la v5,
+       mesuré sur trois mondes : le décor à lui seul faisait tomber la part du
+       monde atteignable à pied de 99,6 % à 65 % — un monde sur trois avait sa
+       surface entière condamnée par quelques piliers tombés au mauvais
+       endroit.
+
+       On ne le déplace pas, on ne le rétrécit pas : on ne le pose pas. */
+    if(ray > SETUP.decor.rayonBouchon && openN[i] < SETUP.decor.ouvertureMassif){
+      props.pop();
+      return;
+    }
+    poserCapsules(parts, h);
+    if(solid && ray >= CELL * 0.78) blocked[i] = 1;  // seuls les vrais massifs coupent la nav
+  }
+}
+
+/* Réutilisée à chaque part : `capsulePart` écrit dedans plutôt que d'allouer
+   un objet par part sur les quelques centaines de milliers du décor. */
+const _cap = {};
+
+/**
+ * Pose une hitbox par PART, et non plus une par élément.
+ *
+ * Voir l'en-tête de `capsulePart` dans monde/formes.js pour le pourquoi. Ici
+ * on ne garde que ce qui peut concerner un corps debout : ce qui est sous le
+ * pas se franchit, ce qui est à quatre mètres et demi ne se touche pas. Le
+ * tri fin — enjamber, passer dessous — est refait à chaque image par
+ * joueur/joueur.js, qui seul connaît l'altitude réelle des pieds.
+ */
+function poserCapsules(parts, h){
+  for(const q of parts){
+    const c = capsulePart(q, _cap);
+    if(!c) continue;
+    if(c.y1 < h + 0.15 || c.y0 > h + 4.5) continue;
+    colliders.push({x0:c.x0, z0:c.z0, x1:c.x1, z1:c.z1,
+                    r:c.r, y0:c.y0, y1:c.y1});
   }
 }
 

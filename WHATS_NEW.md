@@ -4,6 +4,191 @@ Suivi de l'évolution du projet.
 
 ---
 
+# v5 — 24 août 2026 · le terrain devient procédural, et les hitbox deviennent honnêtes
+
+Trois demandes : *« il faut qu'on parte en procédural pour le terrain »*, *« je
+suis souvent bloqué entre 2 objets et le R de déblocage ne change rien »*, et
+*« les hitbox sont trop grosses et ne correspondent pas à l'objet qu'elles
+contiennent »*.
+
+## 1. LE TERRAIN N'EST PLUS CREUSÉ, IL EST ÉCHANTILLONNÉ
+
+La v4 posait **300 rectangles** de salle, 90 blobs de caverne, et les reliait
+par des **couloirs en L**. Le maillage avait beau déplacer chaque coin d'un
+bruit, ça ne rattrapait rien : un rectangle a quatre angles droits, un couloir
+en L en a deux, et l'œil lit la RÈGLE avant de lire le lieu. Les aperçus
+étaient sans appel — sol parfaitement plan, murs d'aplomb à intervalles
+réguliers, plafond en caissons.
+
+La v5 renverse le procédé. Le monde est **deux champs continus** évalués en
+tout point de la planche (`src/noyau/bruit.js`, `src/monde/generation.js`) :
+
+- l'**altitude** du sol, écrite partout, roche comprise. Une seule surface,
+  continue : une galerie qui débouche dans une salle arrive au bon niveau, sans
+  marche de raccord. Elle est faite d'une descente d'ensemble (le barrage au
+  fond, la surface au jour), de quatre octaves de relief, et de **failles** —
+  un bruit de crête franchi d'un coup, qui y taille de vrais à-pics ;
+- la **roche** : les galeries sont les **lignes de crête** d'un bruit *ridged*.
+  Un bruit ordinaire donne des taches ; un bruit de crête donne des lignes qui
+  serpentent, se divisent et se rejoignent. C'est un réseau, pas un gruyère.
+
+Le tout est évalué dans un **domaine déformé** : rien n'est aligné sur les
+axes, les strates se plissent, une galerie ne part jamais droit.
+
+Les grandes cavités sont ensuite *repérées* dans le champ (et non plus posées),
+chaînées par altitude et reliées par des galeries sinueuses : c'est l'épine, le
+chemin garanti du fond jusqu'au jour.
+
+**Ce qui n'a pas bougé** : la grille, la stratigraphie par altitude, les
+gouffres, les ponts, les villages, le décor, la navigation, et le PLAN de
+l'éditeur, qui garde le dernier mot sur le biome comme sur la cote.
+
+### Six pannes trouvées en mesurant, toutes muettes
+
+Aucune ne se voyait à l'écran. Chacune a demandé un chiffre, et deux d'entre
+elles une image — c'est pour ça que `outils/carte_monde.py` existe.
+
+- **Le bruit n'était pas calibré.** Une somme d'octaves normalisée tient dans
+  [−1,1] mais ne les remplit pas : écart-type mesuré, **0,20**. Toutes les
+  amplitudes valaient donc cinq fois moins que ce qu'elles annonçaient, et la
+  première version du terrain sortait un monde plat. `fbm2` est désormais
+  calibré à écart-type 1, et un réglage en mètres veut enfin dire des mètres.
+- **La relaxation saturait en silence.** Son garde-fou coupait la boucle avant
+  la fin et laissait **2 778 marches infranchissables** sans un mot. Elle est
+  refaite : le problème est un plus court chemin à poids constant, donc des
+  seaux suffisent, chaque cellule est réglée une fois, et il n'y a plus de
+  garde-fou à régler. **12,1 s → 0,2 s**, zéro marche restante.
+- **Les galeries de perçage coupaient le monde.** `percerEnclaves` posait
+  l'altitude de sa galerie par interpolation linéaire, et l'écrivait **sur des
+  cellules déjà creusées** : là où elle croisait le réseau, elle laissait une
+  marche en travers. Mesuré graine 1 : **76,5 %** du sol praticable dans un
+  seul morceau. La galerie part maintenant du terrain, ne touche jamais à une
+  cellule acquise, rabote son profil en deux passes, et **renonce** si le tracé
+  est trop court pour le dénivelé. → **98,2 %**.
+- **Un élément massif dans un boyau est un mur.** Un pilier posé au milieu
+  d'une galerie de deux cellules de large condamne tout ce qu'il y a derrière.
+  Invisible en v4, dont les couloirs étaient larges ; fatal sur un réseau de
+  galeries. Mesuré : le décor à lui seul faisait tomber la part du monde
+  atteignable à pied de **99,6 % à 65 %** — un monde sur trois avait sa
+  surface entière, la destination du jeu, condamnée par quelques piliers tombés
+  au mauvais endroit. On ne les pose plus là (`SETUP.decor.rayonBouchon`,
+  `ouvertureMassif`), et le décor perd 20 % de ses éléments sans qu'on voie la
+  différence.
+- **Le dehors se décrochait du monde.** En relaxant le souterrain et pas la
+  surface, on abaisse d'un côté de la lisière et pas de l'autre : il se forme
+  une marche tout du long, et le dehors devient une île. On relaxe donc un
+  **ourlet** de vingt-deux cellules côté ciel — assez pour recoudre, trop peu
+  pour raboter les à-pics du grand dehors.
+- **`?graine=` n'était jamais lu.** `apercu.py --graine 7` annonçait une graine
+  depuis des mois et photographiait un monde différent à chaque lancement :
+  deux captures censées comparer deux réglages comparaient deux mondes. Le jeu
+  lit la graine dans l'URL.
+
+### Mesuré (3 mondes, `outils/diag_passage.py`)
+
+| | v4 | v5 |
+|---|---|---|
+| part du sol praticable dans un seul morceau | 98,5 % | **99,2 %** (98,4 à 99,6) |
+| morceaux significatifs inatteignables | 1,3 | **1,0** |
+| part de la planche creusée | ~9 % | 24 % |
+| durée de génération | 0,1 s | 1,4 s |
+
+Le chemin pour y arriver vaut la peine d'être noté, parce qu'il a été
+entièrement piloté par la mesure : 88,6 % au premier jet, toujours 88,6 %
+après avoir corrigé la relaxation, **76,5 %** sur le pire monde, **65 %** en
+cherchant pourquoi — puis 99,2 % une fois les trois vraies causes trouvées.
+Trois fois sur trois, l'hypothèse de départ était fausse et le chiffre l'a
+dit.
+
+## 2. LES HITBOX ÉPOUSENT ENFIN L'OBJET
+
+Un élément de décor — dix, vingt parts — recevait **un seul cercle**, de rayon
+égal à sa part la plus large, plafonné à 1,40 m, posé au sol, sans hauteur.
+D'où : une poutre suspendue à quatre mètres qui bloque au niveau du sol, un
+lampadaire qui bloque sur le rayon de sa crosse, une voiture couchée qui bloque
+un disque d'1,40 m alors qu'elle est longue et étroite.
+
+Chaque **part** a maintenant sa hitbox, en forme de **capsule** — un segment,
+un rayon, et l'étage qu'elle occupe (`capsulePart`, dans `monde/formes.js`). Un
+mur de 5 m sur 26 cm devient un segment de 4,74 m et 13 cm de rayon, et non un
+disque de 2,50 m. Et parce que la capsule connaît sa hauteur : **on enjambe ce
+qui est sous le pas, on passe sous ce qui est au-dessus de la tête** — en
+rampant, sous ce qu'on ne franchit pas debout.
+
+| | v4 | v5 |
+|---|---|---|
+| rayon médian d'une hitbox | 0,68 m | **0,07 m** |
+| part du sol occupée par une hitbox | 10,1 % | **7,4 %** |
+| points de sol pris À L'INTÉRIEUR d'un objet | **13,6 %** | **6,5 %** |
+
+Une case de sol sur sept était donc dans une hitbox invisible. C'est ça, « on
+se cogne partout ».
+
+## 3. ON NE SE FAIT PLUS PINCER, ET LE « R » DÉGAGE VRAIMENT
+
+Deux causes distinctes, deux corrections.
+
+**Le pincement.** Le déplacement était testé axe par axe : si X et Z étaient
+tous deux refusés — ce qui arrive dès qu'on aborde un obstacle de biais — on
+s'arrêtait net. Entre deux objets, les deux axes sont refusés en permanence.
+Le relief garde ce test (il est aligné sur la grille, on y glisse déjà) ; les
+**éléments, eux, ne bloquent plus : ils repoussent**. On avance, puis on sort
+le joueur de ce qu'il chevauche, le long de la normale. Deux objets serrés le
+recrachent d'un côté au lieu de le pincer, et aborder un tronc de biais fait
+glisser dessus sans une ligne de plus.
+
+**Le « R » qui ne changeait rien.** Il changeait pourtant quelque chose : il
+posait le joueur sur la cellule libre **la plus proche** — c'est-à-dire, quand
+on est pincé entre deux troncs, sur l'autre case du même pincement. Une cellule
+d'accueil doit désormais offrir une **issue** : on compte, autour d'elle,
+combien des huit directions laissent réellement partir, et en dessous de cinq
+sur huit ce n'est pas un dégagement, c'est un autre piège.
+
+| | v4 | v5 |
+|---|---|---|
+| déblocages qui laissent vraiment repartir | **67,8 %** | **99,3 %** |
+
+(sur 154 dégagements tentés en v4 et 324 en v5 ; en ne comptant que les points
+où l'on peut réellement se tenir, l'échantillon tombe à quelques dizaines et
+l'écart reste le même, 27 % contre 95 %.)
+
+## 4. TROIS OUTILS DE PLUS
+
+- **`outils/carte_monde.py`** — la planche vue d'en haut, en une image : la
+  matière (ce qui est creusé, par biome), le relief ombré, et **ce qu'on peut
+  atteindre à pied** (vert : la composante principale ; rouge : coupé du
+  monde). C'est ce troisième panneau qui a trouvé la galerie fautive en une
+  image, après deux heures de chiffres qui ne disaient rien.
+- **`outils/diag_collision.py`** — se cogne-t-on, et le « R » dégage-t-il ? Il
+  sonde des dizaines de milliers de points avec le vrai code de collision,
+  compte les pièges, tente un déblocage sur chacun, et sait lire les hitbox de
+  la v4 comme celles de la v5 — c'est ce qui rend le tableau ci-dessus
+  comparable.
+- **`diag_passage.py`** a été corrigé au passage : sa classification des
+  frontières sautait le cas intéressant (un voisin praticable DANS la
+  composante principale, c'est-à-dire une marche) et concluait donc
+  invariablement « de la roche non creusée ». La bonne classification vit
+  maintenant dans `carte_monde.py`.
+
+## 5. CE QUI RESTE
+
+- Le **frottement** est monté : 9,8 % des points de sol n'offrent que une à
+  trois issues sur huit, contre 4,5 % en v4 — et c'est le TERRAIN, pas le
+  décor. La mesure sépare les deux (une seconde passe, index de collision
+  vidé) : le relief seul en explique 9,8 sur 9,8. Un réseau de galeries est
+  plus étroit qu'une enfilade de salles. À juger à la manette : si c'est
+  pénible, `SETUP.terrain.seuilGalerie` est le curseur — et élargir les
+  galeries a été essayé, ça n'a rien changé au frottement et ça a creusé 15 %
+  de monde en plus.
+- Les **gouffres** restent des ellipses régulières : sur la carte du monde, ils
+  se lisent comme des pastilles. `monde/relief.js` n'a pas été touché.
+- **Maisons et huttes n'ont toujours aucune collision** : on les traverse. Les
+  rendre solides est facile maintenant que les hitbox suivent les parts, mais
+  ça change la circulation dans les villages — à faire volontairement, pas en
+  passant.
+
+---
+
 # v3.4 — 23 août 2026 · l'application, et la forge pour de vrai
 
 Deux demandes : le style d'Héphaïstos, et un `.exe` pour tester. La seconde a

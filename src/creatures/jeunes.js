@@ -84,6 +84,11 @@ function nouveauJeune(wx, wz, wy){
     path:null, pathIdx:1, repathT:0, cible:null,
     // charge : elle s'essouffle, et un leurre la détourne
     chargeT:0, reposT:0, leurre:null, leurreT:0, fuiteT:0,
+    /* Ils peuvent mourir, depuis qu'on a des armes. La mère, elle, n'a pas
+       de points de vie et n'en aura pas : voir joueur/armes.js. */
+    pv: SETUP.jeunes.pv,
+    sonne: 0,                 // secondes d'étourdissement après un coup
+
     // détecteur de blocage
     refX:wx, refZ:wz, blocT:0, coinceT:0,
     // rendu
@@ -293,3 +298,37 @@ function praticable(wx, wz, depuis){
 }
 
 export function viderJeunes(){ jeunes.length = 0; }
+
+
+/* ═══════════════ LES COUPS ═══════════════
+   Un jeune, ça se tue. C'est la différence de fond avec la mère, et c'est ce
+   qui donne un sens aux armes : sans elles, on ne pouvait que subir les
+   jeunes, qui sont nombreux et rapides.
+
+   Un coup non fatal ÉTOURDIT. C'est important : frapper doit produire un
+   effet visible même quand ça ne suffit pas, sinon on ne sait pas si l'on a
+   touché.                                                                   */
+
+/**
+ * @returns 'mort', 'touche', ou null si la référence n'existe plus
+ */
+export function blesserJeune(j, degats, poussee, dx, dz){
+  const k = jeunes.indexOf(j);
+  if(k < 0) return null;
+
+  j.pv -= degats;
+  if(j.pv <= 0){
+    jeunes.splice(k, 1);
+    return 'mort';
+  }
+
+  j.sonne = Math.max(j.sonne, SETUP.jeunes.sonneSecondes);
+  /* La poussée : on le repousse dans l'axe du coup. Elle passe par la même
+     porte que tout le reste — pas de téléportation, on décale la cible et le
+     déplacement fait le travail. */
+  j.x += dx * poussee * 0.22;
+  j.z += dz * poussee * 0.22;
+  j.cible = {x: j.x + dx * 6, z: j.z + dz * 6};
+  j.path = null;
+  return 'touche';
+}

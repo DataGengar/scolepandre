@@ -42,10 +42,13 @@ export const SETUP = {
 
     // Amplitude verticale. ×3 par rapport à la v2 qui allait de −42 à +44.
     altBasse:-126,
-    altHaute:132,
+    altHaute:104,
 
+    /* Les LIEUX repérés dans le champ (v5 : plus des salles POSÉES, mais les
+       grandes cavités du bruit, chaînées par altitude — voir monde/
+       generation.js). `nbSalles` en est le plafond, `nbRaccourcis` le nombre
+       de galeries en plus de la chaîne, pour que le monde soit un réseau. */
     nbSalles:300,
-    nbCavernes:90,
     nbRaccourcis:140,
 
     // Plafonds : plus bas qu'en v2 (2.8 + openN*3.2) → souterrain exigu.
@@ -71,12 +74,94 @@ export const SETUP = {
     corniche:1.1,        // LEDGE — au-delà, l'arête reste franche
   },
 
+  /* ═══════════════ TERRAIN : LES CHAMPS QUI FONT LE MONDE ═══════════════
+      v5. Le terrain n'est plus creusé (des rectangles et des couloirs en L)
+      mais ÉCHANTILLONNÉ : deux champs continus, l'un pour l'altitude du sol,
+      l'autre pour savoir s'il y a du creux ou du plein. Voir l'en-tête de
+      monde/generation.js — ces valeurs n'ont de sens qu'avec lui sous les
+      yeux.
+
+      LES DEUX RÉGLAGES QUI CHANGENT VRAIMENT LE MONDE :
+        · seuilGalerie  — combien de roche est creusée. Monter = un monde
+          plus plein, des boyaux plus rares. Descendre = des cavernes partout.
+        · amplitudeRelief — à quel point ça monte et descend DANS une strate.
+          Trop haut, la strate se mélange à ses voisines et la stratigraphie
+          ne se lit plus.                                                    */
+  terrain:{
+    // Un nœud tous les N cellules pour les champs lents, puis interpolation.
+    pasEchantillon:4,
+
+    /* ─── LE PLI ─── le domaine lui-même est déformé avant toute évaluation.
+        C'est le seul procédé qui, à si peu de frais, transforme des bandes en
+        couches géologiques. L'amplitude est en CELLULES. */
+    echellePli:340,
+    amplitudePli:34,    // cellules, écart-type (le bruit est calibré)
+
+    /* ─── LE RELIEF ─── autour de la descente d'ensemble. */
+    echelleRelief:200,   // cellules : taille des grandes formes
+    amplitudeRelief:9,   // mètres d'écart-type : les crêtes montent au double
+    octavesRelief:4,
+    gainRelief:0.42,     // < 0,5 : le détail apporte moins de pente que le fond
+
+    /* ─── LES FAILLES ─── les ressauts francs. Sans elles, un terrain de bruit
+        est une houle : joli, et sans un seul à-pic. */
+    echelleFaille:380,   // cellules : grand = des escarpements rares et longs
+    seuilFaille:0.60,    // sur le bruit de crête, dans [0,1] : 37 % du monde surélevé
+    largeurFaille:0.004, // demi-largeur de la bande : étroite = un à-pic, large = une pente
+    hauteurFaille:10,    // mètres de dénivelé au franchissement
+
+    /* ─── LE DÉTAIL ─── ce que le joueur a sous les pieds et sous les yeux.
+        Le relief d'ensemble ne se voit pas à quinze mètres de portée : c'est
+        CE bruit-ci qui fait la différence entre une caverne et un gymnase. */
+    echelleDetail:9,     // cellules (13 m) pour la première octave
+    amplitudeDetail:0.45,// mètres d'écart-type : au-delà, chaque pas est une marche
+    echelleRugosite:5,   // cellules : la dentelle des parois
+    rugositeRoche:0.035, // décalage (écart-type) appliqué aux deux seuils de creux
+
+    /* ─── LA ROCHE ─── galeries (crêtes) et cavités (taches). */
+    echelleGalerie:44,   // cellules : écartement du réseau
+    seuilGalerie:0.80,   // ~7 % de la planche : plus haut = galeries plus rares
+    echelleSalle:110,    // cellules
+    seuilSalle:1.75,     // en écarts-type : ~4 % de la planche en grandes cavités
+
+    /* ─── LES LIEUX ─── repérage des grandes cavités. */
+    pasLieux:6,          // cellules : maille du comptage de densité
+    densiteLieu:0.55,    // part de creux autour, au-delà de laquelle c'est un lieu
+    ecartLieux:34,       // cellules : deux lieux ne se touchent pas
+
+    /* ─── LES GALERIES DE LIAISON ─── */
+    largeurGalerie:2.2,  // rayon en cellules
+    sinuosite:0.12,      // écart latéral typique, en fraction de la longueur
+    sinuositeMax:26,     // cellules : au-delà, la galerie part faire du tourisme
+    echelleSinus:26,     // cellules : longueur d'onde des méandres
+    deniveleRaccourci:26,// mètres : au-delà, pas de raccourci entre deux lieux
+    pocheMin:400,        // cellules : en dessous, une poche isolée est rebouchée
+    /* Relaxer TOUT le creux souterrain, et pas seulement l'épine. Sous terre
+       on ne contourne pas : un boyau coupé par une marche est un cul-de-sac.
+       À ciel ouvert, au contraire, le relief brut survit — voir
+       monde/generation.js. */
+    relaxerSouterrain:true,
+    /* Et le dehors ? Voir monde/README.md : à ciel ouvert on contourne, donc
+       le relief brut y survivait. Mesuré : il s'y coupait quand même en
+       terrasses infranchissables. */
+    relaxerDehors:false,
+    /* Largeur, en cellules, de l'ourlet de surface relaxé le long de la
+       lisière du souterrain. C'est ce qui empêche le dehors de se décrocher du
+       monde quand on ne le relaxe pas. */
+    ourletDehors:22,
+    largeurLiaison:1,    // rayon en cellules du percement vers une poche
+
+    /* ─── LE PLAFOND ─── il ondule, sinon le souterrain est un caisson. */
+    echellePlafond:11,   // cellules
+    reliefPlafond:0.22,  // fraction de hauteur, en écart-type
+    plafondMin:1.1,      // mètres : jamais moins, on doit pouvoir ramper
+  },
+
   /* ─────────────── RELIEF : falaises, gouffres, ponts ─────────────── */
   relief:{
     // La relaxation n'agit QUE le long de l'épine navigable, plus cette marge.
     // Hors épine, le dénivelé brut survit : c'est ça, les falaises.
     epineMarge:6,        // cellules de part et d'autre du chemin garanti
-    relaxPasses:8,       // passes de la file d'attente (elle converge vite)
     falaiseMin:2.2,      // dénivelé à partir duquel on parle de falaise
 
     // Toutes ces dimensions sont en MÈTRES ; relief.js les convertit en
@@ -248,6 +333,16 @@ export const SETUP = {
     hauteurOeil:1.62,
     hauteurRampe:1.02,
     rayon:0.30,
+    /* De l'œil au sommet du crâne. Ce qui passe au-dessus ne nous concerne
+       pas : c'est ce qui permet de marcher sous une poutre, et de ramper sous
+       ce qu'on ne franchit pas debout. */
+    margeTete:0.16,
+    /* DÉBLOCAGE (touche R). Une cellule d'accueil doit offrir au moins
+       `issuesMin` directions de sortie sur huit, sondées à `pasIssue` mètres —
+       sinon on se contente de déplacer le joueur d'un piège à l'autre, ce qui
+       est exactement le reproche qui a été fait à la v4. */
+    issuesMin:5,
+    pasIssue:0.9,
     gravite:24,
 
     /* ─── LE SAUT ───
@@ -357,6 +452,10 @@ export const SETUP = {
 
   /* ─────────────── JEUNES ─────────────── */
   jeunes:{
+    /* Ils meurent, la mère non. Deux coups de pied-de-biche, un tir. */
+    pv:100,
+    sonneSecondes:1.1,     // étourdissement après un coup non fatal
+
     maxParProfondeur:9,
     vitesseErrance:1.3,
     /* 4.2 en v3.0, contre 3.2 en marche pour le joueur : ils rattrapaient
@@ -452,6 +551,39 @@ export const SETUP = {
   /* ─────────────── SANTÉ ───────────────
      Il n'y avait aucun point de vie en v3.0 : on mourait d'un coup. Les
      trousses médicales demandées impliquaient de pouvoir être blessé. */
+  /* ─── ARMES ───
+      Une arme ACHÈTE DU TEMPS contre la mère, elle ne la tue pas : tout le
+      jeu tient sur le fait qu'elle est inarrêtable. Voir joueur/armes.js. */
+  armes:{
+    reculSecondes:2.6,      // durée de repli pour une répulsion de 1.0
+    /* Chaque coup encaissé la rend moins impressionnable. 0.62 veut dire que
+       le deuxième coup vaut 62 % du premier, le troisième 38 %. Sans cette
+       décroissance, marteler la même touche la tiendrait à distance
+       indéfiniment et le jeu serait résolu. */
+    accoutumanceBase:0.62,
+    oubliSecondes:38,       // temps pour oublier un coup
+    cellulesDepart:0,       // le thunderbolt se trouve vide
+    cellulesParTas:4,       // munitions ramassées d'un coup
+    nbArmesDansLeMonde:14,  // exemplaires semés
+    nbTasDeCellules:26,
+
+    /* ─── COMMENT ON LA TIENT ───
+        L'arme est dessinée devant la caméra, pas dans le monde. Ces valeurs
+        sont en mètres, dans le repère de l'œil : X à droite, Y en haut,
+        Z devant. */
+    tenueX:0.30, tenueY:-0.26, tenueZ:0.52,
+    orientation:-1.5708,     // l'arme est bâtie le long de +X : on la tourne
+    balanLateral:0.030,      // amplitude du pas, à gauche-droite
+    balanVertical:0.022,
+    /* Le retard sur le regard. C'est le détail le moins cher et celui qui
+       change le plus : sans lui, on tient une décalcomanie collée à l'écran.
+       `suiviRegard` est une vitesse de rattrapage, `amplitudeRetard` dit
+       de combien l'arme se laisse distancer. */
+    suiviRegard:11.0,
+    amplitudeRetard:0.55,
+    inclinaisonCoup:0.9,     // radians, au sommet du geste
+  },
+
   sante:{
     max:100,
     degatsJeune:22,      // une morsure de jeune
@@ -528,6 +660,14 @@ export const SETUP = {
      bougé. Le décor et les lumières étaient donc QUATRE FOIS moins denses
      qu'en v2 — d'où un monde vide et noir. Tout est remis à l'échelle.      */
   decor:{
+    /* ─── LE BOUCHON ───
+        Un élément massif posé dans un boyau condamne tout ce qu'il y a
+        derrière. Au-delà de `rayonBouchon` mètres de rayon, on ne le pose que
+        là où l'ouverture locale dépasse `ouvertureMassif` (0 = boyau, 1 =
+        grande salle). Voir monde/props.js. */
+    rayonBouchon:0.55,
+    ouvertureMassif:0.45,
+
     semis:104000,        // 26 000 en v3.0
     ossuaires:1000,      // 260
     maxLumieres:13000,   // 3 200

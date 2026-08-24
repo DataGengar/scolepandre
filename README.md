@@ -8,6 +8,23 @@ obligatoire, un moteur maison.
 
 ---
 
+## Le monde (v5)
+
+Le terrain n'est plus **creusé** — des rectangles de salle reliés par des
+couloirs en L — il est **échantillonné**. Deux champs continus sont évalués en
+tout point de la planche :
+
+- l'**altitude** du sol, partout, roche comprise : une seule surface, plissée
+  par déformation du domaine, entaillée de **failles** qui y taillent de vrais
+  à-pics ;
+- la **roche** : les galeries sont les lignes de crête d'un bruit *ridged*, ce
+  qui donne un réseau qui serpente, se divise et se rejoint, et non un gruyère.
+
+Les grandes cavités sont ensuite *repérées* dans le champ, chaînées par
+altitude et reliées par des galeries sinueuses : c'est l'épine, le chemin
+garanti du fond jusqu'au jour. Tout se règle dans `SETUP.terrain`, et se
+regarde d'en haut avec `python outils/carte_monde.py`.
+
 ## L'application
 
 ```sh
@@ -65,7 +82,7 @@ Les GIF de cartes exigent toujours un serveur ; le monde, lui, se joue hors lign
 | `CLIC DROIT` (maintenu) | brandir la lampe : les petits reculent, le jus fond |
 | `ESPACE` | sauter |
 | `CLIC` | lancer un leurre |
-| `D` | **se dégager** si le terrain t'a coincé |
+| `R` | **se dégager** si le décor ou le terrain t'a coincé |
 | `G` | allumer un feu de camp (il faut du bois) |
 | `V` | lancer une fusée de détresse |
 | `B` | écrire sur une pancarte · `MAJ+B` la retirer (la lecture est automatique) |
@@ -73,7 +90,7 @@ Les GIF de cartes exigent toujours un serveur ; le monde, lui, se joue hors lign
 | `TAB` | sismographe |
 | `I` | collection |
 | `P` | réglages |
-| `R` | nouveau monde |
+| `MAJ+R` | nouveau monde (`R` seul depuis le menu) |
 | `ÉCHAP` | menu (rend la souris) |
 
 ### Survivre
@@ -95,7 +112,7 @@ index.html            coquille HTML + style, aucune logique
 src/
   setup.js            ★ TOUTES les valeurs réglables
   jeu.js              assemblage + boucle principale
-  noyau/              maths, RNG, WebGL, shaders
+  noyau/              maths, RNG, bruit, WebGL, shaders
   monde/              terrain, gouffres, ponts, cachettes, villages, décor
   carte/              ★ les 3 rangs de cartes et leurs dossiers
   creatures/          la mère, les jeunes, leurs lueurs, leur maillage
@@ -104,7 +121,7 @@ src/
   rendu/              caméra, lumières, lune, pipeline, sismographe
   ui/                 menu, HUD, réglages
   editeur/            ★ l'éditeur visuel (terrain, assets, créature)
-outils/               vérification, bundler, éditeur de carte, pipeline OBJ
+outils/               vérification, bundler, éditeur de carte, diagnostics
 cartes/               tes stacks : communes/ rares/ legendaires/
 archives/             les versions monofichier v1 et v2
 dist/                 le fichier unique généré
@@ -152,7 +169,14 @@ python outils/smoke.py        # LANCE LE JEU pour de vrai, 30 s, sans GPU
 python outils/bundler.py      # produit dist/scolopandre.html
 python outils/gabarit_carte.py # cartes d'essai dans cartes/*/
 python outils/smoke_editeur.py # LANCE L'ÉDITEUR et vérifie qu'il pilote bien
+python outils/carte_monde.py   # LA PLANCHE VUE D'EN HAUT — pour régler le terrain
+python outils/apercu.py        # ce que le joueur voit, une image par biome
+python outils/diag_passage.py  # le monde est-il traversable à pied ?
+python outils/diag_collision.py # se cogne-t-on ? le « R » dégage-t-il vraiment ?
 ```
+
+`?graine=1234` dans l'URL rejoue exactement le même monde — les outils s'en
+servent pour comparer deux réglages sur le MÊME terrain.
 
 `smoke.py` est l'outil important : il exécute le jeu dans Chrome headless avec
 un faux contexte WebGL, joue tout seul pendant trente secondes (marche, leurre,

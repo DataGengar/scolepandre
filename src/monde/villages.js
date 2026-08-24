@@ -98,6 +98,12 @@ function batirVillage(v, c, RC){
   };
 
   v.angleCabane = rnd()*6.283;
+  /* Les armes traînent dans les villages : c'est là qu'il y avait des gens,
+     donc c'est là qu'on a essayé de se défendre. Elles ne sont pas semées
+     partout — en trouver une doit être un événement. */
+  poser('armePiedDeBiche', rnd() < 0.55 ? 1 : 0, 0.30, 1.0);
+  poser('armeThunderbolt', rnd() < 0.22 ? 1 : 0, 0.55, 1.0);
+
   poser('maison',     ri(...V.maisons),     0.40, 1.0);
   /* Deux formes valent mieux qu'une : un village de maisons toutes pareilles
      se lit comme une grille d'objets, pas comme un lieu. */

@@ -355,7 +355,38 @@ export function percerEnclaves(){
   return galeries;
 }
 
-/** Remonte la chaîne `venuDe` depuis `depart` et creuse tout du long. */
+/**
+ * Remonte la chaîne `venuDe` depuis `depart` et creuse tout du long.
+ *
+ * ── CE QUI CLOCHAIT, ET CE QUE ÇA COÛTAIT ──────────────────────────────────
+ * La v4 posait l'altitude de la galerie par simple INTERPOLATION LINÉAIRE
+ * entre ses deux bouts, et l'écrivait sur toutes les cellules du tracé, y
+ * compris celles qui étaient déjà du sol.
+ *
+ * Deux dégâts, tous deux invisibles jusqu'à ce qu'on les mesure :
+ *
+ *   · une galerie courte reliant deux bouts éloignés en altitude produit des
+ *     marches énormes — un fossé de vingt mètres franchi en cinq cellules,
+ *     c'est-à-dire une galerie que personne ne peut emprunter ;
+ *   · en réécrivant l'altitude de cellules DÉJÀ creusées, elle décroche du
+ *     monde tout ce qui les touchait. Là où elle croise une galerie existante,
+ *     elle laisse une marche en travers : le perçage censé relier une poche
+ *     coupait le réseau en deux.
+ *
+ * Mesuré sur la v5, graine 1 : 1 398 marches infranchissables en fin de
+ * génération là où la relaxation n'en laissait aucune, et 76,5 % du sol
+ * praticable dans un seul morceau au lieu de 98 %.
+ *
+ * ── CE QU'ON FAIT ──────────────────────────────────────────────────────────
+ * 1. on part du TERRAIN, pas d'une interpolation ;
+ * 2. on ne touche JAMAIS à l'altitude d'une cellule déjà creusée — elle
+ *    appartient au monde, pas à la galerie ;
+ * 3. on rabote le profil en deux passes (aller, retour) pour qu'aucune marche
+ *    ne dépasse ce que le joueur enjambe ;
+ * 4. si les deux bouts ne peuvent pas être reliés à ce prix — parce que le
+ *    tracé est trop court pour le dénivelé — on RENONCE. Une galerie
+ *    impraticable ne relie rien ; elle ne fait que percer un trou de plus.
+ */
 function creuserGalerie(depart, venuDe){
   const chemin = [];
   let c = depart, garde = 0;
@@ -363,20 +394,37 @@ function creuserGalerie(depart, venuDe){
     chemin.push(c);
     c = venuDe[c];
   }
-  if(chemin.length < 2) return false;
+  const n = chemin.length;
+  if(n < 2) return false;
 
-  const hA = floorH[chemin[0]];
-  const hB = floorH[chemin[chemin.length - 1]];
+  /* La marge de quantification : `finaliserRelief` arrondira ces cotes au
+     quart de mètre, et deux cellules pile à la limite en ressortiraient
+     au-dessus. Voir monde/generation.js, même précaution. */
+  const MAX = STEPUP - SETUP.monde.quantifierRelief - 0.05;
 
-  for(let k = 0; k < chemin.length; k++){
+  const dur = new Uint8Array(n);        // 1 = cellule déjà creusée : intouchable
+  const y = new Float64Array(n);
+  for(let k = 0; k < n; k++){
+    y[k] = floorH[chemin[k]];
+    dur[k] = grid[chemin[k]] === FLOOR ? 1 : 0;
+  }
+
+  // deux passes de Lipschitz : on ne fait que BAISSER, et jamais le sol acquis
+  for(let k = 1; k < n; k++)
+    if(!dur[k]) y[k] = Math.min(y[k], y[k-1] + MAX);
+  for(let k = n-2; k >= 0; k--)
+    if(!dur[k]) y[k] = Math.min(y[k], y[k+1] + MAX);
+
+  // le profil obtenu tient-il debout ? sinon la galerie ne relie rien
+  for(let k = 1; k < n; k++)
+    if(Math.abs(y[k] - y[k-1]) > STEPUP) return false;
+
+  for(let k = 0; k < n; k++){
     const i = chemin[k];
-    const u = k / (chemin.length - 1);
-    // interpolation : la galerie rabote la falaise qu'elle traverse
-    const y = hA + (hB - hA) * u;
     grid[i] = FLOOR;
-    floorH[i] = y;
+    if(!dur[k]) floorH[i] = y[k];
     blocked[i] = 0;                         // un élément qui condamnait cède
-    if(ceilH[i] < y + 2.0) ceilH[i] = y + 2.0;
+    if(ceilH[i] < y[k] + 2.0) ceilH[i] = y[k] + 2.0;
   }
   return true;
 }

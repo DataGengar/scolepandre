@@ -9,14 +9,17 @@
    secondes. Le rapport final donne la durée réelle.                        */
 
 import {SETUP} from '../setup.js';
-import {ri} from '../noyau/rng.js';
+import {ri, graine} from '../noyau/rng.js';
+import {semerBruit} from '../noyau/bruit.js';
 import {BIOMES} from './biomes.js';
 import {
-  GW, GH, FLOOR, grid, floorH, ceilH, biome, sky, vide,
+  GW, GH, FLOOR, grid, floorH, ceilH, biome, sky, vide, blocked,
   idx, viderGrille, calculerOuverture, majBornes, rebuildNavCost, bornes,
+  celluleLibre, c2w,
 } from './grille.js';
 import {
-  creuserPlan, relaxerEpine, finaliserRelief, poserPlafonds, quantifierRelief, salles,
+  creuserPlan, relaxerEpine, finaliserRelief, poserPlafonds, quantifierRelief,
+  salles, releve,
 } from './generation.js';
 import {creuserGouffres, gouffres} from './relief.js';
 import {relierLeMonde, percerEnclaves} from './connexite.js';
@@ -24,6 +27,7 @@ import {placerPonts} from './ponts.js';
 import {placerCachettes, cachettes} from './cachettes.js';
 import {placerProps, viderDecor, props, lights, colliders} from './props.js';
 import {placerVillages, placerBoisEtFusees, viderVillages, villages} from './villages.js';
+import {placerArmes, armesAuSol, cellulesAuSol} from '../joueur/armes.js';
 import {indexerProps, libererTousLesPaves, statsMaillage} from './maillage.js';
 import {importee} from './import-png.js';
 import {plan, planActif} from './plan.js';
@@ -52,6 +56,10 @@ export function* construireMonde(hooks){
   chrono.debut = performance.now();
 
   yield {nom:'remise à zéro', part:0.02};
+  /* Les champs de bruit suivent la graine du monde : même graine, même
+     terrain, au bit près. C'est ici et nulle part ailleurs, pour que l'éditeur
+     et les outils en profitent sans y penser. */
+  semerBruit(graine());
   viderGrille(); viderDecor(); viderVillages(); libererTousLesPaves();
   monde.refuges.length = 0; monde.combustibles.length = 0;
   monde.leurres.length = 0; monde.sortie = null;
@@ -66,7 +74,7 @@ export function* construireMonde(hooks){
     majBornes();
     // pas de relaxation : ton relief reste le tien
   } else {
-    yield {nom:'creusement des salles et cavernes', part:0.30};
+    yield {nom:'échantillonnage du terrain', part:0.30};
     creuserPlan();
 
     yield {nom:'relaxation de l’épine navigable', part:0.48};
@@ -109,6 +117,17 @@ export function* construireMonde(hooks){
 
   yield {nom:'bois et fusées', part:0.93};
   placerBoisEtFusees();
+
+  /* Les armes. `placerArmes` ne connaît pas la grille — il reçoit de quoi
+     poser, pour rester utilisable par la forge et par les tests, où il n'y a
+     pas de monde. */
+  placerArmes((liste, combien, fabriquer) => {
+    for(let k=0; k<40000 && liste.length < combien; k++){
+      const c = celluleLibre(ri), i = idx(c.x, c.z);
+      if(blocked[i] || vide[i]) continue;
+      liste.push(fabriquer(c2w(c.x), floorH[i] + 0.24, c2w(c.z)));
+    }
+  });
 
   /* ── DERNIER CONTRÔLE DE PASSAGE ──
      Une seconde passe de perçage, APRÈS le décor. La première tourne avant
@@ -167,7 +186,14 @@ export function rapportMonde(){
        fentes dans le sol. Voir l'en-tête de monde/maillage.js. */
     quadsSolPlafond: statsMaillage.quadsEmis,
     parois: statsMaillage.paroisEmises,
-    salles: salles.length,
+    lieux: salles.length,
+    creuse: (releve.creux / (GW*GH) * 100).toFixed(1) + ' % de la planche',
+    dehors: (releve.dehors / Math.max(1, releve.creux) * 100).toFixed(0)
+          + ' % du creux est à ciel ouvert',
+    marchesInfranchissables: releve.marches + (releve.saturee ? ' (RELAXATION SATURÉE)' : ''),
+    terrainMs: releve.ms,
+    poches: releve.poches + ' (' + releve.rebouchees + ' rebouchées, '
+          + releve.reliees + ' reliées)',
     gouffres: gouffres.length,
     rampes: chrono.rampes,
     galeries: chrono.galeries + ' + ' + chrono.galeriesFinales + ' après décor',

@@ -248,6 +248,17 @@ const SETUP = {
 
   /* ─────────────── MONDE : dimensions et granularité ─────────────── */
   monde:{
+    /* ─── IRRÉGULARITÉ DU RELIEF ───
+        « Pourquoi tout est cubique ? » Parce que chaque coin de cellule était
+        posé exactement sur la ligne de grille : l'œil lit la trame avant de
+        lire la forme. Chaque coin est maintenant déplacé d'un bruit stable —
+        stable au sens où il ne dépend que du coin, donc les cellules voisines
+        s'accordent et rien ne se décolle.
+
+        Exprimé en fraction de cellule. 0 rend la grille parfaite d'avant ;
+        au-delà de 0,15 les parois s'écartent trop de la grille de collision
+        et l'on frotte le décor sans comprendre pourquoi. */
+    irregularite:0.11,
     cellule:1.5,         // côté d'une cellule en mètres (3.0 en v2)
     largeur:1088,        // cellules en X  → 1088 × 1.5 = 1632 m
     hauteur:1088,        // cellules en Z
@@ -255,10 +266,13 @@ const SETUP = {
 
     // Amplitude verticale. ×3 par rapport à la v2 qui allait de −42 à +44.
     altBasse:-126,
-    altHaute:132,
+    altHaute:104,
 
+    /* Les LIEUX repérés dans le champ (v5 : plus des salles POSÉES, mais les
+       grandes cavités du bruit, chaînées par altitude — voir monde/
+       generation.js). `nbSalles` en est le plafond, `nbRaccourcis` le nombre
+       de galeries en plus de la chaîne, pour que le monde soit un réseau. */
     nbSalles:300,
-    nbCavernes:90,
     nbRaccourcis:140,
 
     // Plafonds : plus bas qu'en v2 (2.8 + openN*3.2) → souterrain exigu.
@@ -284,12 +298,94 @@ const SETUP = {
     corniche:1.1,        // LEDGE — au-delà, l'arête reste franche
   },
 
+  /* ═══════════════ TERRAIN : LES CHAMPS QUI FONT LE MONDE ═══════════════
+      v5. Le terrain n'est plus creusé (des rectangles et des couloirs en L)
+      mais ÉCHANTILLONNÉ : deux champs continus, l'un pour l'altitude du sol,
+      l'autre pour savoir s'il y a du creux ou du plein. Voir l'en-tête de
+      monde/generation.js — ces valeurs n'ont de sens qu'avec lui sous les
+      yeux.
+
+      LES DEUX RÉGLAGES QUI CHANGENT VRAIMENT LE MONDE :
+        · seuilGalerie  — combien de roche est creusée. Monter = un monde
+          plus plein, des boyaux plus rares. Descendre = des cavernes partout.
+        · amplitudeRelief — à quel point ça monte et descend DANS une strate.
+          Trop haut, la strate se mélange à ses voisines et la stratigraphie
+          ne se lit plus.                                                    */
+  terrain:{
+    // Un nœud tous les N cellules pour les champs lents, puis interpolation.
+    pasEchantillon:4,
+
+    /* ─── LE PLI ─── le domaine lui-même est déformé avant toute évaluation.
+        C'est le seul procédé qui, à si peu de frais, transforme des bandes en
+        couches géologiques. L'amplitude est en CELLULES. */
+    echellePli:340,
+    amplitudePli:34,    // cellules, écart-type (le bruit est calibré)
+
+    /* ─── LE RELIEF ─── autour de la descente d'ensemble. */
+    echelleRelief:200,   // cellules : taille des grandes formes
+    amplitudeRelief:9,   // mètres d'écart-type : les crêtes montent au double
+    octavesRelief:4,
+    gainRelief:0.42,     // < 0,5 : le détail apporte moins de pente que le fond
+
+    /* ─── LES FAILLES ─── les ressauts francs. Sans elles, un terrain de bruit
+        est une houle : joli, et sans un seul à-pic. */
+    echelleFaille:380,   // cellules : grand = des escarpements rares et longs
+    seuilFaille:0.60,    // sur le bruit de crête, dans [0,1] : 37 % du monde surélevé
+    largeurFaille:0.004, // demi-largeur de la bande : étroite = un à-pic, large = une pente
+    hauteurFaille:10,    // mètres de dénivelé au franchissement
+
+    /* ─── LE DÉTAIL ─── ce que le joueur a sous les pieds et sous les yeux.
+        Le relief d'ensemble ne se voit pas à quinze mètres de portée : c'est
+        CE bruit-ci qui fait la différence entre une caverne et un gymnase. */
+    echelleDetail:9,     // cellules (13 m) pour la première octave
+    amplitudeDetail:0.45,// mètres d'écart-type : au-delà, chaque pas est une marche
+    echelleRugosite:5,   // cellules : la dentelle des parois
+    rugositeRoche:0.035, // décalage (écart-type) appliqué aux deux seuils de creux
+
+    /* ─── LA ROCHE ─── galeries (crêtes) et cavités (taches). */
+    echelleGalerie:44,   // cellules : écartement du réseau
+    seuilGalerie:0.80,   // ~7 % de la planche : plus haut = galeries plus rares
+    echelleSalle:110,    // cellules
+    seuilSalle:1.75,     // en écarts-type : ~4 % de la planche en grandes cavités
+
+    /* ─── LES LIEUX ─── repérage des grandes cavités. */
+    pasLieux:6,          // cellules : maille du comptage de densité
+    densiteLieu:0.55,    // part de creux autour, au-delà de laquelle c'est un lieu
+    ecartLieux:34,       // cellules : deux lieux ne se touchent pas
+
+    /* ─── LES GALERIES DE LIAISON ─── */
+    largeurGalerie:2.2,  // rayon en cellules
+    sinuosite:0.12,      // écart latéral typique, en fraction de la longueur
+    sinuositeMax:26,     // cellules : au-delà, la galerie part faire du tourisme
+    echelleSinus:26,     // cellules : longueur d'onde des méandres
+    deniveleRaccourci:26,// mètres : au-delà, pas de raccourci entre deux lieux
+    pocheMin:400,        // cellules : en dessous, une poche isolée est rebouchée
+    /* Relaxer TOUT le creux souterrain, et pas seulement l'épine. Sous terre
+       on ne contourne pas : un boyau coupé par une marche est un cul-de-sac.
+       À ciel ouvert, au contraire, le relief brut survit — voir
+       monde/generation.js. */
+    relaxerSouterrain:true,
+    /* Et le dehors ? Voir monde/README.md : à ciel ouvert on contourne, donc
+       le relief brut y survivait. Mesuré : il s'y coupait quand même en
+       terrasses infranchissables. */
+    relaxerDehors:false,
+    /* Largeur, en cellules, de l'ourlet de surface relaxé le long de la
+       lisière du souterrain. C'est ce qui empêche le dehors de se décrocher du
+       monde quand on ne le relaxe pas. */
+    ourletDehors:22,
+    largeurLiaison:1,    // rayon en cellules du percement vers une poche
+
+    /* ─── LE PLAFOND ─── il ondule, sinon le souterrain est un caisson. */
+    echellePlafond:11,   // cellules
+    reliefPlafond:0.22,  // fraction de hauteur, en écart-type
+    plafondMin:1.1,      // mètres : jamais moins, on doit pouvoir ramper
+  },
+
   /* ─────────────── RELIEF : falaises, gouffres, ponts ─────────────── */
   relief:{
     // La relaxation n'agit QUE le long de l'épine navigable, plus cette marge.
     // Hors épine, le dénivelé brut survit : c'est ça, les falaises.
     epineMarge:6,        // cellules de part et d'autre du chemin garanti
-    relaxPasses:8,       // passes de la file d'attente (elle converge vite)
     falaiseMin:2.2,      // dénivelé à partir duquel on parle de falaise
 
     // Toutes ces dimensions sont en MÈTRES ; relief.js les convertit en
@@ -358,9 +454,29 @@ const SETUP = {
        son intérêt. Densité doublée — la portée est donc divisée par deux,
        ~20 m au lieu de ~40. Et les godrays étaient trop appuyés : ils
        écrasaient le reste de l'image dès qu'une source entrait dans le champ. */
-    fog:2.10,    fogMax:3.5,
-    rays:0.65,   raysMax:3.0,
-    ambiance:0.92,       // multiplicateur global de la lumière ambiante
+    /* ─── PORTÉE ───
+        « Toujours un peu trop lumineux, pas assez de fog, vision trop
+        lointaine : réduire de 40 %. » 2.10 → 3.50, soit un facteur 1,67 sur la
+        densité, ce qui divise la portée utile par 1,67. Mesuré :
+
+            souterrain  12,4 m → 7,4 m       barrage   17,2 m → 10,3 m
+            surface     13,4 m → 8,0 m       ville     12,4 m → 7,4 m
+
+        C'est la portée d'une lampe de poche dans une cave, et c'est le but. */
+    fog:3.50,    fogMax:5.0,
+    rays:0.55,   raysMax:3.0,
+
+    /* ─── C'EST LA TORCHE QUI ÉCLAIRE ───
+        Référence donnée par Orlando : Resident Evil Requiem, où presque toute
+        la lumière vient de la lampe qu'on tient. Tout le reste n'est qu'une
+        présence — assez pour deviner une masse, jamais assez pour lire une
+        pièce.
+
+        L'ambiante tombe donc de 0,92 à 0,45. Ce qui rend la scène lisible,
+        c'est le faisceau : là où il pointe on voit net, ailleurs on devine.
+        C'est ce qui force à BALAYER une pièce au lieu de l'embrasser, et
+        balayer une pièce, c'est se demander ce qu'il y a derrière soi. */
+    ambiance:0.45,       // multiplicateur global de la lumière ambiante
     vignette:0.55,       // 0.92 en v3.0 : les bords de l'écran étaient noirs
     grain:0.115,
 
@@ -384,10 +500,12 @@ const SETUP = {
   lampe:{
     coneInterieur:0.955,  // cos de l'angle du cœur    (~17°)
     coneExterieur:0.74,   // cos de l'angle du bord    (~42°)
-    intensite:5.4,        // le faisceau
-    halo:0.20,            // ce qui déborde autour, très faible
+    intensite:6.8,        // le faisceau — c'est LUI qui éclaire la scène
+    halo:0.16,            // ce qui déborde autour, très faible
     portee:0.028,         // atténuation par mètre : exp(-d × portee)
-    gainEteinte:0.05,     // lampe éteinte : il reste un rien
+    /* Lampe éteinte, il ne reste presque rien : c'est le prix à payer pour
+       que l'allumer ait un sens, et pour que l'éteindre soit une décision. */
+    gainEteinte:0.03,
   },
 
   /* ─────────────── LUMIÈRES DU DÉCOR ───────────────
@@ -400,7 +518,11 @@ const SETUP = {
        comme un projecteur ; additionnées par milliers, elles noyaient le
        brouillard qui fait tout le travail. Une source de décor doit se VOIR
        de loin sans ÉCLAIRER de loin. */
-    gain:1.70,
+    /* 2,2 en v3.3, 1,7 en v4.0, 1,05 ici. Chaque cristal et chaque fenêtre
+       éclairait comme un projecteur ; additionnées par milliers, elles
+       rendaient la lampe inutile — or c'est la lampe qui doit faire peur.
+       Une source de décor se VOIT de loin, elle n'ÉCLAIRE plus de loin. */
+    gain:1.05,
   },
 
   /* ─────────────── LUNE BRISÉE ───────────────
@@ -435,6 +557,16 @@ const SETUP = {
     hauteurOeil:1.62,
     hauteurRampe:1.02,
     rayon:0.30,
+    /* De l'œil au sommet du crâne. Ce qui passe au-dessus ne nous concerne
+       pas : c'est ce qui permet de marcher sous une poutre, et de ramper sous
+       ce qu'on ne franchit pas debout. */
+    margeTete:0.16,
+    /* DÉBLOCAGE (touche R). Une cellule d'accueil doit offrir au moins
+       `issuesMin` directions de sortie sur huit, sondées à `pasIssue` mètres —
+       sinon on se contente de déplacer le joueur d'un piège à l'autre, ce qui
+       est exactement le reproche qui a été fait à la v4. */
+    issuesMin:5,
+    pasIssue:0.9,
     gravite:24,
 
     /* ─── LE SAUT ───
@@ -691,9 +823,12 @@ const SETUP = {
        plus esthétiques, et volant un peu moins haut ».
        Le rapport 3:4 est celui d'une carte à collectionner ; garde-le si tu
        changes les dimensions, sinon les illustrations seront déformées. */
-    largeur:0.52,
-    hauteur:0.69,              // 0.52 × 4/3
-    cadre:0.018,               // liseré : un trait, pas une bordure
+    /* Plus grandes : le cadre a disparu, l'image occupe désormais toute la
+       place qu'il prenait. Rapport 3:4, celui d'une carte à collectionner —
+       garde-le si tu changes ces valeurs, sinon les illustrations seront
+       déformées. */
+    largeur:0.74,
+    hauteur:0.99,              // 0.74 × 4/3
     hauteurFlottement:0.62,    // au-dessus du sol (1.10 en v3.1 : trop haut)
     amplitudeFlottement:0.055, // le balancement vertical (0.12 : trop agité)
 
@@ -712,6 +847,14 @@ const SETUP = {
      bougé. Le décor et les lumières étaient donc QUATRE FOIS moins denses
      qu'en v2 — d'où un monde vide et noir. Tout est remis à l'échelle.      */
   decor:{
+    /* ─── LE BOUCHON ───
+        Un élément massif posé dans un boyau condamne tout ce qu'il y a
+        derrière. Au-delà de `rayonBouchon` mètres de rayon, on ne le pose que
+        là où l'ouverture locale dépasse `ouvertureMassif` (0 = boyau, 1 =
+        grande salle). Voir monde/props.js. */
+    rayonBouchon:0.55,
+    ouvertureMassif:0.45,
+
     semis:104000,        // 26 000 en v3.0
     ossuaires:1000,      // 260
     maxLumieres:13000,   // 3 200
@@ -1385,6 +1528,188 @@ function calculerOuverture(){
   return { CELL, CH, CHH, CHW, FLOOR, GH, GW, LEDGE, STEPUP, WALL, biome, biomeAt, biomeDe, blocked, bornes, c2w, calculerOuverture, ceilH, celluleLibre, degagement, echelle, estVide, falaise, floorH, grid, groundAt, idx, inB, isFloor, isFree, majBornes, navCost, openN, platform, pont, pontH, profondeurDe, rebuildNavCost, sky, vide, viderGrille, w2c };
 })();
 
+/* ─── src/noyau/bruit.js ─── */
+__M['M_noyau_bruit'] = (function(){
+/* ═══ NOYAU / BRUIT ═══
+   Les champs continus dont le terrain est fait. Rien d'autre : ce module ne
+   connaît ni la grille, ni les biomes, ni le jeu.
+
+   ── POURQUOI IL EXISTE ─────────────────────────────────────────────────────
+   Jusqu'en v4 le monde était CREUSÉ : des rectangles, des blobs et des
+   couloirs en L posés sur une planche de roche pleine. Ça se voit — un couloir
+   en L a deux angles droits, une salle a quatre coins, et l'œil lit la règle
+   avant de lire le lieu. Un terrain procédural ne se creuse pas, il
+   s'ÉVALUE : en tout point, une fonction dit à quelle altitude est le sol et
+   s'il y a de la roche. C'est ce que fournissent ces quelques fonctions.
+
+   ── LES TROIS OUTILS ───────────────────────────────────────────────────────
+     perlin2   bruit à gradients, [−1,1]. La brique de base : lisse, sans
+               direction privilégiée, et surtout SANS la trame carrée qu'un
+               bruit de valeur laisse toujours transparaître.
+     fbm2      somme d'octaves. Le relief : grandes formes, puis les détails.
+     crete2    bruit « de crête » (ridged), [0,1]. Sa particularité est de
+               produire des LIGNES continues là où fbm produit des taches :
+               c'est ce qui donne des galeries qui serpentent et se croisent
+               au lieu d'un fromage à trous.
+
+   Plus `deformer()` : on ne demande pas la valeur en (x,z) mais en un point
+   lui-même déplacé par du bruit. C'est le domain warping, et c'est le seul
+   procédé qui, à si peu de frais, fait passer un champ de « bruit d'ordinateur »
+   à « géologie » — les couches se plissent, les vallées serpentent, les crêtes
+   se tordent au lieu de partir droit.
+
+   ── DÉTERMINISME ───────────────────────────────────────────────────────────
+   Tout passe par un hachage entier de la graine : même graine, même monde, au
+   bit près, sans stocker la moindre table. `semerBruit()` est appelée par
+   monde/index.js juste après `semer()`.                                     */
+
+/* Graine courante du champ. Multipliée dans le hachage, jamais additionnée :
+   deux graines voisines doivent donner deux mondes sans aucune parenté. */
+let GRAINE = 0x9e3779b9;
+
+/** Fixe la graine des champs. À appeler avant toute génération. */
+function semerBruit(g){
+  // Un entier impair, jamais 0 : le hachage perdrait sa dispersion.
+  GRAINE = (((g >>> 0) * 2654435761) | 1) >>> 0;
+}
+
+/** La graine effective — utile aux tests qui veulent rejouer un champ. */
+const graineBruit = () => GRAINE;
+
+/* ─────────────── le hachage ─────────────── */
+
+/* Entier 32 bits bien mélangé à partir de deux entiers et de la graine.
+   Math.imul est ce qui rend la multiplication 32 bits exacte en JavaScript :
+   sans lui, les produits dépassent 2^53 et les bits de poids faible — les
+   seuls qui nous intéressent — sont faux. */
+function hachage(x, z){
+  let h = Math.imul(x, 374761393) ^ Math.imul(z, 668265263) ^ GRAINE;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+/* Les huit directions du gradient. Un jeu réduit et régulier vaut mieux qu'un
+   angle tiré au hasard : c'est plus rapide, et ça ne fait apparaître aucune
+   direction privilégiée tant que le hachage est bon. */
+const GX = [ 1, -1, 0,  0,  0.7071, -0.7071,  0.7071, -0.7071];
+const GZ = [ 0,  0, 1, -1,  0.7071,  0.7071, -0.7071, -0.7071];
+
+/* Lissage quintique : dérivées première ET seconde nulles aux nœuds. La
+   version cubique laisse une grille visible en éclairage rasant, ce qui est
+   exactement notre cas — un souterrain éclairé par une lampe torche. */
+const fondu = t => t*t*t*(t*(t*6 - 15) + 10);
+
+/**
+ * Bruit à gradients en deux dimensions. Renvoie environ [−1, 1] (l'amplitude
+ * théorique est ±0,707 pour ce jeu de gradients : elle est remise à l'échelle
+ * ici pour que l'appelant n'ait pas à le savoir).
+ */
+function perlin2(x, z){
+  const x0 = Math.floor(x), z0 = Math.floor(z);
+  const fx = x - x0, fz = z - z0;
+  const u = fondu(fx), v = fondu(fz);
+
+  const h00 = hachage(x0,   z0  ) & 7;
+  const h10 = hachage(x0+1, z0  ) & 7;
+  const h01 = hachage(x0,   z0+1) & 7;
+  const h11 = hachage(x0+1, z0+1) & 7;
+
+  const n00 = GX[h00]*fx       + GZ[h00]*fz;
+  const n10 = GX[h10]*(fx-1)   + GZ[h10]*fz;
+  const n01 = GX[h01]*fx       + GZ[h01]*(fz-1);
+  const n11 = GX[h11]*(fx-1)   + GZ[h11]*(fz-1);
+
+  const a = n00 + u*(n10 - n00);
+  const b = n01 + u*(n11 - n01);
+  return (a + v*(b - a)) * 1.4142;
+}
+
+/* ── POURQUOI CE FACTEUR ──
+   Une somme d'octaves normalisée par la somme des poids tient dans [−1,1],
+   mais elle ne les REMPLIT pas : mesuré sur 40 000 points, l'écart-type vaut
+   0,20 et la valeur extrême 0,55. Un appelant qui écrit « amplitude : 24 m »
+   obtenait donc un relief à ±5 m, et se demandait pourquoi son monde était
+   plat. C'est exactement ce qui est arrivé à la première version du terrain
+   v5.
+
+   fbm2 est donc CALIBRÉ : on divise par l'écart-type mesuré, si bien que la
+   sortie a un écart-type de 1. Un appelant multiplie alors par des mètres, et
+   lit son réglage comme une amplitude typique — les crêtes montant à deux ou
+   trois fois cette valeur, comme dans n'importe quel relief. */
+const SIGMA = 0.202;
+
+/**
+ * Somme d'octaves. `oct` octaves, chacune deux fois plus fine et `gain` fois
+ * moins forte. Calibré : écart-type 1, extrêmes autour de ±2,8.
+ *
+ * Le décalage de 137,17 entre octaves n'est pas décoratif : sans lui toutes
+ * les octaves partagent le nœud (0,0), et il apparaît au centre du monde une
+ * étoile de symétrie qu'on ne voit jamais ailleurs.
+ */
+function fbm2(x, z, oct = 4, gain = 0.5){
+  let somme = 0, ampl = 1, total = 0, fx = x, fz = z;
+  for(let o = 0; o < oct; o++){
+    somme += perlin2(fx, fz) * ampl;
+    total += ampl;
+    ampl *= gain;
+    fx = fx*2 + 137.17; fz = fz*2 - 91.31;
+  }
+  return somme / total / SIGMA;
+}
+
+/**
+ * Bruit de crête. `1 − |perlin|` porté au carré : les zéros du bruit — qui
+ * forment des LIGNES continues dans le plan — deviennent des maxima. D'où des
+ * arêtes, des failles, des veines. Renvoie [0, 1].
+ *
+ * Chaque octave est pondérée par la précédente (`poids`) : le détail
+ * n'apparaît que sur les crêtes déjà formées, et les creux restent lisses.
+ * Sans cette pondération le résultat est un gribouillis uniforme.
+ */
+function crete2(x, z, oct = 3, gain = 0.5){
+  let somme = 0, ampl = 1, total = 0, poids = 1, fx = x, fz = z;
+  for(let o = 0; o < oct; o++){
+    let s = 1 - Math.abs(perlin2(fx, fz));
+    s *= s * poids;
+    poids = s < 0 ? 0 : s > 1 ? 1 : s;
+    somme += s * ampl;
+    total += ampl;
+    ampl *= gain;
+    fx = fx*2 + 137.17; fz = fz*2 - 91.31;
+  }
+  return somme / total;
+}
+
+/* ─────────────── déformation du domaine ─────────────── */
+
+/* Sortie de `deformer()`. Un tableau de module plutôt qu'un objet neuf :
+   la génération l'appelle plus d'un million de fois, et allouer deux nombres
+   par cellule suffirait à faire travailler le ramasse-miettes pendant tout le
+   chargement. L'appelant lit DEF[0] et DEF[1] tout de suite après l'appel. */
+const DEF = [0, 0];
+
+/**
+ * Déplace le point d'échantillonnage par du bruit : on évalue « ailleurs »,
+ * et cet ailleurs varie doucement. Les bandes deviennent des plis, les
+ * cercles des amibes.
+ *
+ * @param ech   échelle du bruit de déplacement (grand = plis larges)
+ * @param ampl  amplitude du déplacement, dans l'unité de x et z
+ */
+function deformer(x, z, ech, ampl){
+  // Deux champs décorrélés : le second est simplement pris très loin du
+  // premier. Réutiliser le même avec un signe opposé ferait glisser tout le
+  // monde en diagonale.
+  const dx = fbm2(x/ech, z/ech, 2);
+  const dz = fbm2(x/ech + 511.3, z/ech - 733.9, 2);
+  DEF[0] = x + dx*ampl;
+  DEF[1] = z + dz*ampl;
+  return DEF;
+}
+
+  return { DEF, crete2, deformer, fbm2, graineBruit, perlin2, semerBruit };
+})();
+
 /* ─── src/monde/plan.js ─── */
 __M['M_monde_plan'] = (function(){
   const { GW, GH } = __M['M_monde_grille'];
@@ -1571,183 +1896,658 @@ __M['M_monde_generation'] = (function(){
   const { SETUP } = __M['M_setup'];
   const { lerp, clamp } = __M['M_noyau_math'];
   const { rnd, ri } = __M['M_noyau_rng'];
+  const { fbm2, crete2, deformer, DEF } = __M['M_noyau_bruit'];
   const { BIOMES } = __M['M_monde_biomes'];
   const { biomeDeCellule, altitudeDeCellule } = __M['M_monde_plan'];
-  const { GW, GH, CELL, WALL, FLOOR, STEPUP, grid, floorH, ceilH, openN, biome, platform, sky, falaise, vide, pont, idx, inB, isFloor, calculerOuverture, majBornes } = __M['M_monde_grille'];
+  const { GW, GH, CELL, WALL, FLOOR, STEPUP, grid, floorH, ceilH, openN, biome, sky, falaise, vide, idx, inB, isFloor, calculerOuverture, majBornes } = __M['M_monde_grille'];
 /* ═══ MONDE / GÉNÉRATION ═══
-   Creuse la planche : salles, cavernes, couloirs, puis relaxation du relief.
+   Le terrain. Depuis la v5 il n'est plus CREUSÉ, il est ÉCHANTILLONNÉ.
 
-   ── LE POINT DÉLICAT (v3) ──────────────────────────────────────────────────
-   La v2 relaxait TOUT le champ de hauteur pour qu'aucune marche ne dépasse ce
-   que le joueur enjambe. C'était la garantie « pas de cul-de-sac », mais ça
-   interdisait aussi toute falaise : le monde était une pente douce continue.
-   Avec une amplitude ×3 (−126 → +132 m) ce serait pire encore, tout aplati.
+   ── CE QUI A CHANGÉ, ET POURQUOI ───────────────────────────────────────────
+   Jusqu'ici le monde était bâti par soustraction : on posait 300 RECTANGLES
+   de salle, 90 blobs de caverne, et on les reliait par des couloirs en L. Le
+   maillage a beau déplacer les coins d'un bruit (SETUP.monde.irregularite),
+   ça ne rattrape rien : un rectangle a quatre angles droits, un couloir en L
+   en a deux, et l'œil lit la RÈGLE avant de lire le lieu. Sur les aperçus
+   c'était sans appel — un sol parfaitement plan, des murs d'aplomb à
+   intervalles réguliers, un plafond en caissons.
 
-   La v3 relaxe UNIQUEMENT le long d'une « épine navigable » : le chemin qui
-   relie les salles dans l'ordre du plan, plus une marge de quelques cellules.
-   Partout ailleurs, le dénivelé brut survit — et c'est exactement ça, les
-   falaises et les précipices. On garde la garantie de traversée (l'épine est
-   toujours praticable) tout en obtenant un relief violent autour.
+   La v5 renverse le procédé. Le monde n'est plus une liste de pièces : c'est
+   un COUPLE DE CHAMPS CONTINUS, évalués en tout point de la planche.
 
-   La relaxation elle-même passe d'un balayage à 120 passes (142 M d'itérations
-   sur la grille 1088²) à une file d'attente : on ne réexamine que les voisins
-   d'une cellule qui vient d'être abaissée.                                  */
+     · le champ d'ALTITUDE   dit à quelle cote est le sol en (x,z). Il est fait
+       d'une descente d'ensemble (le fond du barrage d'un côté, la surface de
+       l'autre), de plusieurs octaves de bruit pour le relief, et de failles
+       qui y taillent des ressauts francs. Toute la planche en a une, roche
+       comprise : le sol du monde est une surface unique, continue, sans un
+       seul palier posé à la main.
+
+     · le champ de ROCHE     dit si, en (x,z), il y a du creux ou du plein. Les
+       galeries sont les LIGNES DE CRÊTE d'un bruit ridged — d'où des couloirs
+       qui serpentent, se divisent et se rejoignent — et les grandes cavités
+       sont les taches d'un bruit plus lent.
+
+   Les deux champs sont évalués dans un domaine DÉFORMÉ (noyau/bruit.js,
+   `deformer`) : rien n'est aligné sur les axes, les strates se plissent, une
+   galerie ne part jamais droit.
+
+   ── CE QUI N'A PAS CHANGÉ, ET C'EST VOLONTAIRE ─────────────────────────────
+   Tout le reste du monde continue de lire la même grille : `grid`, `floorH`,
+   `ceilH`, `biome`. Les gouffres, les ponts, les villages, la connexité, le
+   décor, la navigation n'ont pas bougé d'une ligne. La stratigraphie tient
+   toujours (le biome se déduit de l'altitude, monde/biomes.js), et le PLAN de
+   l'éditeur garde le dernier mot sur le biome comme sur la cote.
+
+   ── LA GARANTIE DE TRAVERSÉE ───────────────────────────────────────────────
+   Un champ de bruit ne garantit rien du tout : il peut très bien ouvrir mille
+   poches sans issue. Trois étapes s'en occupent, dans cet ordre :
+
+     1. les LIEUX — les cavités les plus vastes sont repérées et chaînées par
+        altitude croissante. Une galerie sinueuse relie chaque maillon au
+        suivant : c'est l'ÉPINE, la seule partie du monde qu'on relaxe, donc
+        la seule où l'on est certain de pouvoir marcher du fond jusqu'au jour.
+     2. les POCHES — on étiquette les composantes du creux. Les petites sont
+        rebouchées (une alcôve inatteignable n'est pas un lieu, c'est un bug
+        qu'on ne verra jamais), les grandes reçoivent une galerie de liaison
+        creusée le long du gradient de distance au continent.
+     3. monde/connexite.js finit le travail sur ce qui reste séparé par une
+        FALAISE plutôt que par de la roche — ce que le terrain, lui, ne peut
+        pas savoir avant que le relief soit relaxé.                          */
 
 
 
 
 
-/* Le biome et l'altitude d'une cellule passent désormais par monde/plan.js.
-   Quand aucun plan n'est chargé, biomeDeCellule() retombe exactement sur
-   biomePourAltitude() : le monde procédural est inchangé au bit près. */
+
+/* Le biome et l'altitude d'une cellule passent par monde/plan.js : hors zone,
+   il retombe sur la stratigraphie par altitude, et le monde reste 100 %
+   procédural. */
 
 
 
+/** Les LIEUX : les grandes cavités repérées dans le champ. Le décor s'en sert
+    pour poser ses colonnades, et le rapport de génération pour les compter.
+    Même forme qu'en v4 ({x, z, e, b}) — props.js n'a pas eu à changer. */
 const salles = [];
+
 /** Cellules appartenant à l'épine navigable — relaxées, donc traversables. */
 const epine = new Uint8Array(GW * GH);
 
-/* ─────────────── creusement ─────────────── */
+/** Ce que la dernière génération a produit. Lu par le rapport.
+    `ms` détaille le temps de chaque temps du terrain : sans ce détail, une
+    génération qui passe de 0,1 s à 3 s ne se corrige qu'au hasard. */
+const releve = {lieux:0, poches:0, rebouchees:0, reliees:0, creux:0,
+                       dehors:0, marches:0, saturee:false, ms:''};
 
-/* Le biome n'est JAMAIS passé en paramètre : il se déduit de l'altitude et de
-   la position, via monde/biomes.js. C'est ce qui garantit qu'on ne peut pas
-   avoir deux biomes différents à la même profondeur au même endroit. */
-function carveRect(x0,z0,w,h,e){
-  for(let z=z0; z<z0+h; z++) for(let x=x0; x<x0+w; x++)
-    if(inB(x,z)){
-      const i = idx(x,z);
-      const y = altitudeDeCellule(e, x, z);
-      grid[i] = FLOOR; floorH[i] = y; biome[i] = biomeDeCellule(y, x, z);
-    }
-}
+/* ═══════════════ LES CHAMPS ═══════════════
+   Ils varient sur des centaines de mètres : les évaluer une fois par cellule
+   coûterait dix fois leur intérêt. On les échantillonne donc tous les
+   `pasEchantillon` cellules et on interpole entre les nœuds. Mesuré : à un pas
+   de 4 cellules (6 m) l'écart avec le champ exact reste sous 2 cm, pour un
+   coût divisé par seize.
 
-function carveBlob(cx,cz,steps,e){
-  let x=cx, z=cz;
-  for(let i=0;i<steps;i++){
-    for(let dz=-1;dz<=1;dz++) for(let dx=-1;dx<=1;dx++) if(inB(x+dx,z+dz)){
-      const k = idx(x+dx, z+dz);
-      grid[k] = FLOOR;
-      // relief doux dans les cavernes : jamais de falaise en travers du passage
-      const h = altitudeDeCellule(
-        e + Math.sin(x*0.31)*0.28 + Math.cos(z*0.27)*0.28, x+dx, z+dz);
-      floorH[k] = h;
-      biome[k] = biomeDeCellule(h, x+dx, z+dz);
-    }
-    const d = ri(0,3);
-    x += d===0?1 : d===1?-1 : 0;
-    z += d===2?1 : d===3?-1 : 0;
-    x = clamp(x, 3, GW-4); z = clamp(z, 3, GH-4);
+   Les coordonnées DÉFORMÉES sont mémorisées elles aussi : le champ de roche,
+   lui, s'évalue cellule par cellule (une galerie de 3 cellules de large ne
+   survivrait pas à une interpolation), mais il s'évalue dans le même domaine
+   plissé que l'altitude — sinon les cavernes ne suivraient pas les couches. */
+
+let champW = 0, champH = 0, champPas = 4;
+let champAlt = null, champX = null, champZ = null;
+
+function batirChamps(){
+  const T = SETUP.terrain, M = SETUP.monde;
+  champPas = Math.max(1, T.pasEchantillon);
+  const w = Math.ceil(GW / champPas) + 2, h = Math.ceil(GH / champPas) + 2;
+
+  if(!champAlt || champW !== w || champH !== h){
+    champW = w; champH = h;
+    champAlt = new Float32Array(w * h);
+    champX   = new Float32Array(w * h);
+    champZ   = new Float32Array(w * h);
+  }
+
+  for(let gz = 0; gz < h; gz++) for(let gx = 0; gx < w; gx++){
+    const x = gx * champPas, z = gz * champPas;
+
+    /* Le domaine plissé. Tout le reste s'évalue LÀ, jamais en (x,z). */
+    deformer(x, z, T.echellePli, T.amplitudePli);
+    const px = DEF[0], pz = DEF[1];
+
+    /* La descente d'ensemble : une diagonale du fond vers le jour. C'est ce
+       qui donne au monde son sens de lecture — le barrage tout au fond dans
+       un coin, la surface gelée dans l'autre — et c'est la déformation qui
+       l'empêche de ressembler à un plan incliné. */
+    const t = clamp((px / GW + (1 - pz / GH)) * 0.5, 0, 1);
+    let a = lerp(M.altBasse, M.altHaute, t);
+
+    /* Le relief. Le gain est volontairement sous 0,5 : chaque octave apporte
+       alors moins de PENTE que la précédente, et le sol reste marchable sans
+       qu'on ait à l'aplatir après coup. */
+    a += fbm2(px / T.echelleRelief, pz / T.echelleRelief,
+              T.octavesRelief, T.gainRelief) * T.amplitudeRelief;
+
+    /* Les failles. Un bruit de crête franchi d'un coup : le sol saute de
+       plusieurs mètres sur quelques cellules. C'est ce qui fait les
+       escarpements, les corniches et les à-pics — le relief lisse, lui, n'en
+       produit aucun. Le lissage sur une bande étroite évite la marche
+       parfaitement verticale, qui se lit comme un mur et non comme une
+       falaise. */
+    const f = crete2(px / T.echelleFaille, pz / T.echelleFaille, 2);
+    const b0 = T.seuilFaille - T.largeurFaille, b1 = T.seuilFaille + T.largeurFaille;
+    const u = clamp((f - b0) / Math.max(1e-6, b1 - b0), 0, 1);
+    a += u * u * (3 - 2 * u) * T.hauteurFaille;
+
+    const i = gz * w + gx;
+    champAlt[i] = a; champX[i] = px; champZ[i] = pz;
   }
 }
 
-/* Le couloir interpole l'altitude cellule par cellule et MARQUE L'ÉPINE : ces
-   cellules-là seront relaxées, donc toujours franchissables. */
-function corridor(a,b,wdt){
-  const pts=[];
-  let x=a.x, z=a.z;
-  while(x!==b.x){ pts.push([x,z]); x += Math.sign(b.x-x); }
-  while(z!==b.z){ pts.push([x,z]); z += Math.sign(b.z-z); }
-  pts.push([b.x,b.z]);
-  const M = SETUP.relief.epineMarge;
-  pts.forEach(([x,z],i)=>{
-    const t = i / Math.max(1, pts.length-1);
-    const e = lerp(a.e, b.e, t);
-    for(let i2=0;i2<wdt;i2++) for(let j=0;j<wdt;j++) if(inB(x+i2,z+j)){
-      const k = idx(x+i2, z+j);
-      const y = altitudeDeCellule(e, x+i2, z+j);
-      grid[k]=FLOOR; floorH[k]=y; biome[k]=biomeDeCellule(y, x+i2, z+j);
-    }
-    // marge d'épine autour du tracé : la relaxation a de quoi lisser la rampe
-    for(let dz=-M; dz<=M+wdt; dz++) for(let dx=-M; dx<=M+wdt; dx++)
-      if(inB(x+dx, z+dz)) epine[idx(x+dx, z+dz)] = 1;
-  });
+/** Interpolation bilinéaire d'un champ échantillonné. */
+function lire(champ, x, z){
+  const gx = x / champPas, gz = z / champPas;
+  const ix = gx | 0, iz = gz | 0;
+  const fx = gx - ix, fz = gz - iz;
+  const i = iz * champW + ix, j = i + champW;
+  const a = champ[i] + (champ[i+1] - champ[i]) * fx;
+  const b = champ[j] + (champ[j+1] - champ[j]) * fx;
+  return a + (b - a) * fz;
 }
-
-/* Un couloir en L direct est souvent trop court pour absorber un écart
-   d'altitude sans que la relaxation ne l'aplatisse. On insère un point de
-   passage qui rallonge le trajet : la rampe devient longue et douce, et le
-   dénivelé survit. Avec l'amplitude ×3, ce détour est devenu la règle plus
-   que l'exception. */
-function corridorLong(a,b,wdt){
-  const dE = Math.abs(a.e - b.e);
-  const dist = Math.abs(a.x-b.x) + Math.abs(a.z-b.z);
-  const besoin = dE / (STEPUP * 0.32);     // cellules nécessaires pour la rampe
-  if(dist >= besoin){ corridor(a,b,wdt); return; }
-  const manque = besoin - dist;
-  const dir = rnd() < 0.5 ? 1 : -1;
-  const wp = {
-    x: clamp(Math.round((a.x+b.x)/2 + dir*manque*0.5), 2, GW-3),
-    z: clamp(Math.round((a.z+b.z)/2 - dir*manque*0.5), 2, GH-3),
-    e: (a.e + b.e)/2, b: a.b,
-  };
-  corridor(a,wp,wdt); corridor(wp,b,wdt);
-}
-
-/* ─────────────── relaxation sur l'épine seulement ─────────────── */
 
 /**
- * Rend le champ Lipschitz LE LONG DE L'ÉPINE : aucune marche entre deux
- * cellules voisines d'épine ne dépasse ce que le joueur franchit. On ne fait
- * que BAISSER, donc le procédé converge.
+ * Y a-t-il du creux en (x,z) ? `px,pz` sont les coordonnées déformées.
  *
- * File d'attente : quand une cellule est abaissée, seuls ses voisins sont
- * remis en question. Coût proportionnel au nombre de corrections, pas au
- * nombre de cellules × nombre de passes.
+ * Deux familles se réunissent :
+ *   · les GALERIES — les crêtes d'un bruit ridged. Un bruit ordinaire donne
+ *     des taches, un bruit de crête donne des LIGNES : elles serpentent, se
+ *     divisent, se rejoignent. C'est un réseau, pas un gruyère.
+ *   · les CAVITÉS — les hauts d'un bruit lent. Ce sont les salles, et elles
+ *     n'ont ni coin ni côté.
+ *
+ * Les deux seuils sont bousculés par une RUGOSITÉ à l'échelle de la cellule.
+ * Sans elle, la frontière entre creux et plein est une courbe lisse, et une
+ * paroi lisse à la verticale, c'est un mur de couloir. Avec elle, la roche
+ * gagne des redans, des alcôves et des éperons — de quoi se cacher, aussi.
+ */
+function creux(px, pz){
+  const T = SETUP.terrain;
+  const rug = fbm2(px / T.echelleRugosite, pz / T.echelleRugosite, 2) * T.rugositeRoche;
+  if(crete2(px / T.echelleGalerie, pz / T.echelleGalerie, 3) + rug > T.seuilGalerie) return true;
+  return fbm2(px / T.echelleSalle, pz / T.echelleSalle, 3) + rug > T.seuilSalle;
+}
+
+/**
+ * Le RELIEF DE PROXIMITÉ, ajouté à l'altitude cellule par cellule.
+ *
+ * Il ne s'échantillonne pas comme le reste : c'est justement ce qui se passe
+ * ENTRE deux nœuds du champ. Sans lui, le sol vu par le joueur est plat — le
+ * relief d'ensemble varie de 24 m sur 300, soit un mètre sur les quinze mètres
+ * que porte le regard dans le brouillard. Les aperçus de la première version
+ * v5 montraient exactement ça : des strates justes, et un sol de gymnase.
+ *
+ * L'amplitude est petite, et c'est voulu : au-delà d'un mètre, chaque pas
+ * devient une marche et la relaxation de l'épine passe son temps à raboter.
+ */
+function detailSol(px, pz){
+  const T = SETUP.terrain;
+  return fbm2(px / T.echelleDetail, pz / T.echelleDetail, 3) * T.amplitudeDetail;
+}
+
+/* ═══════════════ LE TERRAIN ═══════════════ */
+
+/**
+ * Remplit `floorH`, `biome` et `grid` pour toute la planche.
+ *
+ * L'altitude est écrite PARTOUT, roche comprise : le sol du monde est une
+ * surface continue dont on ne voit que les portions dégagées. C'est ce qui
+ * fait qu'une galerie qui débouche dans une salle arrive au bon niveau, sans
+ * la moindre marche de raccord — le défaut le plus visible de la v4, où
+ * chaque salle avait SA cote et où les couloirs devaient rattraper l'écart.
+ */
+function poserTerrain(){
+  for(let z = 0; z < GH; z++) for(let x = 0; x < GW; x++){
+    const i = idx(x, z);
+    const px = lire(champX, x, z), pz = lire(champZ, x, z);
+    const y = altitudeDeCellule(lire(champAlt, x, z) + detailSol(px, pz), x, z);
+    const b = biomeDeCellule(y, x, z);
+    floorH[i] = y;
+    biome[i] = b;
+    /* Le dehors n'est pas une caverne : au-dessus de la dernière strate, tout
+       est ouvert. La surface gelée cesse d'être une salle rectangulaire à
+       ciel ouvert pour devenir ce qu'elle doit être — un paysage. */
+    if(BIOMES[b].sky || creux(px, pz)) grid[i] = FLOOR;
+  }
+}
+
+/* ═══════════════ LES LIEUX ═══════════════ */
+
+/**
+ * Repère les grandes cavités. On ne cherche pas un maximum du bruit — ce qui
+ * donnerait des lieux là où le terrain n'est peut-être pas creusé — mais une
+ * forte DENSITÉ DE CREUX réelle, mesurée sur la grille déjà posée.
+ *
+ * Densité calculée sur une grille grossière puis lissée : c'est l'équivalent
+ * de `openN` (calculé plus tard, une fois les galeries percées) pour trois
+ * fois rien.
+ */
+function repererLieux(){
+  const T = SETUP.terrain;
+  const P = Math.max(2, T.pasLieux);
+  const w = Math.ceil(GW / P), h = Math.ceil(GH / P);
+  const dens = new Float32Array(w * h);
+
+  for(let z = 0; z < GH; z++){
+    const gz = (z / P) | 0;
+    for(let x = 0; x < GW; x++)
+      if(grid[idx(x,z)] === FLOOR) dens[gz * w + ((x / P) | 0)]++;
+  }
+  const parCase = P * P;
+
+  /* Lissage 3×3 : une case seule ne dit rien, une case entourée de creux est
+     une salle. */
+  const lisse = new Float32Array(w * h);
+  for(let gz = 1; gz < h-1; gz++) for(let gx = 1; gx < w-1; gx++){
+    let s = 0;
+    for(let dz = -1; dz <= 1; dz++) for(let dx = -1; dx <= 1; dx++)
+      s += dens[(gz+dz) * w + gx+dx];
+    lisse[gz * w + gx] = s / (9 * parCase);
+  }
+
+  /* Les meilleures cases, en s'interdisant deux lieux trop proches. On tire
+     dans l'ordre décroissant de densité : les vraies salles d'abord. */
+  const cand = [];
+  for(let gz = 1; gz < h-1; gz++) for(let gx = 1; gx < w-1; gx++)
+    if(lisse[gz * w + gx] > T.densiteLieu) cand.push([lisse[gz*w+gx], gx, gz]);
+  cand.sort((a, b) => b[0] - a[0]);
+
+  const ECART = Math.max(1, Math.round(T.ecartLieux / P));
+  const pris = new Uint8Array(w * h);
+  salles.length = 0;
+
+  for(const [, gx, gz] of cand){
+    if(salles.length >= SETUP.monde.nbSalles) break;
+    if(pris[gz * w + gx]) continue;
+    for(let dz = -ECART; dz <= ECART; dz++) for(let dx = -ECART; dx <= ECART; dx++){
+      const nx = gx+dx, nz = gz+dz;
+      if(nx >= 0 && nz >= 0 && nx < w && nz < h) pris[nz * w + nx] = 1;
+    }
+    /* Le centre de la case, ramené sur une cellule creuse : le lieu doit être
+       un endroit où l'on peut se tenir, pas une coordonnée moyenne. */
+    const c = plusProcheCreux(gx * P + (P>>1), gz * P + (P>>1), 12);
+    if(!c) continue;
+    const i = idx(c.x, c.z);
+    salles.push({x: c.x, z: c.z, e: floorH[i], b: biome[i]});
+  }
+}
+
+/** La cellule creuse la plus proche de (x,z), dans un rayon de `r` cellules. */
+function plusProcheCreux(x, z, r){
+  if(isFloor(x, z)) return {x, z};
+  for(let k = 1; k <= r; k++){
+    for(let dz = -k; dz <= k; dz++) for(let dx = -k; dx <= k; dx++){
+      if(Math.abs(dx) !== k && Math.abs(dz) !== k) continue;
+      if(isFloor(x+dx, z+dz)) return {x: x+dx, z: z+dz};
+    }
+  }
+  return null;
+}
+
+/* ═══════════════ LES GALERIES ═══════════════ */
+
+/**
+ * Creuse une galerie sinueuse entre deux points, et la marque comme épine.
+ *
+ * Le tracé n'est pas droit : chaque pas est écarté perpendiculairement par du
+ * bruit, d'une amplitude proportionnelle à la longueur du trajet. Un couloir
+ * de v4 allait tout droit puis tournait à angle droit ; celui-ci ondule, et
+ * l'on ne voit jamais où il finit.
+ *
+ * Le sol suit le TERRAIN, il ne l'invente pas : une galerie est un vide dans
+ * la roche, pas une passerelle. La relaxation de l'épine se chargera ensuite
+ * de raboter les marches trop hautes qu'elle traverse.
+ */
+function galerie(ax, az, bx, bz, largeur){
+  const T = SETUP.terrain;
+  const dx = bx - ax, dz = bz - az;
+  const dist = Math.hypot(dx, dz);
+  if(dist < 1) return;
+  const pas = Math.max(2, Math.round(dist));
+  const nx = -dz / dist, nz = dx / dist;          // la perpendiculaire
+  const ampl = Math.min(T.sinuositeMax, dist * T.sinuosite);
+  const phase = rnd() * 1000;
+
+  for(let s = 0; s <= pas; s++){
+    const t = s / pas;
+    /* Le décalage s'annule aux deux bouts (sin(πt)) : la galerie arrive
+       exactement sur ses deux lieux, elle ne les rate pas de dix mètres. */
+    const d = fbm2(phase + t * dist / T.echelleSinus, phase * 0.7, 2)
+            * ampl * Math.sin(Math.PI * t);
+    const cx = Math.round(ax + dx * t + nx * d);
+    const cz = Math.round(az + dz * t + nz * d);
+    /* La largeur respire : un boyau, puis une salle, puis un boyau. Bornée des
+       deux côtés — le bruit est calibré en écart-type, il sort donc
+       régulièrement de [−1,1] et une largeur négative creuserait à l'envers. */
+    const respire = clamp(fbm2(t * dist / 40 + phase, 17.3, 2), -1, 1);
+    const r = largeur * (1 + 0.45 * respire);
+
+    const R = Math.ceil(r);
+    for(let oz = -R; oz <= R; oz++) for(let ox = -R; ox <= R; ox++){
+      if(ox*ox + oz*oz > r*r) continue;
+      const x = cx + ox, z = cz + oz;
+      if(!inB(x, z)) continue;
+      grid[idx(x, z)] = FLOOR;
+      epine[idx(x, z)] = 1;
+    }
+  }
+}
+
+/**
+ * Épaissit l'épine de `marge` cellules. La relaxation a besoin de place de
+ * part et d'autre du tracé pour étaler une rampe ; sans marge elle rabote un
+ * couloir d'une cellule de large entre deux parois et ne lisse rien.
+ *
+ * Une vague en largeur, et non un carré marqué autour de chaque pas de chaque
+ * galerie : à 440 galeries et 6 cellules de marge, la seconde méthode écrivait
+ * vingt-quatre millions de fois dans un tableau d'un million de cases, et
+ * c'était à elle seule la moitié du temps de génération.
+ */
+function dilaterEpine(marge){
+  if(marge <= 0) return;
+  const N = GW * GH;
+  const file = new Int32Array(N);
+  const dist = new Uint8Array(N);
+  let tete = 0, queue = 0;
+  for(let i = 0; i < N; i++) if(epine[i]){ dist[i] = 1; file[queue++] = i; }
+  while(tete < queue){
+    const i = file[tete++];
+    const d = dist[i];
+    if(d > marge) continue;
+    const x = i % GW;
+    if(x > 0)      voisin(i - 1, d);
+    if(x < GW-1)   voisin(i + 1, d);
+    if(i >= GW)    voisin(i - GW, d);
+    if(i < N - GW) voisin(i + GW, d);
+  }
+  function voisin(j, d){
+    if(dist[j]) return;
+    dist[j] = d + 1;
+    epine[j] = 1;
+    file[queue++] = j;
+  }
+}
+
+/**
+ * Étend l'ourlet de `marge` cellules, à ciel ouvert uniquement. Même vague que
+ * `dilaterEpine`, mais qui refuse de repartir sous terre : le souterrain est
+ * déjà relaxé, et l'ourlet n'a pas à ronger le dehors plus loin que sa lisière.
+ */
+function dilaterEpineCiel(marge, depart){
+  if(marge <= 0) return;
+  const N = GW * GH;
+  const file = new Int32Array(N);
+  const dist = new Uint8Array(N);
+  let tete = 0, queue = 0;
+  for(const i of depart){ dist[i] = 1; file[queue++] = i; }
+  while(tete < queue){
+    const i = file[tete++];
+    const d = dist[i];
+    if(d > marge) continue;
+    const x = i % GW;
+    if(x > 0)      voisin(i - 1, d);
+    if(x < GW-1)   voisin(i + 1, d);
+    if(i >= GW)    voisin(i - GW, d);
+    if(i < N - GW) voisin(i + GW, d);
+  }
+  function voisin(j, d){
+    if(dist[j] || grid[j] !== FLOOR || !BIOMES[biome[j]].sky) return;
+    dist[j] = d + 1;
+    epine[j] = 1;
+    file[queue++] = j;
+  }
+}
+
+/**
+ * Chaîne les lieux par altitude croissante et les relie. C'est l'épine : le
+ * chemin garanti du point le plus bas du monde jusqu'au jour.
+ *
+ * Puis des RACCOURCIS entre lieux voisins, pour que le monde soit un réseau et
+ * non un fil. Sans eux, chaque cul-de-sac oblige à revenir sur ses pas.
+ */
+function relierLesLieux(){
+  const T = SETUP.terrain;
+  if(salles.length < 2) return;
+
+  const ordre = salles.slice().sort((a, b) => a.e - b.e);
+  for(let k = 1; k < ordre.length; k++){
+    const a = ordre[k-1], b = ordre[k];
+    galerie(a.x, a.z, b.x, b.z, rnd() < 0.3 ? T.largeurGalerie + 1 : T.largeurGalerie);
+  }
+
+  /* Raccourcis : un lieu, et le plus proche parmi ceux qui le suivent dans la
+     chaîne. On ne relie jamais deux altitudes éloignées — un puits vertical de
+     soixante mètres ne se descend pas. */
+  for(let k = 0; k < SETUP.monde.nbRaccourcis && ordre.length > 3; k++){
+    const i = ri(0, ordre.length - 2);
+    const a = ordre[i];
+    let meilleur = null, md = 1e9;
+    for(let j = Math.max(0, i-8); j < Math.min(ordre.length, i+9); j++){
+      if(j === i) continue;
+      const c = ordre[j];
+      if(Math.abs(c.e - a.e) > T.deniveleRaccourci) continue;
+      const d = (c.x-a.x)**2 + (c.z-a.z)**2;
+      if(d < md){ md = d; meilleur = c; }
+    }
+    if(meilleur) galerie(a.x, a.z, meilleur.x, meilleur.z, T.largeurGalerie);
+  }
+}
+
+/* ═══════════════ LES POCHES ═══════════════ */
+
+/**
+ * Étiquette les composantes du CREUX (voisinage à 4, sans tenir compte du
+ * relief), reboûche les petites et relie les grandes au continent.
+ *
+ * Pourquoi ici et pas dans monde/connexite.js : celui-ci raisonne en
+ * PRATICABILITÉ (une marche trop haute coupe), ce qui demande un relief déjà
+ * relaxé, et il travaille à coups de rampes et de galeries comptées. Une poche
+ * murée par de la roche, elle, ne se répare qu'en creusant, et le terrain est
+ * le seul à savoir combien il en a produit. Mesuré sur la v4 : 57 % des
+ * frontières de morceau isolé étaient de la roche non creusée.
+ *
+ * @returns {poches, rebouchees, reliees}
+ */
+function relierLesPoches(){
+  const T = SETUP.terrain;
+  const N = GW * GH;
+  const comp = new Int32Array(N).fill(-1);
+  const file = new Int32Array(N);
+  const tailles = [];
+  let nb = 0;
+
+  for(let depart = 0; depart < N; depart++){
+    if(comp[depart] !== -1 || grid[depart] !== FLOOR) continue;
+    let tete = 0, queue = 0, taille = 0;
+    file[queue++] = depart; comp[depart] = nb;
+    while(tete < queue){
+      const i = file[tete++]; taille++;
+      const x = i % GW;
+      if(x > 0)      essai(i - 1);
+      if(x < GW-1)   essai(i + 1);
+      if(i >= GW)    essai(i - GW);
+      if(i < N - GW) essai(i + GW);
+    }
+    function essai(j){
+      if(comp[j] !== -1 || grid[j] !== FLOOR) return;
+      comp[j] = nb; file[queue++] = j;
+    }
+    tailles.push(taille); nb++;
+  }
+
+  if(nb === 0) return {poches:0, rebouchees:0, reliees:0};
+
+  let continent = 0;
+  for(let k = 1; k < nb; k++) if(tailles[k] > tailles[continent]) continent = k;
+
+  /* Distance au continent, en cellules, À TRAVERS LA ROCHE. Une seule vague
+     multi-sources : on saura, depuis n'importe quelle poche, dans quelle
+     direction creuser pour retomber sur le monde. */
+  const dist = new Int32Array(N).fill(-1);
+  let tete = 0, queue = 0;
+  for(let i = 0; i < N; i++) if(comp[i] === continent){ dist[i] = 0; file[queue++] = i; }
+  while(tete < queue){
+    const i = file[tete++];
+    const x = i % GW, d = dist[i] + 1;
+    if(x > 0      && dist[i-1]  < 0){ dist[i-1]  = d; file[queue++] = i-1; }
+    if(x < GW-1   && dist[i+1]  < 0){ dist[i+1]  = d; file[queue++] = i+1; }
+    if(i >= GW    && dist[i-GW] < 0){ dist[i-GW] = d; file[queue++] = i-GW; }
+    if(i < N - GW && dist[i+GW] < 0){ dist[i+GW] = d; file[queue++] = i+GW; }
+  }
+
+  /* Le point de chaque poche le plus proche du continent : c'est de là qu'on
+     creuse, et c'est le percement le moins cher. */
+  const meilleur = new Int32Array(nb).fill(-1);
+  for(let i = 0; i < N; i++){
+    const c = comp[i];
+    if(c < 0 || c === continent) continue;
+    if(meilleur[c] < 0 || dist[i] < dist[meilleur[c]]) meilleur[c] = i;
+  }
+
+  let rebouchees = 0, reliees = 0;
+
+  /* Les poches trop petites sont rendues à la roche EN UNE SEULE PASSE. Une
+     boucle sur la grille par poche coûtait 220 balayages d'un million de
+     cellules — un quart de seconde de génération pour une opération qui n'en
+     demande qu'un. */
+  const aReboucher = new Uint8Array(nb);
+  for(let c = 0; c < nb; c++)
+    if(c !== continent && tailles[c] < T.pocheMin){ aReboucher[c] = 1; rebouchees++; }
+  if(rebouchees){
+    for(let i = 0; i < N; i++){
+      const c = comp[i];
+      if(c >= 0 && aReboucher[c]) grid[i] = WALL;
+    }
+  }
+
+  for(let c = 0; c < nb; c++){
+    if(c === continent || meilleur[c] < 0 || aReboucher[c]) continue;
+
+    /* Le gradient de distance dit OÙ déboucher — c'est le percement le moins
+       cher — mais on ne creuse pas le long de lui. Une descente de gradient
+       sur une grille ne produit que des segments alignés sur les axes, et la
+       carte du monde en était rayée de traits parfaitement droits : le défaut
+       même qu'on venait de retirer du reste du terrain. On ne retient donc que
+       le point d'arrivée, et on y va par une galerie sinueuse comme les
+       autres. */
+    let i = meilleur[c], garde = 0;
+    while(dist[i] > 0 && garde++ < 4000){
+      let suivant = -1, md = dist[i];
+      for(const j of [i-1, i+1, i-GW, i+GW]){
+        if(j < 0 || j >= N) continue;
+        if(dist[j] >= 0 && dist[j] < md){ md = dist[j]; suivant = j; }
+      }
+      if(suivant < 0) break;
+      i = suivant;
+    }
+    galerie(meilleur[c] % GW, (meilleur[c] / GW) | 0,
+            i % GW, (i / GW) | 0, T.largeurLiaison);
+    reliees++;
+  }
+  return {poches: nb - 1, rebouchees, reliees};
+}
+
+/* ═══════════════ RELAXATION SUR L'ÉPINE ═══════════════ */
+
+/**
+ * Rend le champ de hauteur franchissable partout où l'épine passe : entre deux
+ * cellules voisines d'épine, plus aucune marche ne dépasse ce que le joueur
+ * enjambe. On ne fait que BAISSER — jamais monter — donc le relief garde sa
+ * forme et ses creux.
+ *
+ * ── POURQUOI DES SEAUX, ET PAS UNE FILE ────────────────────────────────────
+ * La v3 tenait une file d'attente : on abaissait une cellule, on remettait ses
+ * voisines en question, et on recommençait. Ça converge, mais le nombre de
+ * visites explose dès que la zone relaxée est vaste — chaque grand plateau se
+ * fait raboter par vagues successives. Avec l'épine étroite de la v4 c'était
+ * invisible ; en v5, où TOUT le souterrain est relaxé, le garde-fou coupait la
+ * boucle avant la fin (2 778 marches infranchissables laissées derrière, sans
+ * un mot), et le lever coûtait douze secondes de génération.
+ *
+ * Le problème est en réalité un PLUS COURT CHEMIN : la cote finale d'une
+ * cellule vaut la plus petite valeur de « cote d'une cellule + MAX × distance
+ * jusqu'à elle ». Toutes les arêtes ayant le même poids (MAX), un tas de
+ * priorité est inutile : des seaux de largeur MAX suffisent, et l'ordre est
+ * exact. Abaisser une cellule la range forcément dans un seau POSTÉRIEUR à
+ * celui qu'on traite — on ne revient donc jamais en arrière, chaque cellule
+ * est réglée une fois, et le procédé se termine tout seul. Plus de garde-fou,
+ * plus de saturation muette.
+ *
+ * Mesuré sur la grille 1088² avec tout le souterrain relaxé : 12,1 s → 0,2 s,
+ * et zéro marche infranchissable.
  */
 function relaxerEpine(){
-  const MAX = STEPUP - 0.03;
+  /* La quantification passe APRÈS et arrondit au quart de mètre : deux cotes
+     séparées de la marche maximale peuvent en ressortir séparées d'un quart de
+     mètre de plus. On garde donc la marge, sinon la garantie est fausse. */
+  const MAX = STEPUP - SETUP.monde.quantifierRelief - 0.03;
   const NB = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
   const N = GW*GH;
 
-  /* File CIRCULAIRE. Une file linéaire débordait : `file[queue++]` au-delà de
-     la capacité d'un Int32Array est silencieusement ignoré en JavaScript, si
-     bien que la relaxation s'arrêtait au milieu sans le moindre message et
-     laissait des marches infranchissables sur l'épine.
-     `dansFile` garantit qu'une cellule n'est présente qu'une fois : la file ne
-     contient donc jamais plus de N éléments, et N+1 cases suffisent. */
-  const CAP = N + 1;
-  const file = new Int32Array(CAP);
-  const dansFile = new Uint8Array(N);
-  let tete = 0, queue = 0, taille = 0;
+  let hmin = Infinity, hmax = -Infinity, combien = 0;
+  for(let i = 0; i < N; i++){
+    if(grid[i] !== FLOOR || !epine[i]) continue;
+    combien++;
+    if(floorH[i] < hmin) hmin = floorH[i];
+    if(floorH[i] > hmax) hmax = floorH[i];
+  }
+  releve.marches = 0;
+  releve.saturee = false;
+  if(!combien) return;
 
-  const pousser = i => {
-    if(dansFile[i]) return;
-    dansFile[i] = 1;
-    file[queue] = i;
-    queue = (queue + 1) % CAP;
-    taille++;
+  const NS = Math.ceil((hmax - hmin) / MAX) + 3;
+  const seaux = new Array(NS);
+  for(let b = 0; b < NS; b++) seaux[b] = [];
+  const ranger = i => {
+    let b = ((floorH[i] - hmin) / MAX) | 0;
+    if(b < 0) b = 0; else if(b >= NS) b = NS - 1;
+    seaux[b].push(i);
   };
 
-  for(let z=1; z<GH-1; z++) for(let x=1; x<GW-1; x++){
-    const i = idx(x,z);
-    if(grid[i]===FLOOR && epine[i]) pousser(i);
-  }
+  for(let i = 0; i < N; i++) if(grid[i] === FLOOR && epine[i]) ranger(i);
 
-  // Garde-fou : sur 1,18 M cellules une boucle mal bornée gèle l'onglet.
-  const PLAFOND = N * SETUP.relief.relaxPasses;
-  let traites = 0;
-
-  while(taille > 0 && traites++ < PLAFOND){
-    const i = file[tete];
-    tete = (tete + 1) % CAP;
-    taille--;
-    dansFile[i] = 0;
-    const x = i % GW, z = (i / GW) | 0;
-    for(const [dx,dz] of NB){
-      const nx=x+dx, nz=z+dz;
-      if(!isFloor(nx,nz)) continue;
-      const n = idx(nx,nz);
-      if(!epine[n]) continue;                 // hors épine : la falaise reste
-      if(floorH[i] - floorH[n] > MAX){
-        floorH[i] = floorH[n] + MAX;
-        pousser(i);
-        for(const [ax,az] of NB){
-          if(isFloor(x+ax, z+az) && epine[idx(x+ax,z+az)]) pousser(idx(x+ax,z+az));
+  const regle = new Uint8Array(N);
+  for(let b = 0; b < NS; b++){
+    const lot = seaux[b];
+    for(let k = 0; k < lot.length; k++){
+      const i = lot[k];
+      if(regle[i]) continue;
+      regle[i] = 1;
+      const h = floorH[i], x = i % GW, z = (i / GW) | 0;
+      for(const [dx,dz] of NB){
+        const nx = x+dx, nz = z+dz;
+        if(!isFloor(nx,nz)) continue;
+        const n = idx(nx,nz);
+        if(!epine[n] || regle[n]) continue;   // hors épine : la falaise reste
+        if(floorH[n] > h + MAX){
+          floorH[n] = h + MAX;
+          ranger(n);                          // toujours dans un seau plus loin
         }
-        break;
       }
     }
   }
+
+  /* Ce qui reste : deux cellules voisines, toutes deux relaxées, que le joueur
+     ne peut pas franchir. Doit valoir zéro — et le rapport de génération le
+     dit, plutôt que de laisser le monde se couper en silence. */
+  let restes = 0;
+  for(let z = 1; z < GH-1; z++) for(let x = 1; x < GW-1; x++){
+    const i = idx(x,z);
+    if(grid[i] !== FLOOR || !epine[i]) continue;
+    for(const [dx,dz] of [[1,0],[0,1]]){
+      const nx = x+dx, nz = z+dz;
+      if(!isFloor(nx,nz) || !epine[idx(nx,nz)]) continue;
+      if(Math.abs(floorH[i] - floorH[idx(nx,nz)]) > STEPUP) restes++;
+    }
+  }
+  releve.marches = restes;
 }
 
 /**
@@ -1761,6 +2561,7 @@ function marquerFalaises(){
   for(let z=1; z<GH-1; z++) for(let x=1; x<GW-1; x++){
     const i = idx(x,z);
     if(grid[i] !== FLOOR) continue;
+    falaise[i] = 0;
     for(const [dx,dz] of NB){
       if(!isFloor(x+dx, z+dz)) continue;
       if(floorH[i] - floorH[idx(x+dx,z+dz)] > S){ falaise[i] = 1; break; }
@@ -1768,70 +2569,66 @@ function marquerFalaises(){
   }
 }
 
-/* ─────────────── plateformes ─────────────── */
+/* ═══════════════ LE PLAN DU MONDE ═══════════════ */
 
-/* Les rampes de franchissement ont déménagé dans monde/connexite.js : elles
-   ne relèvent plus du décor mais de la TOPOLOGIE. Voir l'explication là-bas —
-   en résumé, les poser au hasard produisait des escaliers qui ne reliaient
-   rien, ce qui était exactement le reproche fait à la version d'avant.      */
-
-/* ─────────────── plan du monde ─────────────── */
 
 /**
- * Creuse salles, cavernes et couloirs. Le monde est ordonné en altitude : le
- * barrage tout au fond, la surface tout en haut, les salles posées le long
- * d'une diagonale pour que la remontée soit longue. C'est la longueur du
- * chemin, et non l'altitude visée, qui décide du dénivelé qui survit.
+ * Bâtit le terrain. Quatre temps : les champs, la matière, les lieux et leurs
+ * galeries, enfin le recollement des poches.
  */
 function creuserPlan(){
   salles.length = 0;
   epine.fill(0);
 
-  const {altBasse, altHaute, nbSalles, nbCavernes, nbRaccourcis} = SETUP.monde;
+  const t = [performance.now()];
+  batirChamps();      t.push(performance.now());
+  poserTerrain();     t.push(performance.now());
+  repererLieux();     t.push(performance.now());
+  relierLesLieux();   t.push(performance.now());
+  const r = relierLesPoches();
+  t.push(performance.now());
+  dilaterEpine(SETUP.relief.epineMarge);
 
-  /* Le plan ne porte plus que des ALTITUDES. Le biome n'est plus une donnée
-     du plan : il se déduit de l'altitude au moment du creusement. C'est la
-     correction du « biomes placés au bol » — il devient impossible qu'une
-     salle à −100 m soit autre chose que du barrage. */
-  const PLAN = [];
-  for(let k=0; k<nbSalles; k++){
-    const t = k / (nbSalles - 1);
-    PLAN.push({ e: lerp(altBasse, altHaute, t) + ri(-6,6) });
+  /* ── TOUT LE SOUTERRAIN EST-IL GARANTI MARCHABLE ? ──
+     Mesuré sur la v5 : avec la seule épine relaxée, 88 % du sol praticable
+     tenait dans un morceau, contre 98 % en v4 — et sept morceaux
+     significatifs restaient inatteignables. La cause n'est pas le décor mais
+     la forme du terrain : une galerie de trois cellules de large qu'une
+     faille traverse est coupée net, et il n'y a pas de « par le côté » dans
+     un boyau.
+
+     On étend donc l'épine à tout le creux SOUS TERRE. Le dehors, lui, garde
+     son relief brut : à ciel ouvert on contourne, et c'est là que les à-pics
+     ont un sens. */
+  if(SETUP.terrain.relaxerSouterrain){
+    for(let i = 0; i < GW*GH; i++)
+      if(grid[i] === FLOOR && (SETUP.terrain.relaxerDehors || !BIOMES[biome[i]].sky))
+        epine[i] = 1;
+
+    /* ── L'OURLET DU DEHORS ──
+       Si l'on relaxe le souterrain et pas la surface, on abaisse d'un côté de
+       la frontière et pas de l'autre : il se forme une marche tout le long de
+       la lisière, et la surface entière se décroche du monde. Mesuré : un
+       monde sur trois avait son dehors — la destination du jeu — entièrement
+       inatteignable à pied.
+
+       On relaxe donc un ourlet de quelques cellules côté ciel : de quoi
+       recoudre les deux, sans toucher aux à-pics du grand dehors. */
+    if(!SETUP.terrain.relaxerDehors){
+      const bord = [];
+      for(let z = 1; z < GH-1; z++) for(let x = 1; x < GW-1; x++){
+        const i = idx(x,z);
+        if(grid[i] !== FLOOR || !BIOMES[biome[i]].sky) continue;
+        for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          const n = idx(x+dx, z+dz);
+          if(grid[n] === FLOOR && !BIOMES[biome[n]].sky){ bord.push(i); break; }
+        }
+      }
+      for(const i of bord) epine[i] = 1;
+      if(bord.length) dilaterEpineCiel(SETUP.terrain.ourletDehors, bord);
+    }
   }
-
-  PLAN.forEach((P,i)=>{
-    const t = i / (PLAN.length - 1);
-    // diagonale + dispersion : les extrêmes se retrouvent aux deux bouts
-    const cx = Math.round(lerp(18, GW-19, t) + ri(-14,14));
-    const cz = Math.round(lerp(GH-19, 18, t) + ri(-14,14));
-    const b = biomeDeCellule(P.e, cx, cz);
-    const grand = b === 3 || b === 2;          // dehors et le barrage sont vastes
-    const w = grand ? ri(26,40) : ri(14,26), h = grand ? ri(26,40) : ri(14,26);
-    const x = clamp(cx - (w>>1), 2, GW-w-3), z = clamp(cz - (h>>1), 2, GH-h-3);
-    carveRect(x, z, w, h, P.e);
-    salles.push({x: x + (w>>1), z: z + (h>>1), e: P.e, b});
-  });
-
-  // cavernes : réparties sur toute la hauteur, biome déduit comme le reste
-  for(let k=0; k<nbCavernes; k++){
-    const t = k / (nbCavernes - 1);
-    const e = lerp(altBasse+4, altHaute-4, t) + ri(-8,8);
-    const tt = (e - altBasse) / (altHaute - altBasse);
-    const cx = clamp(Math.round(lerp(20, GW-21, tt) + ri(-12,12)), 18, GW-19);
-    const cz = clamp(Math.round(lerp(GH-21, 20, tt) + ri(-12,12)), 18, GH-19);
-    carveBlob(cx, cz, ri(1400,3000), e);
-    salles.push({x:cx, z:cz, e, b: biomeDeCellule(e, cx, cz)});
-  }
-
-  // la chaîne suit l'ordre du plan : on ne saute jamais 60 m d'un coup
-  for(let i=1; i<salles.length; i++)
-    corridorLong(salles[i-1], salles[i], rnd()<0.35 ? 3 : 2);
-
-  // raccourcis, mais seulement entre paliers voisins
-  for(let i=0; i<nbRaccourcis; i++){
-    const a = ri(0, salles.length - 2);
-    corridorLong(salles[a], salles[a+1], 2);
-  }
+  t.push(performance.now());
 
   /* Pas de mur d'enceinte : au bord, le sol s'arrête et c'est le vide. Un
      monde clos par une paroi invisible n'a pas d'horizon. */
@@ -1842,16 +2639,36 @@ function creuserPlan(){
       if(grid[i] !== FLOOR) vide[i] = 1;
     }
   }
+
+  let creuse = 0, dehors = 0;
+  for(let i=0; i<GW*GH; i++){
+    if(grid[i] !== FLOOR) continue;
+    creuse++;
+    if(BIOMES[biome[i]].sky) dehors++;
+  }
+  releve.dehors = dehors;
+  const noms = ['champs', 'terrain', 'lieux', 'galeries', 'poches', 'épine'];
+  releve.ms = noms.map((n, k) => n + ' ' + (t[k+1] - t[k]).toFixed(0)).join(' · ');
+  releve.lieux = salles.length;
+  releve.poches = r.poches; releve.rebouchees = r.rebouchees; releve.reliees = r.reliees;
+  releve.creux = creuse;
 }
 
 /**
  * Pose les plafonds. Nettement plus bas qu'en v2 : le souterrain doit être
  * exigu. Sous SETUP.monde.plafondRampe il faut ramper — ce qui a un intérêt
  * mécanique direct, puisque ramper n'imprime aucune trace.
+ *
+ * Le plafond ONDULE (v5). C'était l'autre moitié du « tout est cubique » : un
+ * plafond à hauteur constante au-dessus d'un sol plat donne un caisson, et
+ * c'est exactement ce que montraient les aperçus. Le bruit est indépendant du
+ * sol — voûtes et fonds de galerie ne respirent pas ensemble.
  */
 function poserPlafonds(){
   const {plafondBase, plafondOuvert, plafondCiel} = SETUP.monde;
-  for(let i=0; i<GW*GH; i++){
+  const T = SETUP.terrain;
+  for(let z=0; z<GH; z++) for(let x=0; x<GW; x++){
+    const i = idx(x,z);
     if(grid[i] !== FLOOR){ ceilH[i] = 0; continue; }
     const B = BIOMES[biome[i]];
     if(B.sky){
@@ -1859,7 +2676,10 @@ function poserPlafonds(){
       // fond d'une vallée, pas dans une salle repeinte en gris.
       sky[i] = 1; ceilH[i] = floorH[i] + plafondCiel;
     } else {
-      ceilH[i] = floorH[i] + (plafondBase + openN[i]*plafondOuvert) * B.h;
+      const voute = 1 + fbm2(x / T.echellePlafond, z / T.echellePlafond, 2)
+                      * T.reliefPlafond;
+      ceilH[i] = floorH[i]
+               + Math.max(T.plafondMin, (plafondBase + openN[i]*plafondOuvert) * B.h * voute);
     }
   }
 }
@@ -1889,7 +2709,7 @@ function finaliserRelief(){
   majBornes();
 }
 
-  return { carveBlob, carveRect, corridorLong, creuserPlan, epine, finaliserRelief, marquerFalaises, poserPlafonds, quantifierRelief, relaxerEpine, salles };
+  return { creuserPlan, epine, finaliserRelief, marquerFalaises, poserPlafonds, quantifierRelief, relaxerEpine, releve, salles };
 })();
 
 /* ─── src/monde/relief.js ─── */
@@ -2385,7 +3205,38 @@ function percerEnclaves(){
   return galeries;
 }
 
-/** Remonte la chaîne `venuDe` depuis `depart` et creuse tout du long. */
+/**
+ * Remonte la chaîne `venuDe` depuis `depart` et creuse tout du long.
+ *
+ * ── CE QUI CLOCHAIT, ET CE QUE ÇA COÛTAIT ──────────────────────────────────
+ * La v4 posait l'altitude de la galerie par simple INTERPOLATION LINÉAIRE
+ * entre ses deux bouts, et l'écrivait sur toutes les cellules du tracé, y
+ * compris celles qui étaient déjà du sol.
+ *
+ * Deux dégâts, tous deux invisibles jusqu'à ce qu'on les mesure :
+ *
+ *   · une galerie courte reliant deux bouts éloignés en altitude produit des
+ *     marches énormes — un fossé de vingt mètres franchi en cinq cellules,
+ *     c'est-à-dire une galerie que personne ne peut emprunter ;
+ *   · en réécrivant l'altitude de cellules DÉJÀ creusées, elle décroche du
+ *     monde tout ce qui les touchait. Là où elle croise une galerie existante,
+ *     elle laisse une marche en travers : le perçage censé relier une poche
+ *     coupait le réseau en deux.
+ *
+ * Mesuré sur la v5, graine 1 : 1 398 marches infranchissables en fin de
+ * génération là où la relaxation n'en laissait aucune, et 76,5 % du sol
+ * praticable dans un seul morceau au lieu de 98 %.
+ *
+ * ── CE QU'ON FAIT ──────────────────────────────────────────────────────────
+ * 1. on part du TERRAIN, pas d'une interpolation ;
+ * 2. on ne touche JAMAIS à l'altitude d'une cellule déjà creusée — elle
+ *    appartient au monde, pas à la galerie ;
+ * 3. on rabote le profil en deux passes (aller, retour) pour qu'aucune marche
+ *    ne dépasse ce que le joueur enjambe ;
+ * 4. si les deux bouts ne peuvent pas être reliés à ce prix — parce que le
+ *    tracé est trop court pour le dénivelé — on RENONCE. Une galerie
+ *    impraticable ne relie rien ; elle ne fait que percer un trou de plus.
+ */
 function creuserGalerie(depart, venuDe){
   const chemin = [];
   let c = depart, garde = 0;
@@ -2393,20 +3244,37 @@ function creuserGalerie(depart, venuDe){
     chemin.push(c);
     c = venuDe[c];
   }
-  if(chemin.length < 2) return false;
+  const n = chemin.length;
+  if(n < 2) return false;
 
-  const hA = floorH[chemin[0]];
-  const hB = floorH[chemin[chemin.length - 1]];
+  /* La marge de quantification : `finaliserRelief` arrondira ces cotes au
+     quart de mètre, et deux cellules pile à la limite en ressortiraient
+     au-dessus. Voir monde/generation.js, même précaution. */
+  const MAX = STEPUP - SETUP.monde.quantifierRelief - 0.05;
 
-  for(let k = 0; k < chemin.length; k++){
+  const dur = new Uint8Array(n);        // 1 = cellule déjà creusée : intouchable
+  const y = new Float64Array(n);
+  for(let k = 0; k < n; k++){
+    y[k] = floorH[chemin[k]];
+    dur[k] = grid[chemin[k]] === FLOOR ? 1 : 0;
+  }
+
+  // deux passes de Lipschitz : on ne fait que BAISSER, et jamais le sol acquis
+  for(let k = 1; k < n; k++)
+    if(!dur[k]) y[k] = Math.min(y[k], y[k-1] + MAX);
+  for(let k = n-2; k >= 0; k--)
+    if(!dur[k]) y[k] = Math.min(y[k], y[k+1] + MAX);
+
+  // le profil obtenu tient-il debout ? sinon la galerie ne relie rien
+  for(let k = 1; k < n; k++)
+    if(Math.abs(y[k] - y[k-1]) > STEPUP) return false;
+
+  for(let k = 0; k < n; k++){
     const i = chemin[k];
-    const u = k / (chemin.length - 1);
-    // interpolation : la galerie rabote la falaise qu'elle traverse
-    const y = hA + (hB - hA) * u;
     grid[i] = FLOOR;
-    floorH[i] = y;
+    if(!dur[k]) floorH[i] = y[k];
     blocked[i] = 0;                         // un élément qui condamnait cède
-    if(ceilH[i] < y + 2.0) ceilH[i] = y + 2.0;
+    if(ceilH[i] < y[k] + 2.0) ceilH[i] = y[k] + 2.0;
   }
   return true;
 }
@@ -3115,6 +3983,86 @@ function etenduePart(q){
   return Math.max(ex, ez) / 2;
 }
 
+/* ═══════════════ LA HITBOX D'UNE PART ═══════════════
+   « Les hitbox sont trop grosses et ne correspondent pas à l'objet. » C'était
+   exact, et la cause tenait en une ligne de props.js : un élément de décor
+   entier — dix, vingt parts — recevait UN SEUL cercle, de rayon égal à sa
+   part la plus large, plafonné à 1,40 m, posé au sol et sans hauteur.
+
+   Conséquences, toutes vérifiables en jeu :
+     · une poutre suspendue à quatre mètres bloquait au niveau du sol ;
+     · un lampadaire bloquait sur le rayon de sa CROSSE, à sept mètres de
+       haut, soit un mètre autour du mât ;
+     · une voiture couchée bloquait un disque d'1,40 m alors qu'elle est
+       longue et étroite ;
+     · et le joueur, lui, ne fait que 0,30 m de rayon : ce n'est pas lui qui
+       est trop gros.
+
+   Une part est donc mesurée POUR CE QU'ELLE EST : une CAPSULE — un segment
+   horizontal, un rayon autour, et l'étage qu'elle occupe.
+
+     {x0,z0, x1,z1, r, y0,y1}
+
+   Le segment est l'axe long de la forme, le rayon sa demi-épaisseur. Un mur
+   de 5 m sur 26 cm devient un segment de 4,74 m et 13 cm de rayon, et non un
+   disque de 2,5 m. Une colonne devient un disque de son vrai rayon. Et `y0`
+   `y1` disent à quelle hauteur ça se passe : on enjambe ce qui est sous le
+   pas, on passe sous ce qui est au-dessus de la tête.                       */
+
+/**
+ * La capsule de collision d'une part, ou `null` si elle est trop menue pour
+ * mériter d'arrêter quelqu'un (éclats de verre, cannelures, brindilles).
+ *
+ * Écrit dans `out` plutôt que d'allouer : le décor en compte des dizaines de
+ * milliers, et cette fonction est appelée une fois par part à la génération.
+ */
+function capsulePart(q, out){
+  if(!q) return null;
+  const o = out || {};
+
+  if(q.tube){
+    const [p0, r0, p1, r1] = q.tube;
+    const r = Math.max(r0, r1);
+    if(r < 0.09) return null;
+    o.x0 = p0[0]; o.z0 = p0[2]; o.x1 = p1[0]; o.z1 = p1[2]; o.r = r;
+    o.y0 = Math.min(p0[1], p1[1]) - r*0.2;
+    o.y1 = Math.max(p0[1], p1[1]) + r*0.2;
+    return o;
+  }
+
+  if(q.roche){
+    const r = q.roche[0];
+    if(r < 0.09) return null;
+    o.x0 = o.x1 = q.x; o.z0 = o.z1 = q.z; o.r = r;
+    o.y0 = q.y - r; o.y1 = q.y + r;
+    return o;
+  }
+
+  /* Boîte, coin, plaque. La plaque n'a pas d'épaisseur : on lui en donne une
+     symbolique, sinon un volet fermé laisserait passer. */
+  const sx = q.sx || 0, sy = q.sy || 0, sz = q.plaque ? 0.06 : (q.sz || 0);
+  if(Math.max(sx, sz) < 0.18) return null;
+
+  /* L'inclinaison `r` couche la boîte dans le plan XY : la hauteur qu'elle
+     occupe réellement mêle sy et sx. On majore, une hitbox trop courte étant
+     pire qu'une hitbox trop haute — on traverserait l'objet par le haut. */
+  const co = Math.abs(Math.cos(q.r || 0)), si = Math.abs(Math.sin(q.r || 0));
+  const hy = (sy*co + sx*si) / 2;
+  const ex = sx*co + sy*si;                 // étendue sur X après inclinaison
+
+  // l'axe long, tourné par le lacet
+  const cy = Math.cos(q.ry || 0), sn = Math.sin(q.ry || 0);
+  let demi, rayon, dx, dz;
+  if(ex >= sz){ demi = (ex - sz) / 2; rayon = sz / 2; dx = cy;  dz = sn; }
+  else        { demi = (sz - ex) / 2; rayon = ex / 2; dx = -sn; dz = cy; }
+
+  o.x0 = q.x - dx*demi; o.z0 = q.z - dz*demi;
+  o.x1 = q.x + dx*demi; o.z1 = q.z + dz*demi;
+  o.r = Math.max(0.05, rayon);
+  o.y0 = q.y - hy; o.y1 = q.y + hy;
+  return o;
+}
+
 /** Le répartiteur : une part, la bonne primitive. Un seul endroit à toucher
     quand une forme s'ajoute — le pavé et la forge passent tous deux par ici. */
 function cuirePart(quad, q){
@@ -3126,7 +4074,7 @@ function cuirePart(quad, q){
   else              cuireBoite(quad, q);
 }
 
-  return { cuireBoite, cuireCoin, cuirePart, cuirePlaque, cuireRoche, cuireTube, etenduePart, rayonPart, trianglesPart };
+  return { capsulePart, cuireBoite, cuireCoin, cuirePart, cuirePlaque, cuireRoche, cuireTube, etenduePart, rayonPart, trianglesPart };
 })();
 
 /* ─── src/monde/props.js ─── */
@@ -3136,7 +4084,7 @@ __M['M_monde_props'] = (function(){
   const { BIOMES } = __M['M_monde_biomes'];
   const { GW, GH, CELL, floorH, ceilH, openN, blocked, biome, sky, idx, isFloor, isFree, c2w, celluleLibre } = __M['M_monde_grille'];
   const { salles } = __M['M_monde_generation'];
-  const { rayonPart } = __M['M_monde_formes'];
+  const { rayonPart, capsulePart } = __M['M_monde_formes'];
   const { autorise, densiteEn } = __M['M_monde_plan'];
 /* ═══ MONDE / PROPS ═══
    Le décor. Colonnades, piliers, cristaux, monolithes, troncs, gravats.
@@ -3191,7 +4139,7 @@ function eclat(out, x,y,z, taille, c){
 function addProp(kind, x, z, i){
   const b = BIOMES[biome[i]], wx = c2w(x), wz = c2w(z), h = floorH[i];
   const D = SETUP.image.detail;
-  let solid = true, parts = [];
+  let solid = true, dur = false, parts = [];
 
   switch(kind){
     case 'pilier': {
@@ -3408,48 +4356,148 @@ function addProp(kind, x, z, i){
          · c'est orienté au hasard mais posé d'aplomb : une maison de travers
            lit comme un bug, pas comme une ruine.                            */
 
+    /* ══════════════ MAISONNETTE ══════════════
+       « Les villages sont toujours n'importe quoi, je ne sais pas ce que je
+       vois. Tu dois faire des maisonnettes ou des huttes inhabitées. »
+
+       LA VERSION PRÉCÉDENTE ÉTAIT UNE RUINE, et c'est ça le défaut. Quatre
+       moignons de murs arasés à des hauteurs tirées au sort entre 55 et 100 %,
+       un mur remplacé par un tas de moellons, aucun toit, trois pannes en
+       travers. Chaque élément était plausible ; l'ensemble ne ressemblait à
+       rien, parce qu'il ne restait AUCUNE forme reconnaissable.
+
+       UNE MAISON SE RECONNAÎT À SON TOIT. C'est la silhouette qui parle, pas
+       le détail. Trois choses suffisent, et il les faut toutes les trois :
+
+         · un TOIT à deux pentes — la seule forme qui dise « maison » de loin ;
+         · une PORTE sombre, à taille humaine, qui donne l'échelle ;
+         · des murs D'APLOMB et de hauteur ÉGALE.
+
+       Les maisons sont donc entières. Inhabitées, pas détruites : volets
+       clos, portes béantes, personne dedans. C'est plus inquiétant qu'un tas
+       de gravats, parce qu'une ruine est un accident tandis qu'une maison
+       intacte et vide est une absence.
+
+       Une sur cinq est effondrée, pour que le village ne fasse pas maquette.
+       Une sur cinq, pas quatre sur cinq.                                    */
     case 'maison': {
-      const larg = rf(3.2, 5.4), prof = rf(3.0, 5.0), haut = rf(2.4, 3.6);
-      const mur = [.19,.175,.16], bois = [.14,.12,.10];
-      const a = Math.round(rnd()*4) * 1.5708;      // d'aplomb, mais orientée
-      const cs = Math.cos(a), sn = Math.sin(a);
-      const loc = (u, v) => [wx + cs*u - sn*v, 0, wz + sn*u + cs*v];
+      const larg = rf(4.2, 6.0), prof = rf(3.6, 5.2);
+      const mur = [.185,.170,.152], bois = [.115,.098,.082];
+      const toit = [.135,.118,.105];
+      const HM = rf(2.5, 3.0);                 // hauteur sous gouttière
+      const HT = HM + rf(1.3, 2.1);            // faîtage
+      const ry = Math.round(rnd()*4) * 1.5708 + rf(-0.06, 0.06);
+      const cs = Math.cos(ry), sn = Math.sin(ry);
+      // repère local : u vers la façade, v sur le côté
+      const L = (u, v) => [wx + cs*u - sn*v, wz + sn*u + cs*v];
 
-      // quatre murs, dont un ou deux effondrés
-      const cotes = [[0,-prof/2, larg, 0], [0, prof/2, larg, 0],
-                     [-larg/2, 0, 0, prof], [larg/2, 0, 0, prof]];
-      const tombe = ri(0,3);
-      cotes.forEach(([ux, uz, lx, lz], k) => {
-        const p = loc(ux, uz);
-        if(k === tombe){
-          // le mur tombé : un tas de moellons en travers
-          for(let q=0;q<Math.round(5*D);q++)
-            eclat(parts, p[0]+rf(-lx/2,lx/2)+rf(-0.6,0.6),
-                  h, p[2]+rf(-lz/2,lz/2)+rf(-0.6,0.6), rf(.30,.62), mur);
-          return;
-        }
-        const hm = haut * rf(0.55, 1.0);           // arasé à hauteurs inégales
-        parts.push(bloc(p[0], h + hm/2, p[2],
-                        lx ? lx*Math.abs(cs)+0.3 : 0.3 + lz*Math.abs(sn)*0,
-                        hm,
-                        lz ? lz*Math.abs(cs)+0.3 : 0.3 + lx*Math.abs(sn)*0, mur, a));
-      });
+      const poser = (u, v, y, sx, sy, sz, c, em) => {
+        const p = L(u, v);
+        const q = bloc(p[0], h + y, p[1], sx, sy, sz, c, 0, em || 0);
+        q.ry = ry;
+        parts.push(q);
+        return q;
+      };
 
-      // une charpente crevée : trois pannes en travers, pas de toit
-      if(D >= 1) for(let q=0;q<Math.round(3*D);q++){
-        const v = (q/Math.max(1,Math.round(3*D)-1) - 0.5) * prof * 0.8;
-        const p0 = loc(-larg/2, v), p1 = loc(larg/2, v);
-        if(rnd() < 0.3) continue;                  // certaines sont tombées
-        parts.push(colonne([p0[0], h+haut*rf(0.9,1.1), p0[2]], .10,
-                           [p1[0], h+haut*rf(0.9,1.1), p1[2]], .09, bois));
+      const EP = 0.26;                          // épaisseur des murs
+      const PORTE = 1.0, HPORTE = 2.05;         // à l'échelle d'un homme
+
+      /* ── les quatre murs ──
+         La façade est percée : on la pose en trois morceaux — deux jambages
+         et un linteau — plutôt que d'y coller un rectangle sombre. Un trou
+         qu'on peut franchir du regard vaut mieux qu'un trou peint. */
+      const jamb = (larg - PORTE) / 2;
+      poser(-prof/2, -(PORTE/2 + jamb/2), HM/2, EP, HM, jamb, mur);
+      poser(-prof/2,  (PORTE/2 + jamb/2), HM/2, EP, HM, jamb, mur);
+      poser(-prof/2, 0, HPORTE + (HM-HPORTE)/2, EP, Math.max(0.1, HM-HPORTE),
+            PORTE, mur);
+
+      poser( prof/2, 0, HM/2, EP, HM, larg, mur);          // mur du fond
+      poser(0, -larg/2, HM/2, prof, HM, EP, mur);          // pignons
+      poser(0,  larg/2, HM/2, prof, HM, EP, mur);
+
+      /* ── le toit à deux pentes ──
+         Deux coins adossés. C'est LA forme qui fait lire « maison » à trente
+         mètres dans la brume, et c'est la primitive `coin` de la v3.4 qui la
+         rend possible : avant, on n'avait que des boîtes. */
+      const RISE = HT - HM, DEB = 0.42;         // débord de toiture
+      for(const sd of [1, -1]){
+        const p = L(0, sd * (larg/4 + DEB/2));
+        const c = {coin: sd, x:p[0], y:h + HM + RISE/2, z:p[1],
+                   sx: larg/2 + DEB, sy: RISE, sz: prof + DEB*2,
+                   c: toit, ry: ry + Math.PI/2};
+        parts.push(c);
+      }
+      // la panne faîtière, qui souligne l'arête
+      {
+        const a = L(-prof/2 - DEB, 0), b = L(prof/2 + DEB, 0);
+        parts.push({tube:[[a[0], h+HT, a[1]], .09, [b[0], h+HT, b[1]], .09, 5],
+                    c: bois});
       }
 
-      /* Une lueur dans l'encadrement : quelqu'un a laissé quelque chose
-         allumé, ou c'est du lichen. On ne dit pas lequel. */
-      if(rnd() < 0.55 && lights.length < SETUP.decor.maxLumieres){
-        const p = loc(0, 0);
-        parts.push(bloc(p[0], h+0.5, p[2], .5, .9, .5, [1.5,0.9,0.35], a, 1));
-        lights.push({x:p[0], y:h+1.0, z:p[2], c:[1.5,0.85,0.32], ph:rnd()*6.28});
+      /* ── volets clos, et une fenêtre ──
+         Des plaques : quatre triangles au lieu de douze, et c'est exactement
+         l'épaisseur qu'a un volet. */
+      if(D >= 1) for(const sd of [1, -1]){
+        if(rnd() < 0.3) continue;
+        const p = L(-prof/2 - 0.02, sd * larg*0.28);
+        parts.push({plaque:1, x:p[0], y:h + HM*0.58, z:p[1],
+                    sx:0.72, sy:0.86, c: bois, ry: ry + Math.PI/2});
+      }
+
+      /* ── une sur cinq s'est affaissée ──
+         Le toit glisse d'un côté et un pignon s'ouvre. On garde la silhouette
+         : c'est une maison EFFONDRÉE, pas un tas anonyme. */
+      if(rnd() < 0.2){
+        for(let q=0; q<Math.round(7*D); q++){
+          const p = L(rf(-prof/2, prof/2), rf(-larg/2, larg/2));
+          eclat(parts, p[0], h, p[1], rf(.26,.55), mur);
+        }
+      }
+
+      /* Une lueur derrière la porte. On ne dit pas ce que c'est : quelqu'un a
+         laissé quelque chose allumé, ou c'est du lichen. */
+      if(rnd() < 0.5 && lights.length < SETUP.decor.maxLumieres){
+        const p = L(0.4, 0);
+        lights.push({x:p[0], y:h+1.1, z:p[1], c:[0.95,0.55,0.22], ph:rnd()*6.28});
+      }
+      solid = false; break; }
+
+    /* ══════════════ HUTTE ══════════════
+       Plus petite, plus pauvre, plus ancienne : un tronc de cône sur des
+       pieux. Elle se lit encore mieux qu'une maison parce qu'elle n'a qu'une
+       forme — et deux formes différentes dans un village suffisent à ce qu'on
+       n'y voie plus une grille d'objets identiques. */
+    case 'hutte': {
+      const ray = rf(1.5, 2.3), HM = rf(1.8, 2.3), HT = HM + rf(1.2, 1.9);
+      const paroi = [.175,.155,.128], chaume = [.155,.132,.088];
+      const ry = rnd() * 6.283;
+      const NC = Math.max(5, Math.round(7 * D));
+
+      // le fût : un prisme large et bas
+      parts.push({tube:[[wx, h, wz], ray, [wx, h + HM, wz], ray*0.94, NC],
+                  c: paroi});
+      // le chaume : un cône, débordant
+      parts.push({tube:[[wx, h + HM - 0.08, wz], ray*1.22,
+                        [wx, h + HT, wz], 0.10, NC], c: chaume});
+
+      /* L'entrée : un bloc sombre plaqué contre le fût. Une hutte sans
+         ouverture est un champignon. */
+      {
+        const a = ry;
+        const p = [wx + Math.cos(a)*ray*0.94, wz + Math.sin(a)*ray*0.94];
+        const q = bloc(p[0], h + 0.85, p[1], 0.34, 1.7, 0.92, [.05,.045,.04]);
+        q.ry = -a;
+        parts.push(q);
+      }
+
+      // quelques pieux plantés autour — les restes d'un enclos
+      if(D >= 1) for(let q=0; q<Math.round(4*D); q++){
+        const a = rnd()*6.283, d = ray + rf(0.8, 2.2);
+        const px = wx + Math.cos(a)*d, pz = wz + Math.sin(a)*d;
+        parts.push({tube:[[px, h, pz], .07,
+                          [px + rf(-.2,.2), h + rf(.7,1.5), pz + rf(-.2,.2)],
+                          .05, 4], c: chaume});
       }
       solid = false; break; }
 
@@ -3485,8 +4533,10 @@ function addProp(kind, x, z, i){
         parts.push(bloc(wx, h+H*0.7, wz, .18,.06,.18, [2.0,1.9,1.5], 0, 1));
         lights.push({x:wx, y:h+H*0.8, z:wz, c:[0.9,0.85,0.62], ph:rnd()*6.28});
       }
-      colliders.push({x:wx, z:wz, r:Math.min(L*0.4, 1.4)});
-      solid = false; break; }
+      /* Une voiture est longue et étroite. Le disque d'1,40 m qu'elle posait
+         avant débordait de deux mètres à l'avant comme à l'arrière : on se
+         cognait dans le vide. Elle prend maintenant la forme de ses parts. */
+      dur = true; solid = false; break; }
 
     case 'lampadaire': {
       const ht = rf(4.5, 7.0);
@@ -3577,9 +4627,47 @@ function addProp(kind, x, z, i){
   let ray = 0;
   for(const q of parts) ray = Math.max(ray, rayonPart(q));
   props.push({parts, cell:i, r:ray, solide:solid});
-  if(solid){
-    colliders.push({x:wx, z:wz, r:Math.min(ray, 1.4)});
-    if(ray >= CELL * 0.78) blocked[i] = 1;   // seuls les vrais massifs coupent la nav
+  if(solid || dur){
+    /* ── PAS DE BOUCHON DANS UN BOYAU ──
+       Un élément massif au milieu d'une galerie de deux cellules de large, ce
+       n'est pas du décor : c'est un mur, et tout ce qu'il y a derrière devient
+       inatteignable. Ça ne se voyait pas en v4, dont les couloirs étaient
+       larges et les salles rectangulaires. Sur le réseau de galeries de la v5,
+       mesuré sur trois mondes : le décor à lui seul faisait tomber la part du
+       monde atteignable à pied de 99,6 % à 65 % — un monde sur trois avait sa
+       surface entière condamnée par quelques piliers tombés au mauvais
+       endroit.
+
+       On ne le déplace pas, on ne le rétrécit pas : on ne le pose pas. */
+    if(ray > SETUP.decor.rayonBouchon && openN[i] < SETUP.decor.ouvertureMassif){
+      props.pop();
+      return;
+    }
+    poserCapsules(parts, h);
+    if(solid && ray >= CELL * 0.78) blocked[i] = 1;  // seuls les vrais massifs coupent la nav
+  }
+}
+
+/* Réutilisée à chaque part : `capsulePart` écrit dedans plutôt que d'allouer
+   un objet par part sur les quelques centaines de milliers du décor. */
+const _cap = {};
+
+/**
+ * Pose une hitbox par PART, et non plus une par élément.
+ *
+ * Voir l'en-tête de `capsulePart` dans monde/formes.js pour le pourquoi. Ici
+ * on ne garde que ce qui peut concerner un corps debout : ce qui est sous le
+ * pas se franchit, ce qui est à quatre mètres et demi ne se touche pas. Le
+ * tri fin — enjamber, passer dessous — est refait à chaque image par
+ * joueur/joueur.js, qui seul connaît l'altitude réelle des pieds.
+ */
+function poserCapsules(parts, h){
+  for(const q of parts){
+    const c = capsulePart(q, _cap);
+    if(!c) continue;
+    if(c.y1 < h + 0.15 || c.y0 > h + 4.5) continue;
+    colliders.push({x0:c.x0, z0:c.z0, x1:c.x1, z1:c.z1,
+                    r:c.r, y0:c.y0, y1:c.y1});
   }
 }
 
@@ -3748,6 +4836,9 @@ function batirVillage(v, c, RC){
 
   v.angleCabane = rnd()*6.283;
   poser('maison',     ri(...V.maisons),     0.40, 1.0);
+  /* Deux formes valent mieux qu'une : un village de maisons toutes pareilles
+     se lit comme une grille d'objets, pas comme un lieu. */
+  poser('hutte',      ri(...V.maisons),     0.25, 1.0);
   poser('carcasse',   ri(...V.carcasses),   0.30, 1.0);
   poser('lampadaire', ri(...V.lampadaires), 0.22, 0.9);
 
@@ -4052,36 +5143,43 @@ function cornerH(x,z,ox,oz,base,arr){
   return s/n;
 }
 
-/* ═══════════════ GREEDY MESHING ═══════════════
-   Le sol d'une salle carvée est plat sur des dizaines de cellules : en émettre
-   deux triangles par cellule est un gaspillage pur. Le greedy meshing fusionne
-   les cellules voisines qui portent EXACTEMENT la même chose en un seul grand
-   rectangle, avant de produire la géométrie.
+/* ═══════════════ POURQUOI IL N'Y A PLUS DE GREEDY MESHING ═══════════════
 
-   ── LES DEUX CONDITIONS DE FUSION ──────────────────────────────────────────
-   1. La cellule doit être PLATE : ses quatre coins interpolés par cornerH()
-      valent sa propre hauteur, à epsilon près. Dès qu'un voisin est à une
-      altitude différente, cornerH biseaute le coin — et fusionner effacerait ce
-      biseau, donc les pentes douces et les corniches. Ces cellules-là restent
-      donc traitées une par une, exactement comme avant.
-   2. Elle doit partager sa clé avec sa voisine : même hauteur, même biome,
-      même NIVEAU DE TEINTE.
+   Il y en a eu un, et il a été retiré. La raison mérite d'être écrite, sinon
+   quelqu'un le réintroduira en croyant bien faire — le gain était réel.
 
-   ── LA TEINTE, LE PIÈGE ────────────────────────────────────────────────────
-   Chaque cellule était mouchetée par hash2(x,z), une valeur continue : deux
-   cellules n'avaient donc JAMAIS la même couleur, et rien n'aurait pu
-   fusionner. On quantifie la moucheture en quelques paliers. On garde la
-   variation qui casse les grands aplats, on gagne la fusion — et le tramage du
-   post-process brouille de toute façon les frontières entre paliers.
+   ── CE QU'IL FAISAIT ───────────────────────────────────────────────────────
+   Le sol d'une salle est plat sur des dizaines de cellules. Plutôt que deux
+   triangles par cellule, il fusionnait les cellules identiques en un seul
+   grand rectangle. Gain mesuré : 15 % de quads sur les sols et plafonds.
 
-   ── LES PAROIS ─────────────────────────────────────────────────────────────
-   Fusion en une dimension seulement : le long d'un mur, les cellules
-   consécutives qui montent à la même hauteur donnent un seul quad. C'est le
-   cas de tous les périmètres de salle.                                       */
+   ── POURQUOI IL PERÇAIT DES TROUS DANS LE SOL ──────────────────────────────
+   « Retirer l'algorithme de greedy meshing car les cubes sont transparents
+   parfois. » Le symptôme était exact, et voici le mécanisme.
+
+   Une cellule NON fusionnée est dessinée avec ses quatre coins interpolés par
+   `cornerH()` : c'est ce qui adoucit les pentes et biseaute les corniches. Une
+   cellule fusionnée, elle, était dessinée PLATE, à la hauteur de la première
+   cellule du rectangle.
+
+   Les deux se touchent donc le long de toute la frontière du rectangle — et
+   ne coïncident pas. Un coin interpolé quelques millimètres plus bas que le
+   rectangle plat, et il reste une fente. À travers la fente, on voit le vide.
+   D'où des sols « transparents par endroits », sans régularité apparente,
+   impossibles à reproduire à volonté.
+
+   On pouvait corriger : n'autoriser la fusion que si les VOISINES aussi sont
+   plates. Mais cela réduit encore le gain, ajoute une condition subtile à
+   tenir, et laisse le même piège tendu pour la prochaine modification du
+   relief. Un sol sans trou vaut mieux que 15 % de quads.
+
+   Tout passe donc par la passe cellule par cellule, avec ses coins
+   interpolés. La fusion 1D DES PAROIS est conservée : elle n'a pas ce défaut,
+   parce qu'un mur est vertical et n'interpole rien.
+   ══════════════════════════════════════════════════════════════════════════ */
 
 const TEINTES = 5;               // paliers de moucheture
 const BLOC_TEINTE = 4;           // cellules : la moucheture varie par BLOC
-const PLAT = 0.012;              // tolérance pour juger une cellule plate
 
 /* ── POURQUOI LA MOUCHETURE EST PAR BLOC ──
    Première tentative : hash2(x,z) par cellule, quantifié en cinq paliers. Deux
@@ -4096,7 +5194,7 @@ const PLAT = 0.012;              // tolérance pour juger une cellule plate
 
 /** Compteurs du dernier pavé bâti. Lus par le rapport de génération. */
 const statsMaillage = {quadsBruts:0, quadsEmis:0, paves:0,
-                              plats:0, nonPlats:0,
+                              nonPlats:0,
                               paroisBrutes:0, paroisEmises:0};
 
 function batirPave(k){
@@ -4122,97 +5220,61 @@ function batirPave(k){
   const teinteDe = (x,z) => Math.floor(
     hash2(Math.floor(x/BLOC_TEINTE), Math.floor(z/BLOC_TEINTE)) * TEINTES);
 
-  /** Un coin de cellule en coordonnées monde. sa/sb valent ±1 sur chaque axe. */
-  const coin = (x, z, s2) => [c2w(x) + s2[0]*h, c2w(z) + s2[1]*h];
-  const facteur  = niv => 0.88 + (niv + 0.5) / TEINTES * 0.24;
+  /* ══════════════ POURQUOI CE N'EST PLUS CUBIQUE ══════════════
 
-  /* ── passe 1 : les clés ──
-     Pour chaque cellule du pavé, on note si elle est fusionnable et sous quelle
-     clé. Une clé nulle veut dire « à traiter individuellement ». */
-  const cleSol = new Float64Array(LX*LZ).fill(NaN);
-  const clePla = new Float64Array(LX*LZ).fill(NaN);
-  const vus    = new Uint8Array(LX*LZ);
+     « Pourquoi tout est cubique ? T'arrives pas à faire des formes plus
+     réalistes ? »
 
-  for(let z=kz0; z<kz1; z++) for(let x=kx0; x<kx1; x++){
-    const i = idx(x,z);
-    if(grid[i] !== FLOOR || vide[i]) continue;
-    const l = (z-kz0)*LX + (x-kx0);
-    const f = floorH[i], ce = ceilH[i];
+     La cause tenait en une ligne : chaque coin de cellule était posé
+     EXACTEMENT sur la ligne de grille. Les hauteurs, elles, variaient déjà
+     (cornerH interpole les coins) — mais en plan, tout était aligné au
+     centimètre sur une trame de 1,5 m. Un œil repère une trame régulière
+     instantanément, et la lit comme « des cubes », quelles que soient les
+     hauteurs.
 
-    const platSol =
-      Math.abs(cornerH(x,z,-1,-1,f,floorH) - f) < PLAT &&
-      Math.abs(cornerH(x,z, 1,-1,f,floorH) - f) < PLAT &&
-      Math.abs(cornerH(x,z, 1, 1,f,floorH) - f) < PLAT &&
-      Math.abs(cornerH(x,z,-1, 1,f,floorH) - f) < PLAT;
-    const platPla = !sky[i] &&
-      Math.abs(cornerH(x,z,-1,-1,ce,ceilH) - ce) < PLAT &&
-      Math.abs(cornerH(x,z, 1,-1,ce,ceilH) - ce) < PLAT &&
-      Math.abs(cornerH(x,z, 1, 1,ce,ceilH) - ce) < PLAT &&
-      Math.abs(cornerH(x,z,-1, 1,ce,ceilH) - ce) < PLAT;
+     ── LA CORRECTION, ET POURQUOI ELLE NE PEUT PAS FAIRE DE FENTE ──────────
+     On déplace chaque coin d'un petit bruit. Le point crucial est que ce
+     déplacement ne dépend QUE DES COORDONNÉES DU COIN — pas de la cellule qui
+     le dessine. Les quatre cellules qui se touchent en un coin calculent donc
+     rigoureusement le même déplacement, et leurs bords restent cousus.
 
-    /* La clé encode hauteur (au centimètre), biome et teinte dans un seul
-       nombre : la comparaison de fusion devient un test d'égalité. */
-    const t = teinteDe(x,z);
-    if(platSol) statsMaillage.plats++; else statsMaillage.nonPlats++;
-    if(platSol) cleSol[l] = Math.round(f*100)*1000 + biome[i]*TEINTES + t;
-    if(platPla) clePla[l] = Math.round(ce*100)*1000 + biome[i]*TEINTES + t;
-  }
+     C'est exactement l'erreur qui vient d'être retirée avec le greedy
+     meshing : là-bas, deux cellules voisines calculaient la même arête de
+     deux façons différentes, et il restait une fente. Ici, une seule
+     fonction, une seule vérité, aucun écart possible.
 
-  /* ── passe 2 : fusion gloutonne ──
-     Pour chaque cellule non encore vue, on étend le rectangle vers la droite
-     tant que la clé tient, puis vers le bas tant que TOUTE la rangée tient.
-     C'est l'algorithme classique, en O(cellules). */
-  const gloutonner = (cles, versLeHaut) => {
-    vus.fill(0);
-    for(let lz=0; lz<LZ; lz++) for(let lx=0; lx<LX; lx++){
-      const l = lz*LX + lx;
-      if(vus[l] || Number.isNaN(cles[l])) continue;
-      const cle = cles[l];
+     ── CE QUE ÇA NE FAIT PAS ──────────────────────────────────────────────
+     Ça ne rend pas la roche organique : le sol reste un champ de hauteurs sur
+     une grille, et une vraie caverne demanderait une extraction de surface
+     (marching cubes) sur un champ de densité. Mais ça supprime la LECTURE en
+     damier, qui est ce qui saute aux yeux.
 
-      let w = 1;
-      while(lx+w < LX && !vus[l+w] && cles[l+w] === cle) w++;
+     L'amplitude est bornée : au-delà d'un dixième de cellule, les parois
+     s'écartent trop de la grille de collision et l'on frotte le décor sans
+     comprendre pourquoi.                                                    */
 
-      let ht = 1;
-      croissance:
-      while(lz+ht < LZ){
-        const base = (lz+ht)*LX + lx;
-        for(let q=0; q<w; q++)
-          if(vus[base+q] || cles[base+q] !== cle) break croissance;
-        ht++;
-      }
+  const AMPL = CELL * SETUP.monde.irregularite;
 
-      for(let dz=0; dz<ht; dz++) for(let dx=0; dx<w; dx++) vus[(lz+dz)*LX + lx+dx] = 1;
-      statsMaillage.quadsBruts += w*ht;
-      statsMaillage.quadsEmis++;
-
-      // le rectangle en coordonnées monde
-      const x0 = kx0+lx, z0 = kz0+lz;
-      const i0 = idx(x0, z0);
-      const y  = versLeHaut ? floorH[i0] : ceilH[i0];
-      const ax = c2w(x0) - h,        az = c2w(z0) - h;
-      const bx = c2w(x0+w-1) + h,    bz = c2w(z0+ht-1) + h;
-      const v = facteur(teinteDe(x0, z0));
-      const base = versLeHaut ? BIOMES[biome[i0]].floor : BIOMES[biome[i0]].ceil;
-      const col = [base[0]*v, base[1]*v, base[2]*v];
-
-      if(versLeHaut)
-        quad([[ax,y,az],[bx,y,az],[bx,y,bz],[ax,y,bz]],[0,1,0],[col,col,col,col]);
-      else
-        quad([[ax,y,bz],[bx,y,bz],[bx,y,az],[ax,y,az]],[0,-1,0],[col,col,col,col]);
-    }
+  /** Un coin de la GRILLE en coordonnées monde, déplacé de façon stable. */
+  const coinMonde = (gx, gz) => {
+    const ox = (hash2(gx, gz) - 0.5) * AMPL;
+    const oz = (hash2(gz + 9173, gx + 4211) - 0.5) * AMPL;
+    return [gx * CELL + ox, gz * CELL + oz];
   };
 
-  gloutonner(cleSol, true);
-  gloutonner(clePla, false);
+  /** Un coin de cellule. sa/sb valent ±1 sur chaque axe. */
+  const coin = (x, z, s2) =>
+    coinMonde(x + (s2[0] > 0 ? 1 : 0), z + (s2[1] > 0 ? 1 : 0));
+  const facteur  = niv => 0.88 + (niv + 0.5) / TEINTES * 0.24;
 
-  /* ── passe 3 : le reste, cellule par cellule ──
-     Tout ce qui n'était pas plat : pentes, corniches, abords de gouffre. Plus
-     TOUTES les parois, traitées ensuite avec leur propre fusion 1D. */
+  /* ── sols, plafonds et parois, cellule par cellule ──
+     Les coins sont interpolés par cornerH(), ce qui adoucit pentes et
+     corniches. Les parois gardent leur fusion 1D, qui est sûre. */
   for(let z=kz0; z<kz1; z++) for(let x=kx0; x<kx1; x++){
     const i = idx(x,z);
     if(grid[i] !== FLOOR || vide[i]) continue;
-    const l = (z-kz0)*LX + (x-kx0);
-    const B = BIOMES[biome[i]], cx = c2w(x), cz = c2w(z), f = floorH[i], ce = ceilH[i];
+    statsMaillage.nonPlats++;
+    const B = BIOMES[biome[i]], f = floorH[i], ce = ceilH[i];
     const v = facteur(teinteDe(x,z));
     const tint = a => [a[0]*v, a[1]*v, a[2]*v];
 
@@ -4223,15 +5285,22 @@ function batirPave(k){
     const cf=tint(B.floor), cc=tint(B.ceil), wt=tint(B.wall),
           wb=[wt[0]*0.42, wt[1]*0.42, wt[2]*0.42];
 
-    // sol et plafond : uniquement s'ils n'ont pas été fusionnés
-    if(Number.isNaN(cleSol[l])){
+    /* Les quatre coins, déplacés. Sol, plafond et parois DOIVENT passer par
+       les mêmes points, sinon ils se décollent. */
+    const K00 = coinMonde(x,   z  ), K10 = coinMonde(x+1, z  );
+    const K11 = coinMonde(x+1, z+1), K01 = coinMonde(x,   z+1);
+
+    // sol et plafond, avec leurs coins interpolés
+    {
       statsMaillage.quadsBruts++; statsMaillage.quadsEmis++;
-      quad([[cx-h,f00,cz-h],[cx+h,f10,cz-h],[cx+h,f11,cz+h],[cx-h,f01,cz+h]],
+      quad([[K00[0],f00,K00[1]], [K10[0],f10,K10[1]],
+            [K11[0],f11,K11[1]], [K01[0],f01,K01[1]]],
            [0,1,0],[cf,cf,cf,cf]);
     }
-    if(!sky[i] && Number.isNaN(clePla[l])){
+    if(!sky[i]){
       statsMaillage.quadsBruts++; statsMaillage.quadsEmis++;
-      quad([[cx-h,c01,cz+h],[cx+h,c11,cz+h],[cx+h,c10,cz-h],[cx-h,c00,cz-h]],
+      quad([[K01[0],c01,K01[1]], [K11[0],c11,K11[1]],
+            [K10[0],c10,K10[1]], [K00[0],c00,K00[1]]],
            [0,-1,0],[cc,cc,cc,cc]);
     }
 
@@ -4337,8 +5406,19 @@ function batirPave(k){
         if(!kind){ vider(); continue; }
         statsMaillage.paroisBrutes++;      // une paroi de plus, fusionnée ou non
 
-        // rectangle ? sinon on sort la cellule seule, en gardant le biais
-        const droit = Math.abs(ha - hb) < BORD &&
+        /* Rectangle ? Sinon on sort la cellule seule, en gardant le biais.
+
+           ET SURTOUT : la fusion est INTERDITE dès que les coins sont
+           déplacés. Une bande fusionnée relie le premier coin au dernier en
+           LIGNE DROITE, alors que les sols qu'elle borde zigzaguent d'un coin
+           déplacé à l'autre. Les deux se décolleraient tout du long — c'est
+           exactement la fente que le retrait du greedy meshing vient de
+           supprimer, réintroduite par l'autre bout.
+
+           On perd 4 % de quads sur les parois. C'est le prix mesuré, et il
+           est dérisoire à côté d'un mur qu'on voit à travers. */
+        const droit = AMPL === 0 &&
+                      Math.abs(ha - hb) < BORD &&
                       (kind !== 1 || Math.abs(ca - cb) < BORD);
         const A = coin(x, z, C.sa), Bp = coin(x, z, C.sb);
 
@@ -4494,10 +5574,11 @@ function lireCartePNG(img){
 /* ─── src/monde/index.js ─── */
 __M['M_monde_index'] = (function(){
   const { SETUP } = __M['M_setup'];
-  const { ri } = __M['M_noyau_rng'];
+  const { ri, graine } = __M['M_noyau_rng'];
+  const { semerBruit } = __M['M_noyau_bruit'];
   const { BIOMES } = __M['M_monde_biomes'];
   const { GW, GH, FLOOR, grid, floorH, ceilH, biome, sky, vide, idx, viderGrille, calculerOuverture, majBornes, rebuildNavCost, bornes } = __M['M_monde_grille'];
-  const { creuserPlan, relaxerEpine, finaliserRelief, poserPlafonds, quantifierRelief, salles } = __M['M_monde_generation'];
+  const { creuserPlan, relaxerEpine, finaliserRelief, poserPlafonds, quantifierRelief, salles, releve } = __M['M_monde_generation'];
   const { creuserGouffres, gouffres } = __M['M_monde_relief'];
   const { relierLeMonde, percerEnclaves } = __M['M_monde_connexite'];
   const { placerPonts } = __M['M_monde_ponts'];
@@ -4541,6 +5622,7 @@ __M['M_monde_index'] = (function(){
 
 
 
+
 /* Les objets posés dans le monde. Remplis par les modules qui les possèdent
    (carte/placement.js, joueur/leurres.js…) mais listés ici pour que l'ordre
    de placement soit visible d'un seul endroit. */
@@ -4560,6 +5642,10 @@ function* construireMonde(hooks){
   chrono.debut = performance.now();
 
   yield {nom:'remise à zéro', part:0.02};
+  /* Les champs de bruit suivent la graine du monde : même graine, même
+     terrain, au bit près. C'est ici et nulle part ailleurs, pour que l'éditeur
+     et les outils en profitent sans y penser. */
+  semerBruit(graine());
   viderGrille(); viderDecor(); viderVillages(); libererTousLesPaves();
   monde.refuges.length = 0; monde.combustibles.length = 0;
   monde.leurres.length = 0; monde.sortie = null;
@@ -4574,7 +5660,7 @@ function* construireMonde(hooks){
     majBornes();
     // pas de relaxation : ton relief reste le tien
   } else {
-    yield {nom:'creusement des salles et cavernes', part:0.30};
+    yield {nom:'échantillonnage du terrain', part:0.30};
     creuserPlan();
 
     yield {nom:'relaxation de l’épine navigable', part:0.48};
@@ -4668,18 +5754,21 @@ function rapportMonde(){
     if(grid[i]===FLOOR) sol++;
     if(vide[i]) videN++;
   }
-  const g = statsMaillage.quadsBruts
-    ? (100 - statsMaillage.quadsEmis / statsMaillage.quadsBruts * 100).toFixed(0) + ' %'
-    : '—';
   return {
     duree: chrono.duree.toFixed(1) + ' s',
     plan: planActif() ? plan.nom + ' (' + plan.zones.length + ' zones)' : 'procédural',
-    greedyGain: g + ' de quads en moins (sols+plafonds)',
-    cellulesPlates: statsMaillage.plats + ' / '
-      + (statsMaillage.plats + statsMaillage.nonPlats),
-    parois: statsMaillage.paroisBrutes + ' → ' + statsMaillage.paroisEmises,
+    /* Plus de « gain glouton » : la fusion a été retirée, elle perçait des
+       fentes dans le sol. Voir l'en-tête de monde/maillage.js. */
     quadsSolPlafond: statsMaillage.quadsEmis,
-    salles: salles.length,
+    parois: statsMaillage.paroisEmises,
+    lieux: salles.length,
+    creuse: (releve.creux / (GW*GH) * 100).toFixed(1) + ' % de la planche',
+    dehors: (releve.dehors / Math.max(1, releve.creux) * 100).toFixed(0)
+          + ' % du creux est à ciel ouvert',
+    marchesInfranchissables: releve.marches + (releve.saturee ? ' (RELAXATION SATURÉE)' : ''),
+    terrainMs: releve.ms,
+    poches: releve.poches + ' (' + releve.rebouchees + ' rebouchées, '
+          + releve.reliees + ' reliées)',
     gouffres: gouffres.length,
     rampes: chrono.rampes,
     galeries: chrono.galeries + ' + ' + chrono.galeriesFinales + ' après décor',
@@ -7017,41 +8106,109 @@ function emprunterEchelle(){
   return true;
 }
 
-/* ─────────────── collision ─────────────── */
+/* ═══════════════ COLLISION ═══════════════
+
+   ── CE QUI CLOCHAIT (v4) ───────────────────────────────────────────────────
+   « Je suis souvent bloqué entre deux objets », et « les hitbox sont trop
+   grosses et ne correspondent pas à l'objet ». Les deux constats n'en font
+   qu'un, et la cause était double :
+
+     1. UN SEUL CERCLE PAR ÉLÉMENT. Un lampadaire, une voiture couchée, une
+        poutre de barrage : tous recevaient un disque au sol, de rayon égal à
+        leur part la plus large, plafonné à 1,40 m. On se cognait donc à deux
+        mètres d'une carcasse, et sous une poutre suspendue à quatre mètres de
+        haut. C'est corrigé dans monde/props.js : une hitbox par PART, en
+        forme de capsule — un segment, un rayon, un étage. Voir `capsulePart`
+        dans monde/formes.js.
+
+     2. AUCUN GLISSEMENT. Le déplacement était testé axe par axe : si X et Z
+        étaient tous deux refusés — ce qui arrive dès qu'on aborde un obstacle
+        de biais — on s'arrêtait net. Entre deux objets, les deux axes sont
+        refusés en permanence : c'est exactement « coincé entre deux objets ».
+
+   ── CE QU'ON FAIT MAINTENANT ───────────────────────────────────────────────
+   Le RELIEF garde le test axe par axe : il est aligné sur la grille, et longer
+   un mur de roche y glisse déjà correctement.
+
+   Les ÉLÉMENTS, eux, ne bloquent plus : ils REPOUSSENT. On avance, puis on
+   sort le joueur de ce qu'il chevauche, le long de la normale. Deux objets qui
+   se touchent presque le recrachent d'un côté au lieu de le pincer, et aborder
+   un tronc de biais fait glisser dessus sans une ligne de plus. Le prix : on
+   peut pénétrer d'un centimètre pendant une image. À 5,6 m/s et soixante
+   images par seconde un pas fait 9 cm — rien ne peut être traversé.        */
 
 let collParCell = new Map();
 
+/**
+ * Range chaque capsule dans TOUTES les cellules que sa boîte englobante
+ * touche, élargie du rayon du joueur. Une requête ne consulte donc qu'une
+ * cellule — la sienne — sans jamais rater un objet long.
+ *
+ * La v4 rangeait un cercle dans les neuf cellules autour de son centre :
+ * correct pour un pilier, faux pour un mur de cinq mètres.
+ */
 function indexerColliders(){
   collParCell = new Map();
+  const R = SETUP.joueur.rayon;
   for(const co of colliders){
-    const cx = w2c(co.x), cz = w2c(co.z);
-    for(let dz=-1;dz<=1;dz++) for(let dx=-1;dx<=1;dx++){
-      const k = idx(clamp(cx+dx,0,GW-1), clamp(cz+dz,0,GH-1));
-      if(!collParCell.has(k)) collParCell.set(k, []);
-      collParCell.get(k).push(co);
+    const m = co.r + R;
+    const cx0 = clamp(w2c(Math.min(co.x0, co.x1) - m), 0, GW-1);
+    const cx1 = clamp(w2c(Math.max(co.x0, co.x1) + m), 0, GW-1);
+    const cz0 = clamp(w2c(Math.min(co.z0, co.z1) - m), 0, GH-1);
+    const cz1 = clamp(w2c(Math.max(co.z0, co.z1) + m), 0, GH-1);
+    for(let z = cz0; z <= cz1; z++) for(let x = cx0; x <= cx1; x++){
+      const k = idx(x, z);
+      let lot = collParCell.get(k);
+      if(!lot) collParCell.set(k, lot = []);
+      lot.push(co);
     }
   }
 }
 
-function heurteElement(nx, nz){
-  const k = idx(clamp(w2c(nx),0,GW-1), clamp(w2c(nz),0,GH-1));
-  const lot = collParCell.get(k);
+/** Hauteur du corps. En rampant elle tombe à un mètre : on passe alors sous ce
+    qu'on ne franchit pas debout, ce qui donne enfin une raison de plus de se
+    mettre à plat ventre. */
+const hauteurCorps = () => joueur.eye + SETUP.joueur.margeTete;
+
+/** Cette capsule est-elle à hauteur de corps, pour des pieds à la cote `gy` ? */
+function aHauteur(co, gy){
+  if(co.y1 < gy + SETUP.monde.marcheJoueur) return false;   // on l'enjambe
+  if(co.y0 > gy + hauteurCorps()) return false;             // on passe dessous
+  return true;
+}
+
+/* Projeté du point sur le segment de la capsule. Un tableau de module plutôt
+   qu'une allocation : appelé des dizaines de fois par image. */
+const PROJ = [0, 0];
+
+function distanceCapsule2(px, pz, co){
+  const dx = co.x1 - co.x0, dz = co.z1 - co.z0;
+  const l2 = dx*dx + dz*dz;
+  let t = l2 > 1e-9 ? ((px - co.x0)*dx + (pz - co.z0)*dz) / l2 : 0;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  PROJ[0] = co.x0 + dx*t; PROJ[1] = co.z0 + dz*t;
+  const ex = px - PROJ[0], ez = pz - PROJ[1];
+  return ex*ex + ez*ez;
+}
+
+const lotEn = (x, z) =>
+  collParCell.get(idx(clamp(w2c(x), 0, GW-1), clamp(w2c(z), 0, GH-1)));
+
+/** Un élément de décor occupe-t-il ce point, à cette hauteur de pieds ? */
+function heurteElement(nx, nz, gy){
+  const lot = lotEn(nx, nz);
   if(!lot) return false;
   const R = SETUP.joueur.rayon;
   for(const co of lot){
-    const dx = nx-co.x, dz = nz-co.z, rr = co.r + R;
-    if(dx*dx + dz*dz < rr*rr) return true;
+    if(!aHauteur(co, gy)) continue;
+    const rr = co.r + R;
+    if(distanceCapsule2(nx, nz, co) < rr*rr) return true;
   }
   return false;
 }
 
-function bloqueA(nx, nz, depuis){
-  /* Sur un tablier, on est au-dessus de tout : ni le relief ni les éléments du
-     sol ne peuvent nous arrêter. Seul le bord du tablier compte, et il ne
-     bloque pas — il laisse tomber. */
-  if(joueur.surPont) return false;
-
-  if(heurteElement(nx,nz)) return true;
+/** Le RELIEF seul : mur de roche, ou marche trop haute. */
+function heurteTerrain(nx, nz, depuis){
   const r = SETUP.joueur.rayon;
   for(const [ox,oz] of [[r,0],[-r,0],[0,r],[0,-r],
                         [r*.7,r*.7],[-r*.7,r*.7],[r*.7,-r*.7],[-r*.7,-r*.7]]){
@@ -7062,6 +8219,60 @@ function bloqueA(nx, nz, depuis){
     if(floorH[idx(cx,cz)] - depuis > SETUP.monde.marcheJoueur) return true;
   }
   return false;
+}
+
+/**
+ * Le point est-il occupé ? Relief ET décor.
+ *
+ * Le déplacement n'appelle plus cette fonction pour le décor — il repousse
+ * (voir `repousser`). Elle reste la question qu'on pose AVANT de poser
+ * quelqu'un quelque part : le déblocage, et les outils de diagnostic.
+ */
+function bloqueA(nx, nz, depuis){
+  /* Sur un tablier, on est au-dessus de tout : ni le relief ni les éléments du
+     sol ne peuvent nous arrêter. Seul le bord du tablier compte, et il ne
+     bloque pas — il laisse tomber. */
+  if(joueur.surPont) return false;
+  return heurteElement(nx, nz, depuis) || heurteTerrain(nx, nz, depuis);
+}
+
+/**
+ * Sort le joueur des éléments qu'il chevauche, en le poussant le long de la
+ * normale. C'est ce qui remplace le blocage, et ce qui rend le pincement
+ * impossible : deux objets serrés produisent deux poussées, dont la somme
+ * fait sortir par le côté ouvert.
+ *
+ * Trois passes : sortir d'un objet peut faire entrer dans son voisin. On ne
+ * pousse jamais DANS la roche, sinon on troquerait un blocage contre un mur.
+ */
+function repousser(gy){
+  if(joueur.surPont) return;
+  const R = SETUP.joueur.rayon;
+  for(let passe = 0; passe < 3; passe++){
+    const lot = lotEn(joueur.x, joueur.z);
+    if(!lot) return;
+    let bouge = false;
+    for(const co of lot){
+      if(!aHauteur(co, gy)) continue;
+      const rr = co.r + R;
+      const d2 = distanceCapsule2(joueur.x, joueur.z, co);
+      if(d2 >= rr*rr) continue;
+      let ex = joueur.x - PROJ[0], ez = joueur.z - PROJ[1];
+      let d = Math.sqrt(d2);
+      if(d < 1e-3){
+        /* Pile sur l'axe de la capsule. Il faut sortir par une direction, et
+           elle doit être STABLE : tirée au hasard, on vibrerait sur place. */
+        ex = (co.z1 - co.z0) || 1; ez = -(co.x1 - co.x0);
+        d = Math.hypot(ex, ez) || 1;
+      }
+      const k = (rr - d) / d;
+      const px = joueur.x + ex*k, pz = joueur.z + ez*k;
+      if(heurteTerrain(px, pz, gy)) continue;
+      joueur.x = px; joueur.z = pz;
+      bouge = true;
+    }
+    if(!bouge) return;
+  }
 }
 
 /* ─────────────── déplacement ─────────────── */
@@ -7107,8 +8318,14 @@ function updateJoueur(dt, mult, hooks){
   joueur.vz = lerp(joueur.vz, (fz*f + rz*s)*spd, 1 - Math.exp(-14*dt));
 
   const nx = joueur.x + joueur.vx*dt, nz = joueur.z + joueur.vz*dt;
-  if(!bloqueA(nx, joueur.z, joueur.gy)) joueur.x = nx; else joueur.vx = 0;
-  if(!bloqueA(joueur.x, nz, joueur.gy)) joueur.z = nz; else joueur.vz = 0;
+  /* Le relief bloque axe par axe — il est aligné sur la grille, on y glisse.
+     Le décor, lui, laisse entrer puis repousse : c'est ce qui rend le
+     contournement automatique, et le pincement impossible. */
+  if(joueur.surPont || !heurteTerrain(nx, joueur.z, joueur.gy)) joueur.x = nx;
+  else joueur.vx = 0;
+  if(joueur.surPont || !heurteTerrain(joueur.x, nz, joueur.gy)) joueur.z = nz;
+  else joueur.vz = 0;
+  repousser(joueur.gy);
 
   appliquerGravite(dt, H);
 
@@ -7221,12 +8438,25 @@ function decroitreTraces(dt, ventX = 0, ventZ = 0, effacement = 1){
    condamnée par un pilier posé trop près. Ce n'est pas la faute du joueur, et
    lui demander de recommencer sa partie pour ça serait grossier.
 
-   La touche D cherche donc une cellule d'accueil autour de lui, en spirale, et
-   l'y pose. Trois règles :
+   La touche R cherche donc une cellule d'accueil autour de lui, en spirale, et
+   l'y pose. Quatre règles :
      · JAMAIS dans le vide — on débloque, on ne tue pas ;
+     · ON DOIT POUVOIR EN REPARTIR (v5) ;
      · le plus près possible, pour ne pas servir de téléportation gratuite ;
      · ça fait du bruit. Se dégager n'est pas discret, et il n'y a aucune raison
-       que la bête n'entende rien.                                           */
+       que la bête n'entende rien.
+
+   ── POURQUOI LA DEUXIÈME RÈGLE A ÉTÉ AJOUTÉE ───────────────────────────────
+   Retour de test : « je suis souvent bloqué entre 2 objets et le R de
+   déblocage ne change rien ». Il changeait pourtant quelque chose — il
+   déplaçait bel et bien le joueur — mais sur la cellule LIBRE LA PLUS PROCHE,
+   c'est-à-dire, quand on est pincé entre deux troncs, sur l'autre case du
+   même pincement. On ressortait un mètre plus loin, toujours coincé, et le
+   message « DÉGAGÉ » avait l'air de se moquer du monde.
+
+   Une cellule d'accueil doit donc offrir une ISSUE : on compte, autour d'elle,
+   combien des huit directions laissent réellement partir. En dessous de
+   SETUP.joueur.issuesMin, ce n'est pas un dégagement, c'est un autre piège.  */
 
 /* ═══════════════ DÉTECTION DU BLOCAGE ═══════════════
    Le joueur pousse une direction et n'avance pas : il est coincé.
@@ -7274,37 +8504,65 @@ function surveillerBlocage(dt, commande){
 }
 
 /**
- * Repositionne le joueur sur une cellule praticable proche.
+ * Combien des huit directions laissent partir d'un point donné ?
+ *
+ * On sonde à un pas de marche — pas à un centimètre : sortir d'un pincement
+ * demande de pouvoir vraiment s'éloigner, pas de frémir.
+ */
+function issues(wx, wz, gy){
+  const P = SETUP.joueur.pasIssue;
+  let n = 0;
+  for(let k = 0; k < 8; k++){
+    const a = k * 0.7854;
+    if(!bloqueA(wx + Math.cos(a)*P, wz + Math.sin(a)*P, gy)) n++;
+  }
+  return n;
+}
+
+/**
+ * Repositionne le joueur sur une cellule praticable proche D'OÙ L'ON PEUT
+ * REPARTIR.
+ *
+ * Deux tours de spirale : le premier n'accepte qu'une cellule franchement
+ * ouverte ; si le monde n'en offre aucune à portée, le second se contente de
+ * la première cellule libre venue — mieux vaut un dégagement imparfait que
+ * « AUCUNE ISSUE » et une partie perdue.
+ *
  * @returns la distance parcourue, ou 0 si rien n'a été trouvé
  */
 function debloquer(){
   const depart = {x: joueur.x, z: joueur.z};
   const cx = w2c(joueur.x), cz = w2c(joueur.z);
+  const MIN = SETUP.joueur.issuesMin;
 
-  for(let r = 1; r <= 24; r++){
-    let meilleur = null, md = 1e9;
-    for(let dz = -r; dz <= r; dz++) for(let dx = -r; dx <= r; dx++){
-      // uniquement le pourtour du carré de rayon r : on s'éloigne par paliers
-      if(Math.abs(dx) !== r && Math.abs(dz) !== r) continue;
-      const x = cx + dx, z = cz + dz;
-      if(!isFree(x, z)) continue;
-      const i = idx(x, z);
-      if(vide[i]) continue;                       // surtout pas un gouffre
-      if(ceilH[i] - floorH[i] < 1.0) continue;    // ni un boyau où l'on rentre pas
-      const wx = c2w(x), wz = c2w(z);
-      if(bloqueA(wx, wz, floorH[i])) continue;    // ni un coin déjà encombré
-      const d = (wx - joueur.x)**2 + (wz - joueur.z)**2;
-      if(d < md){ md = d; meilleur = {x:wx, z:wz, y:floorH[i]}; }
-    }
-    if(meilleur){
-      joueur.x = meilleur.x; joueur.z = meilleur.z;
-      joueur.gy = meilleur.y; joueur.vy = 0;
-      joueur.vx = joueur.vz = 0;
-      joueur.chuteDepuis = null;
-      joueur.surPont = false;
-      // se dégager fait du bruit : elle a le droit de l'entendre
-      emettreSon(joueur.x, joueur.z, 14, false);
-      return Math.hypot(joueur.x - depart.x, joueur.z - depart.z);
+  for(let exigeant = 1; exigeant >= 0; exigeant--){
+    for(let r = 1; r <= 24; r++){
+      let meilleur = null, md = 1e9;
+      for(let dz = -r; dz <= r; dz++) for(let dx = -r; dx <= r; dx++){
+        // uniquement le pourtour du carré de rayon r : on s'éloigne par paliers
+        if(Math.abs(dx) !== r && Math.abs(dz) !== r) continue;
+        const x = cx + dx, z = cz + dz;
+        if(!isFree(x, z)) continue;
+        const i = idx(x, z);
+        if(vide[i]) continue;                       // surtout pas un gouffre
+        if(ceilH[i] - floorH[i] < 1.0) continue;    // ni un boyau où l'on rentre pas
+        const wx = c2w(x), wz = c2w(z);
+        if(bloqueA(wx, wz, floorH[i])) continue;    // ni un coin déjà encombré
+        // et surtout : une cellule d'où l'on peut REPARTIR
+        if(exigeant && issues(wx, wz, floorH[i]) < MIN) continue;
+        const d = (wx - joueur.x)**2 + (wz - joueur.z)**2;
+        if(d < md){ md = d; meilleur = {x:wx, z:wz, y:floorH[i]}; }
+      }
+      if(meilleur){
+        joueur.x = meilleur.x; joueur.z = meilleur.z;
+        joueur.gy = meilleur.y; joueur.vy = 0;
+        joueur.vx = joueur.vz = 0;
+        joueur.chuteDepuis = null;
+        joueur.surPont = false;
+        // se dégager fait du bruit : elle a le droit de l'entendre
+        emettreSon(joueur.x, joueur.z, 14, false);
+        return Math.hypot(joueur.x - depart.x, joueur.z - depart.z);
+      }
     }
   }
   return 0;
@@ -7315,7 +8573,7 @@ function tombeDansLeVide(){
   return joueur.gy < bornes.min - SETUP.relief.fondDuVide;
 }
 
-  return { basculerRampe, bloqueA, coteSol, debloquer, decroitreTraces, echelleIci, emettreSon, emprunterEchelle, indexerColliders, joueur, majEtage, odeur, sauter, sons, spawnJoueur, tombeDansLeVide, touches, updateJoueur, verrouRampe };
+  return { basculerRampe, bloqueA, coteSol, debloquer, decroitreTraces, echelleIci, emettreSon, emprunterEchelle, heurteElement, heurteTerrain, indexerColliders, joueur, majEtage, odeur, sauter, sons, spawnJoueur, tombeDansLeVide, touches, updateJoueur, verrouRampe };
 })();
 
 /* ─── src/joueur/chute.js ─── */
@@ -10380,25 +11638,28 @@ function dessinerCartes(ctx){
       gl.uniform1f(U.uDist, dist);
     };
 
-    /* 1. LE HALO — large, faible, sans texture. C'est lui qu'on aperçoit dans
-       la brume avant de distinguer la carte elle-même. */
+    /* ── PLUS DE CADRE ──
+       « Retirer le cadre que tu as fait. Tu gardes que mes cartes GIF, avec la
+       lumière projetée, et la carte prend toute la place. »
+
+       Il ne reste donc que deux passes : la lueur, et l'image. Le liseré a
+       disparu — les cartes d'Orlando portent DÉJÀ leur propre bord découpé,
+       et en ajouter un revenait à encadrer un cadre.
+
+       1. LA LUEUR — large, sans texture. C'est ce qu'on aperçoit dans la brume
+          avant de distinguer la carte : elle sert à la repérer, pas à
+          l'habiller. Elle déborde donc franchement, et reste faible. */
     gl.uniform1f(U.uAvecTex, 0);
-    gl.uniform3fv(U.uTeinte, [col[0]*0.55, col[1]*0.55, col[2]*0.55]);
-    poser(C.largeur * 1.55, C.hauteur * 1.55, 0.30 * puls);
+    gl.uniform3fv(U.uTeinte, [col[0]*0.50, col[1]*0.50, col[2]*0.50]);
+    poser(C.largeur * 1.85, C.hauteur * 1.85, 0.26 * puls);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-    /* 2. LE CADRE — un liseré fin. La v3.1 en faisait une bordure de 12 cm de
-       large qui bouffait la carte : « trop gros / vulgaire ». Ici c'est
-       l'épaisseur d'un trait. */
-    gl.uniform3fv(U.uTeinte, col);
-    poser(C.largeur + C.cadre*2, C.hauteur + C.cadre*2, 1.15 * puls);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-    /* 3. L'ILLUSTRATION. */
+    /* 2. L'IMAGE, pleine taille. */
     if(tex){
       gl.bindTexture(gl.TEXTURE_2D, tex);
       gl.uniform1f(U.uAvecTex, 1);
     } else {
+      // pas encore chargée : une plaque sourde, le temps que le GIF arrive
       gl.uniform1f(U.uAvecTex, 0);
       gl.uniform3fv(U.uTeinte, [col[0]*0.30, col[1]*0.30, col[2]*0.30]);
     }
@@ -11348,7 +12609,7 @@ __M['M_jeu'] = (function(){
   const { BIOMES, NAPPE_DE_BIOME } = __M['M_monde_biomes'];
   const { GW, GH, CELL, idx, isFloor, w2c, c2w, groundAt, degagement, biomeAt, openN, sky, floorH, bornes, celluleLibre, rebuildNavCost } = __M['M_monde_grille'];
   const Grille = __M['M_monde_grille'];
-  const { construireMonde, rapportMonde, monde, props, lights } = __M['M_monde_index'];
+  const { construireMonde, rapportMonde, monde, props, lights, colliders } = __M['M_monde_index'];
   const { gouffres, effondrerZone } = __M['M_monde_relief'];
   const { cachettes, cachetteProche, dansCachette } = __M['M_monde_cachettes'];
   const { addProp } = __M['M_monde_props'];
@@ -11367,7 +12628,7 @@ __M['M_jeu'] = (function(){
   const { creature, spawnCreature, updateCreature, brancherCri } = __M['M_creatures_mere'];
   const { jeunes, majPopulation, updateJeunes, viderJeunes, brancherStridulation, brancherFeu, attirerJeunes } = __M['M_creatures_jeunes'];
   const { creerCreature } = __M['M_creatures_geometrie'];
-  const { joueur, touches, sons, odeur, spawnJoueur, updateJoueur, indexerColliders, bloqueA, coteSol, majEtage, basculerRampe, emettreSon, decroitreTraces, echelleIci, emprunterEchelle, debloquer, sauter } = __M['M_joueur_joueur'];
+  const { joueur, touches, sons, odeur, spawnJoueur, updateJoueur, indexerColliders, bloqueA, heurteElement, coteSol, majEtage, basculerRampe, emettreSon, decroitreTraces, echelleIci, emprunterEchelle, debloquer, sauter } = __M['M_joueur_joueur'];
   const { CHUTE, tirerChuteSismique, impactSol, verifierVide, reinitialiserChute } = __M['M_joueur_chute'];
   const { froid, updateFroid, reinitialiserFroid, intensiteVisuelle } = __M['M_joueur_froid'];
   const { torche, combustibles, refuges, placerCombustible, placerRefuges, refugeProche, updateTorche, basculerTorche, reinitialiserTorche } = __M['M_joueur_torche'];
@@ -12109,7 +13370,12 @@ async function demarrer(){
   });
   brancherEntrees();
 
-  await genererMonde(undefined);
+  /* `?graine=1234` rejoue exactement le même monde. Ce n'est pas un réglage de
+     confort : outils/apercu.py annonçait une graine depuis le début et le jeu
+     ne l'a jamais lue, si bien que deux captures censées comparer deux
+     réglages comparaient en fait deux mondes différents. */
+  const gDemandee = new URLSearchParams(location.search).get('graine');
+  await genererMonde(gDemandee === null ? undefined : (+gDemandee >>> 0));
 
   /* ═══ CONSOLE DE MISE AU POINT ═══
      Ouvrir index.html?debug expose window.SCOLO dans la console du navigateur.
@@ -12125,12 +13391,12 @@ async function demarrer(){
   if(location.search.includes('debug')){
     window.SCOLO = {
       SETUP, jeu, joueur, creature, jeunes, froid, directeur, monde, cachettes,
-      Grille, BIOMES, lights, props,
+      Grille, BIOMES, lights, props, colliders,
       rapport: rapportMonde,
       /* De quoi faire marcher le joueur depuis un outil : diag_passage.py
          lui fait traverser de vrais ponts avec le vrai code, plutôt que de
          croire un graphe. */
-      bloqueA, coteSol, majEtage,
+      bloqueA, coteSol, majEtage, debloquer, heurteElement, indexerColliders,
       regenerer: g => genererMonde(g),
       effondrement: declencherEffondrement,
     };

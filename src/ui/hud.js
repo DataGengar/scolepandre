@@ -23,9 +23,24 @@ const COULEUR_PALIER = ['#8fa88c', '#b8a25f', '#6f9fc0', '#b4553f'];
 export function majHUD(ctx){
   const {joueur, biome, nappe, pavesVus, pavesTotal, graine, sortie, monde} = ctx;
 
-  // ── leurres en main
+  /* ── EN MAIN ──
+     Les mains vides montrent les leurres, comme avant. Une arme montre son
+     nom et, s'il en faut, ses munitions. Un seul emplacement pour les deux :
+     on tient une chose à la fois, et l'afficher deux fois brouillerait la
+     seule question qui compte — qu'est-ce que je fais si ça arrive ? */
   const l = el('lures');
-  if(l) l.innerHTML = '◆'.repeat(joueur.held) + '<u>' + '◆'.repeat(3-joueur.held) + '</u>';
+  if(l){
+    const A = ctx.arme;
+    if(!A || A.genre === 'leurre'){
+      l.innerHTML = '◆'.repeat(joueur.held)
+                  + '<u>' + '◆'.repeat(3-joueur.held) + '</u>';
+    } else {
+      const mun = A.munition
+        ? '  <u>·</u>  ' + (ctx.munitions | 0)
+        : '';
+      l.innerHTML = A.nom + mun;
+    }
+  }
 
   // ── lieu et altitude
   const p = el('place');

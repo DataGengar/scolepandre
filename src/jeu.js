@@ -25,7 +25,14 @@ import {
   openN, sky, floorH, bornes, celluleLibre, rebuildNavCost,
 } from './monde/grille.js';
 import * as Grille from './monde/grille.js';
-import {construireMonde, rapportMonde, monde, props, lights} from './monde/index.js';
+import {construireMonde, rapportMonde, monde, props, lights, colliders} from './monde/index.js';
+import {
+  armes, ARMES, armeCourante, choisirArme, armeSuivante,
+  majArmes, frapper, reculMere, memoire, oublierCoups, reinitialiserArmes,
+  armesAuSol, cellulesAuSol, ramasserArmes, reprendreArmesAuSol,
+} from './joueur/armes.js';
+import {majVueArme, matriceArme, maillagePour, viderMaillages}
+  from './joueur/vue-arme.js';
 import {gouffres, effondrerZone} from './monde/relief.js';
 import {cachettes, cachetteProche, dansCachette} from './monde/cachettes.js';
 import {addProp} from './monde/props.js';
@@ -46,14 +53,14 @@ import {possede, ajouter, charger as chargerCollection, majAffichage} from './ca
 
 import {ST} from './creatures/etats.js';
 import {directeur} from './creatures/directeur.js';
-import {creature, spawnCreature, updateCreature, brancherCri} from './creatures/mere.js';
+import {creature, repousserMere, spawnCreature, updateCreature, brancherCri} from './creatures/mere.js';
 import {jeunes, majPopulation, updateJeunes, viderJeunes, brancherStridulation,
-        brancherFeu, attirerJeunes} from './creatures/jeunes.js';
+        brancherFeu, attirerJeunes, blesserJeune} from './creatures/jeunes.js';
 import {creerCreature} from './creatures/geometrie.js';
 
 import {
   joueur, touches, sons, odeur, spawnJoueur, updateJoueur, indexerColliders,
-  bloqueA, coteSol, majEtage,
+  bloqueA, heurteElement, coteSol, majEtage,
   basculerRampe, emettreSon, decroitreTraces, echelleIci, emprunterEchelle,
   debloquer, sauter,
 } from './joueur/joueur.js';
@@ -139,6 +146,9 @@ async function genererMonde(nouvelleGraine){
   reinitialiserChute();
   reinitialiserSante();
   reinitialiserFeu();
+  reinitialiserArmes();
+  reprendreArmesAuSol();
+  viderMaillages();
   reprendreTous();
   chargerPancartes(graine());
   chargerVillagesVus(graine());
@@ -176,7 +186,13 @@ function brancherEntrees(){
 
   addEventListener('mousedown', e => {
     if(!jeu.enCours) return;
-    if(e.button === 0) lancerLeurre();
+    /* Clic gauche : on utilise CE QU'ON TIENT. Les mains vides gardent leur
+       geste d'origine — lancer un leurre — donc rien ne change tant qu'on n'a
+       rien ramassé, et il n'y a pas de nouvelle touche à apprendre. */
+    if(e.button === 0){
+      if(armeCourante().genre === 'leurre') lancerLeurre();
+      else utiliserArme();
+    }
     // clic droit maintenu : brandir la lampe. Les jeunes reculent, le jus fond.
     if(e.button === 2) inventaire.brandit = true;
   });
@@ -236,6 +252,12 @@ function brancherEntrees(){
       flash(d > 0 ? 'DÉGAGÉ · ' + d.toFixed(1) + ' m' : 'AUCUNE ISSUE À PROXIMITÉ');
     }
     if(e.code === 'KeyE'){ e.preventDefault(); actionContextuelle(); }
+    /* 1, 2, 3 choisissent ; X fait tourner, pour ceux qui ne comptent pas. */
+    if(/^Digit[1-9]$/.test(e.code)){
+      const n = +e.code.slice(5) - 1;
+      if(choisirArme(n)) flash(armeCourante().nom);
+    }
+    if(e.code === 'KeyX'){ e.preventDefault(); flash(ARMES[armeSuivante()].nom); }
     /* Ramper : « C », comme l'annonce la barre d'aide. CapsLock reste accepté
        — c'était la seule touche câblée jusqu'ici, et changer un réflexe sans
        prévenir est pire que d'en garder deux. */
@@ -316,6 +338,50 @@ function gererPancarte(){
 function lancerLeurre(){
   if(joueur.prone > 0 || joueur.abrite) return;
   if(lancer(joueur, joueur.derive)) Audio.effets.lance();
+}
+
+/* ═══════════════ FRAPPER ═══════════════
+   armes.js calcule QUI est dans l'arc ; c'est ici qu'on applique. La
+   séparation n'est pas cosmétique : sans elle, armes.js importerait les
+   créatures, les créatures importeraient le joueur, et on ne pourrait plus
+   éprouver une arme toute seule.
+
+   L'ORDRE DES CONSÉQUENCES COMPTE. Le bruit part TOUJOURS, touché ou non :
+   c'est le prix de l'arme, et il ne doit pas dépendre de l'adresse. Un
+   thunderbolt tiré dans le vide ameute autant qu'un thunderbolt au but. */
+function utiliserArme(){
+  if(joueur.prone > 0 || joueur.abrite) return;
+
+  // les cibles : les jeunes, puis la mère
+  const cibles = jeunes.map(j => ({x:j.x, z:j.z, rayon:0.55, ref:j}));
+  cibles.push({x:creature.x, z:creature.z, rayon:1.6, ref:creature});
+
+  const r = frapper(joueur, cibles);
+  if(!r) return;                       // encore en récupération
+  if(r.vide){ flash('PLUS DE CELLULES'); Audio.effets.vide?.(); return; }
+
+  Audio.effets.arme?.(r.arme.genre);
+  emettreSon(joueur.x, joueur.z, r.bruit, false);
+  joueur.shake = Math.max(joueur.shake, r.arme.genre === 'tir' ? 0.35 : 0.16);
+
+  let tues = 0, touches = 0;
+  for(const t of r.touches){
+    if(t.ref === creature){
+      /* La mère. Pas de dégâts — un délai. Et le délai fond à chaque coup :
+         marteler la même touche ne doit pas la tenir à distance
+         indéfiniment, sinon le jeu est résolu. */
+      const sec = reculMere(r.arme);
+      if(repousserMere(sec)) flash('ELLE RECULE · ' + sec.toFixed(1) + ' s');
+      else flash('ÇA NE LUI FAIT RIEN');
+      continue;
+    }
+    const issue = blesserJeune(t.ref, t.degats, t.poussee, t.dx, t.dz);
+    if(issue === 'mort') tues++;
+    else if(issue === 'touche') touches++;
+  }
+
+  if(tues) flash(tues > 1 ? tues + ' ABATTUS' : 'ABATTU');
+  else if(touches) flash('TOUCHÉ');
 }
 
 /**
@@ -473,6 +539,7 @@ function coeur(now){
   if(compteurUI > 0.2){
     compteurUI = 0;
     majHUD({
+    arme: armeCourante(), munitions: armes.reserves.cellule,
       joueur, biome: jeu.biome, nappe: Audio.nomNappe(),
       pavesVus: visuel.pavesVus, pavesTotal: paves.size, graine: graine(),
       sortie: objectif.sortie, monde,
@@ -508,6 +575,22 @@ function simuler(dt){
   updateSante(dt);
   const pris = ramasserFeu(joueur);
   if(pris.bois || pris.fusees) Audio.effets.ramasse();
+
+  /* ── les armes ── */
+  majArmes(dt);
+  oublierCoups(dt);
+  majVueArme(dt, joueur);
+  {
+    const pr = ramasserArmes(joueur);
+    if(pr.arme){
+      Audio.effets.ramasse();
+      flash(ARMES[pr.arme].nom + ' — ' + (ARMES[pr.arme].aide || ''));
+    }
+    if(pr.cellules){
+      Audio.effets.ramasse();
+      flash('+' + pr.cellules + ' CELLULES  (' + armes.reserves.cellule + ')');
+    }
+  }
   if(ramasserTrousse(joueur.x, joueur.gy, joueur.z)){
     Audio.effets.soin(); flash('TROUSSE UTILISÉE');
   }
@@ -701,8 +784,50 @@ function dessinerImage(dt, dP){
     cielOuvert: jeu.cielOuvert,
     monde: {bois, fusees, trousses, feux, fuseesActives, pancartes},
     identite,
+    /* L'arme en main. Son maillage est cuit à la demande, à partir de la
+       VRAIE géométrie de monde/props.js — la même qu'on retouche dans la
+       forge et la même qui traîne au sol. */
+    armeMesh: maillagePour(armeCourante().modele, geometrieDeProp),
+    armeModele: matriceArme(joueur, joueur.gy + P.hauteurOeil, jeu.temps),
   });
   dessinerScope(joueur, sons, odeur, dP);
+}
+
+/**
+ * La géométrie d'un élément de props.js, hors du monde.
+ *
+ * Même bac à sable que la forge : on prépare une cellule, on appelle la VRAIE
+ * fonction, on récupère ce qu'elle a produit, on remet tout en place. C'est
+ * laid, et c'est ce qui garantit qu'une arme en main est exactement celle
+ * qu'on a dessinée.
+ */
+function geometrieDeProp(nom){
+  const avantP = props.length, avantL = lights.length;
+  const cx = 3, cz = 3, i = Grille.idx(cx, cz);
+  const sauve = {g:Grille.grid[i], f:Grille.floorH[i], c:Grille.ceilH[i],
+                 b:Grille.biome[i], bl:Grille.blocked[i]};
+  Grille.grid[i] = Grille.FLOOR; Grille.floorH[i] = 0; Grille.ceilH[i] = 6;
+  Grille.blocked[i] = 0;
+
+  try{ addProp(nom, cx, cz, i); }catch(e){ console.warn('arme', nom, e); }
+
+  const neufs = props.slice(avantP);
+  props.length = avantP; lights.length = avantL;
+  Grille.grid[i] = sauve.g; Grille.floorH[i] = sauve.f;
+  Grille.ceilH[i] = sauve.c; Grille.biome[i] = sauve.b;
+  Grille.blocked[i] = sauve.bl;
+
+  // recentrer sur l'origine : bâti autour de la cellule d'essai
+  const dx = Grille.c2w(cx), dz = Grille.c2w(cz);
+  const parts = [];
+  for(const pr of neufs) for(const q of pr.parts){
+    const c = JSON.parse(JSON.stringify(q));
+    if(c.tube){ c.tube[0][0]-=dx; c.tube[0][2]-=dz;
+                c.tube[2][0]-=dx; c.tube[2][2]-=dz; }
+    else { c.x -= dx; c.z -= dz; }
+    parts.push(c);
+  }
+  return parts;
 }
 
 /* ─────────────── démarrage ─────────────── */
@@ -748,7 +873,12 @@ async function demarrer(){
   });
   brancherEntrees();
 
-  await genererMonde(undefined);
+  /* `?graine=1234` rejoue exactement le même monde. Ce n'est pas un réglage de
+     confort : outils/apercu.py annonçait une graine depuis le début et le jeu
+     ne l'a jamais lue, si bien que deux captures censées comparer deux
+     réglages comparaient en fait deux mondes différents. */
+  const gDemandee = new URLSearchParams(location.search).get('graine');
+  await genererMonde(gDemandee === null ? undefined : (+gDemandee >>> 0));
 
   /* ═══ CONSOLE DE MISE AU POINT ═══
      Ouvrir index.html?debug expose window.SCOLO dans la console du navigateur.
@@ -764,12 +894,17 @@ async function demarrer(){
   if(location.search.includes('debug')){
     window.SCOLO = {
       SETUP, jeu, joueur, creature, jeunes, froid, directeur, monde, cachettes,
-      Grille, BIOMES, lights, props,
+      Grille, BIOMES, lights, props, colliders,
       rapport: rapportMonde,
       /* De quoi faire marcher le joueur depuis un outil : diag_passage.py
          lui fait traverser de vrais ponts avec le vrai code, plutôt que de
          croire un graphe. */
       bloqueA, coteSol, majEtage,
+      /* Les armes, pour outils/smoke_armes.py. Le module entier plutôt que
+         des morceaux : le test doit pouvoir éprouver le vrai chemin. */
+      armes: {etat: armes, ARMES, frapper, reculMere, memoire,
+              armeCourante, choisirArme},
+      armesAuSol, cellulesAuSol, ramasserArmes, blesserJeune, jeunes, debloquer, heurteElement, indexerColliders,
       regenerer: g => genererMonde(g),
       effondrement: declencherEffondrement,
     };
