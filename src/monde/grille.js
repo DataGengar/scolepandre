@@ -71,7 +71,21 @@ export function profondeurDe(y){
 export const idx    = (x,z) => z * GW + x;
 export const inB    = (x,z) => x > 0 && z > 0 && x < GW-1 && z < GH-1;
 export const isFloor= (x,z) => inB(x,z) && grid[idx(x,z)] === FLOOR;
-export const isFree = (x,z) => isFloor(x,z) && !blocked[idx(x,z)];
+/* ── LA RÈGLE : RIEN NE FLOTTE AU-DESSUS DU VIDE ──
+   « Au-dessus des gouffres il y a des objets flottants. Rectifier et les
+   virer. Règle. »
+
+   La cause tenait ici. `isFree` disait « cette cellule est libre » sans jamais
+   regarder `vide[]` — et c'est cette fonction que `celluleLibre()` interroge
+   pour semer le décor, les cartes, le bois, les leurres. Un gouffre creusé au
+   milieu d'un ancien sol laissait donc tout ce qu'on y avait posé suspendu
+   dans les airs.
+
+   Corrigé À LA SOURCE plutôt qu'objet par objet : la règle vaut pour tout ce
+   qui est semé, y compris ce qu'on ajoutera demain. C'est la différence entre
+   corriger un symptôme et poser une règle. */
+export const isFree = (x,z) =>
+  isFloor(x,z) && !blocked[idx(x,z)] && !vide[idx(x,z)];
 export const w2c    = v => Math.floor(v / CELL);
 export const c2w    = c => (c + 0.5) * CELL;
 export const estVide= (x,z) => (x<0 || z<0 || x>=GW || z>=GH) || vide[idx(x,z)] === 1;

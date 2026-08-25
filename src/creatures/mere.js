@@ -97,10 +97,26 @@ function sense(dt, joueur, sons, odeur, temps){
   c.distract = Math.max(0, c.distract - dt);
   const dP = Math.hypot(joueur.x - c.x, joueur.z - c.z);
 
-  /* DANS UNE CACHETTE, TU N'EXISTES PAS. Ni contact, ni odeur, ni pas. Elle
+  /* ── DEUX QUALITÉS D'ABRI, ET C'EST LÀ QUE SE JOUE LE CHOIX ──
+
+     DANS UN TERRIER, TU N'EXISTES PAS. Ni contact, ni odeur, ni pas. Elle
      continue de patrouiller normalement — elle ne t'a pas perdu, elle ne t'a
-     jamais eu. C'est ce qui fait du trou un vrai refuge. */
+     jamais eu. C'est ce qui fait du trou un vrai refuge.
+
+     DANS UNE VOITURE, TU EXISTES ENCORE. Une tôle n'enterre personne : elle
+     étouffe l'odeur et amortit les vibrations, elle ne les supprime pas. On
+     reste donc perceptible, mais de beaucoup moins loin — et, surtout, une
+     poursuite en cours ne se termine PAS. Elle sait à peu près où l'on est,
+     et une voiture est un endroit qu'on fouille.
+
+     La distance est la seule chose qu'on change : `dP` gonflé fait croire à
+     l'éloignement, ce qui traverse tous les tests de portée d'un coup sans
+     avoir à en modifier un seul. */
   if(joueur.abrite){
+    if(joueur.abriSorte === 'voiture'){
+      if(c.state === ST.CHASE) return dP;      // trop tard : elle vient voir
+      return dP * SETUP.creature.abriVoiture;
+    }
     if(c.state === ST.CHASE && c.stateT > 1.2){
       directeur.onPerdu(joueur); setState(ST.LISTEN);
     }

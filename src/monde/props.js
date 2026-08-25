@@ -21,7 +21,7 @@ import {SETUP} from '../setup.js';
 import {rnd, ri, rf} from '../noyau/rng.js';
 import {BIOMES} from './biomes.js';
 import {
-  GW, GH, CELL, floorH, ceilH, openN, blocked, biome, sky,
+  GW, GH, CELL, floorH, ceilH, openN, blocked, biome, sky, vide,
   idx, isFloor, isFree, c2w, celluleLibre,
 } from './grille.js';
 import {salles} from './generation.js';
@@ -29,6 +29,18 @@ import {rayonPart, capsulePart} from './formes.js';
 import {autorise, densiteEn} from './plan.js';
 
 export const props = [], lights = [], colliders = [];
+
+/* ═══ LES VOITURES OÙ L'ON SE PLANQUE ═══
+   Une liste à part, parce qu'une voiture n'est pas seulement du décor : on
+   peut s'y cacher. Le reste du jeu ne va pas fouiller `props` pour retrouver
+   les carcasses — il lit ce tableau.
+
+   Seules celles qui sont SUR LEURS ROUES comptent. Une voiture retournée n'a
+   plus d'habitacle où se glisser, et prétendre le contraire serait le genre
+   de règle qu'on ne comprend qu'en lisant le code.
+
+   [{x, z, y, ry, occupee}] */
+export const voitures = [];
 
 /* ─────────────── primitives ─────────────── */
 
@@ -52,6 +64,12 @@ function eclat(out, x,y,z, taille, c){
 /* ─────────────── un élément de décor ─────────────── */
 
 export function addProp(kind, x, z, i){
+  /* Seconde barrière, après celle d'`isFree`. Un élément peut être demandé
+     explicitement — par un village, par la forge, par un semis qui a sa
+     propre boucle — sans passer par `celluleLibre()`. Rien ne doit se poser
+     au-dessus d'un gouffre, jamais, quel que soit le chemin emprunté. */
+  if(vide[i]) return;
+
   const b = BIOMES[biome[i]], wx = c2w(x), wz = c2w(z), h = floorH[i];
   const D = SETUP.image.detail;
   let solid = true, dur = false, parts = [];
@@ -642,6 +660,11 @@ export function addProp(kind, x, z, i){
       /* Une voiture est longue et étroite : elle prend la forme de ses parts,
          pas un disque. Le disque d'1,40 m de la v3 débordait de deux mètres à
          l'avant comme à l'arrière — on se cognait dans le vide. */
+      /* On la retient : c'est une planque. Pas les retournées — un habitacle
+         sur le toit n'en est plus un. */
+      if(!retournee)
+        voitures.push({x: wx, z: wz, y: h + ySeuil + 0.35, ry, occupee: false});
+
       dur = true; solid = false; break; }
 
     case 'lampadaire': {
@@ -832,4 +855,5 @@ export function placerProps(){
 /** Remise à zéro avant une nouvelle génération. */
 export function viderDecor(){
   props.length = 0; lights.length = 0; colliders.length = 0;
+  voitures.length = 0;
 }

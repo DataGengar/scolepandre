@@ -36,8 +36,29 @@ export const SETUP = {
         et l'on frotte le décor sans comprendre pourquoi. */
     irregularite:0.11,
     cellule:1.5,         // côté d'une cellule en mètres (3.0 en v2)
-    largeur:1088,        // cellules en X  → 1088 × 1.5 = 1632 m
-    hauteur:1088,        // cellules en Z
+    /* ─── POURQUOI LE MONDE A ÉTÉ DIVISÉ PAR QUATRE ───
+        « Je crois que le monde est trop grand, je ne trouve jamais la
+        sortie. »
+
+        Mesuré. Pour parcourir l'aire utile à la largeur de vue — 7,7 m depuis
+        la réduction de visibilité — il fallait marcher :
+
+            1632 m de côté   0,75 km2 utiles   48 km   252 minutes
+             816 m de côté   0,19 km2 utiles   12 km    63 minutes
+
+        Deux cent cinquante minutes, ce n'est pas un défi, c'est une panne. Et
+        ce n'était pas visible tant que la visibilité était de vingt mètres :
+        c'est la réduction de brouillard, demandée et justifiée, qui a rendu
+        la taille intenable. Les deux réglages étaient bons séparément.
+
+        816 m, donc. Et comme les NOMBRES d'objets n'ont pas été divisés dans
+        la même proportion, le monde devient plus dense : plus de villages,
+        plus de cachettes, plus de bêtes au kilomètre carré. C'est exactement
+        ce qui était demandé dans la même phrase — « tu dois augmenter le
+        challenge ». Un monde plus petit et plus peuplé est plus effrayant
+        qu'un monde vide où l'on marche une heure. */
+    largeur:544,         // cellules en X  → 544 × 1.5 = 816 m
+    hauteur:544,         // cellules en Z
     pave:32,             // côté d'un pavé de maillage, en cellules (48 m)
 
     // Amplitude verticale. ×3 par rapport à la v2 qui allait de −42 à +44.
@@ -167,7 +188,7 @@ export const SETUP = {
     // Toutes ces dimensions sont en MÈTRES ; relief.js les convertit en
     // cellules. Mesurés en jeu, les premiers réglages donnaient des crevasses
     // de 17 × 7 m — on ne les lisait pas comme des gouffres.
-    nbGouffres:42,       // fosses sans fond creusées à l'intérieur
+    nbGouffres:15,       // fosses sans fond creusées à l'intérieur
     gouffreLongMin:20,
     gouffreLongMax:64,
     gouffreLargMin:9,
@@ -184,9 +205,9 @@ export const SETUP = {
         outils/diag_passage.py. monde/connexite.js perce donc une fissure
         jusqu'aux poches qui en valent la peine. */
     enclaveTailleMin:110,  // cellules : en dessous, une alcôve, on laisse
-    nbGaleries:70,         // borne haute : au-delà le monde devient un gruyère
+    nbGaleries:28,         // borne haute : au-delà le monde devient un gruyère
 
-    nbRampes:120,
+    nbRampes:45,
     rampeChuteMax:11,      // au-delà, un escalier n'est plus plausible
     rampePasses:4,         // on recommence tant que ça relie encore
     rampeTailleMin:260,    // cellules : en dessous, c'est une miette
@@ -222,8 +243,8 @@ export const SETUP = {
       une densité un peu relevée. Le troisième seul aurait juste rendu le monde
       encombré sans le rendre lisible. */
   cachettes:{
-    nombre:34,
-    ecartMin:90,         // mètres entre deux cachettes
+    nombre:15,
+    ecartMin:55,         // mètres entre deux cachettes
     /* 30 m, c'était moins que la distance moyenne entre deux cachettes divisée
        par trois : on passait à côté sans jamais rien voir. */
     porteeMarqueur:85,   // distance à laquelle le sismographe la révèle
@@ -444,6 +465,11 @@ export const SETUP = {
 
   /* ─────────────── CRÉATURE MÈRE ─────────────── */
   creature:{
+    /* Une voiture n'est pas un terrier. Elle multiplie la distance PERÇUE :
+       à 3,4, se planquer dans une carcasse à dix mètres revient à être à
+       trente-quatre. Ça suffit à la faire passer son chemin, ça ne suffit
+       pas si elle est déjà lancée. Voir creatures/mere.js. */
+    abriVoiture:3.4,
     vitesseTraque:5.3,
     aversionOuvert:1.1,
     monteePression:0.04,
@@ -554,6 +580,28 @@ export const SETUP = {
      ont une safe zone et des trousses médicales épuisables. »
      Un village est un amas de maisons, de carcasses et de lampadaires autour
      d'une place barricadée. Rare, mais on le voit de loin à ses lumières. */
+  /* ─── ÉDIFICES ───
+      Les cathédrales. Elles ne sont pas du décor : elles ont plusieurs sols
+      empilés (monde/niveaux.js), on monte dans leurs tours, et les gobelins
+      en sortent. Peu nombreuses et espacées — une cathédrale qu'on croise
+      deux fois par minute n'est plus un événement. */
+  edifices:{
+    nbCathedrales:3,
+    ecartMin:190,          // mètres entre deux
+    deniveleMax:2.4,       // le sol doit être régulier sous l'emprise
+
+    // en cellules de 1,5 m
+    nefLongMin:22, nefLongMax:34,
+    nefLargMin:5,  nefLargMax:7,
+
+    hauteurNef:15.5,       // mètres sous la clef de voûte
+    hauteurBasCote:8.0,
+    fleche:3.4,            // hauteur de l'arc au-dessus de son imposte
+    hauteurTour:26,
+    etageTour:3.6,         // un plancher tous les 3,6 m : on y monte
+    fleeheTour:9,          // la flèche qui coiffe la tour
+  },
+
   villages:{
     /* On ne les voyait pas parce qu'ils ne s'annonçaient pas et qu'ils sont
        petits devant 0,66 km². Ils gardent leur discrétion sur la carte — c'est
@@ -561,7 +609,7 @@ export const SETUP = {
        maintenant assez loin pour qu'on aperçoive une lueur et qu'on aille
        voir. Une lueur au loin, c'est une invitation ; un point sur la carte,
        c'est une course. */
-    nombre:30,
+    nombre:11,
     rayon:26,            // mètres
     maisons:[6,14],
     carcasses:[3,9],
@@ -595,8 +643,8 @@ export const SETUP = {
        7,7 m de visibilité, on ne la trouve jamais. Elles brillent maintenant,
        et elles sont trois fois plus nombreuses. Trouver une arme reste un
        événement — mais un événement qui arrive. */
-    nbArmesDansLeMonde:42,
-    nbTasDeCellules:64,
+    nbArmesDansLeMonde:16,
+    nbTasDeCellules:24,
     /* Le reflet d'un métal dans le noir. C'est ce qu'on aperçoit d'abord. */
     balise:[0.55, 0.62, 0.78],
     baliseGain:1.2,
@@ -616,6 +664,18 @@ export const SETUP = {
     suiviRegard:11.0,
     amplitudeRetard:0.55,
     inclinaisonCoup:0.9,     // radians, au sommet du geste
+  },
+
+  /* ─── LA SORTIE ───
+      Elle doit porter plus loin qu'elle ne se voit : c'est un point unique
+      dans 0,19 km², et la vue s'arrête à 7,7 m. Voir monde/sortie.js. */
+  sortie:{
+    teinte:[1.00, 0.82, 0.42],
+    gainFanal:5.5,        // la source haute, celle qui perce la brume
+    hauteurFanal:14,
+    hauteurColonne:22,    // le faisceau vertical, en mètres
+    nbJalons:14,          // la couronne de bornes autour
+    rayonJalons:42,       // à quelle distance on tombe dessus
   },
 
   sante:{
@@ -662,7 +722,7 @@ export const SETUP = {
      Les CHEMINS des stacks sont dans src/carte/rangs.js — c'est le seul
      fichier à ouvrir pour brancher tes dossiers. Ici, seulement le dosage. */
   cartes:{
-    nombreDansLeMonde:420,
+    nombreDansLeMonde:150,
     essaisPlacement:48000,
 
     /* ─── APPARENCE DANS LE MONDE ───
@@ -674,8 +734,11 @@ export const SETUP = {
        place qu'il prenait. Rapport 3:4, celui d'une carte à collectionner —
        garde-le si tu changes ces valeurs, sinon les illustrations seront
        déformées. */
-    largeur:0.74,
-    hauteur:0.99,              // 0.74 × 4/3
+    /* Une carte qu'on cherche doit se voir. 0,74 m de large, c'était la
+       taille d'une vraie carte à jouer posée dans l'espace : correct en
+       échelle, illisible à sept mètres de visibilité. */
+    largeur:1.05,
+    hauteur:1.40,              // 1.05 × 4/3
     hauteurFlottement:0.62,    // au-dessus du sol (1.10 en v3.1 : trop haut)
     amplitudeFlottement:0.055, // le balancement vertical (0.12 : trop agité)
 

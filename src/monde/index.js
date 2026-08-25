@@ -27,6 +27,7 @@ import {placerPonts} from './ponts.js';
 import {placerCachettes, cachettes} from './cachettes.js';
 import {placerProps, viderDecor, props, lights, colliders} from './props.js';
 import {placerVillages, placerBoisEtFusees, viderVillages, villages} from './villages.js';
+import {placerEdifices, viderEdifices, edifices} from './edifices.js';
 import {placerArmes, armesAuSol, cellulesAuSol} from '../joueur/armes.js';
 import {indexerProps, libererTousLesPaves, statsMaillage} from './maillage.js';
 import {importee} from './import-png.js';
@@ -60,7 +61,8 @@ export function* construireMonde(hooks){
      terrain, au bit près. C'est ici et nulle part ailleurs, pour que l'éditeur
      et les outils en profitent sans y penser. */
   semerBruit(graine());
-  viderGrille(); viderDecor(); viderVillages(); libererTousLesPaves();
+  viderGrille(); viderDecor(); viderVillages(); viderEdifices();
+  libererTousLesPaves();
   monde.refuges.length = 0; monde.combustibles.length = 0;
   monde.leurres.length = 0; monde.sortie = null;
 
@@ -111,6 +113,12 @@ export function* construireMonde(hooks){
 
   yield {nom:'villages engloutis', part:0.82};
   chrono.villages = placerVillages();
+
+  /* Les cathédrales AVANT le décor : elles aplanissent le terrain et lèvent
+     le plafond sur leur emprise, et il ne faut pas qu'un pilier semé se
+     retrouve au milieu de la nef. */
+  yield {nom:'cathédrales', part:0.86};
+  chrono.edifices = placerEdifices();
 
   yield {nom:'décor', part:0.90};
   placerProps();
@@ -167,7 +175,7 @@ export function* construireMonde(hooks){
 }
 
 /** Compteurs remplis pendant la génération. */
-const chrono = {debut:0, duree:0, ponts:0, rampes:0, galeries:0,
+const chrono = {debut:0, duree:0, ponts:0, rampes:0, galeries:0, edifices:0,
                 galeriesFinales:0, villages:0, morceaux:'', isoles:0};
 
 /* ─────────────── carte importée ─────────────── */
@@ -214,6 +222,7 @@ export function rapportMonde(){
     morceaux: chrono.morceaux,
     isoles: chrono.isoles,
     villages: chrono.villages,
+    cathedrales: chrono.edifices,
     ponts: chrono.ponts,
     cachettes: cachettes.length,
     elements: props.length,

@@ -26,7 +26,7 @@ import {
 } from './grille.js';
 import {BIOMES} from './biomes.js';
 import {autorise} from './plan.js';
-import {lights} from './props.js';
+import {lights, voitures} from './props.js';
 
 export const cachettes = [];
 
@@ -136,4 +136,38 @@ export function cachetteProche(wx, wz, portee = 2.2){
 /** Es-tu à l'intérieur de cette cachette ? (utilisé pour la sortie auto) */
 export function dansCachette(k, wx, wz){
   return k && Math.hypot(k.x - wx, k.z - wz) < 3.2;
+}
+
+
+/* ═══════════════ LES AUTRES ABRIS ═══════════════
+   « Je croyais qu'on avait dit qu'on pouvait se planquer dans les voitures. »
+
+   C'était dit, et ça n'existait pas. Une voiture est un abri au même titre
+   qu'un terrier — mais un abri PLUS FAIBLE, et c'est ce qui rend le choix
+   intéressant :
+
+     TERRIER   creusé dans la roche. On n'y est ni senti, ni entendu, le vent
+               ne passe plus, la chaleur remonte. C'est une vraie pause.
+     VOITURE   une tôle. On y est caché À LA VUE, ce qui ne sert à rien contre
+               une bête aveugle — mais l'habitacle étouffe l'odeur et amortit
+               les vibrations. Ça ne fait que RÉDUIRE, pas supprimer.
+
+   Le prix d'entrée est le même — la touche E — et la différence ne s'apprend
+   qu'en la vivant : on se planque dans une voiture, elle passe à trois mètres,
+   et elle ralentit. C'est bien plus efficace qu'un tutoriel.                */
+
+/**
+ * L'abri à portée : un terrier, ou une voiture.
+ * @returns {sorte:'terrier'|'voiture', ref} ou null
+ */
+export function abriProche(wx, wz, portee = 2.4){
+  const k = cachetteProche(wx, wz, portee);
+  if(k) return {sorte:'terrier', ref:k};
+
+  for(const v of voitures){
+    if(v.occupee) continue;
+    if(Math.hypot(v.x - wx, v.z - wz) < portee + 0.9)
+      return {sorte:'voiture', ref:v};
+  }
+  return null;
 }

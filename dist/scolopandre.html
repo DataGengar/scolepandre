@@ -39,16 +39,37 @@
   .mvue{min-height:210px}
   #veil .in{max-width:560px}
   #grille{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;max-height:44vh;overflow:auto}
-  .carte{aspect-ratio:2/3;border:1px solid var(--rule);display:grid;place-items:center;
-    font-size:8px;letter-spacing:.06em;color:var(--dim);text-align:center;padding:3px;line-height:1.3}
-  .carte.eue{color:var(--bone)}
+  /* La vignette de collection. Rapport 3:4 — celui des cartes d'Orlando —
+     et non 2:3, qui les écrasait. Pas de fond noir : l'image porte sa propre
+     découpe, et lui coller un rectangle derrière était exactement le défaut
+     signalé en jeu. */
+  .carte{aspect-ratio:3/4;border:1px solid var(--rule);display:grid;place-items:center;
+    font-size:8px;letter-spacing:.06em;color:var(--dim);text-align:center;padding:3px;
+    line-height:1.3;position:relative;overflow:hidden}
+  .carte.eue{color:var(--bone);border-color:transparent;cursor:zoom-in}
+  /* L'image en entier, jamais rognée : `contain`, pas `cover`. */
+  .carte img{position:absolute;inset:0;width:100%;height:100%;
+    object-fit:contain;display:block}
+  .carte.eue:hover{transform:scale(1.04);transition:transform .12s}
+
+  /* ── ADMIRER DE PRÈS ──
+     Un clic sur une carte possédée l'ouvre en grand. C'est demandé
+     explicitement, et c'est le seul endroit du jeu où l'on peut regarder une
+     image tranquillement : le GIF y joue tout seul, sans moteur 3D, donc
+     exactement tel qu'il a été dessiné. */
+  #loupe{position:fixed;inset:0;background:rgba(3,4,6,.96);z-index:9;
+    display:none;place-items:center;cursor:zoom-out}
+  #loupe img{max-width:min(78vw,720px);max-height:86vh;object-fit:contain;
+    image-rendering:auto}
+  #loupe .nom{position:fixed;bottom:5vh;left:0;right:0;text-align:center;
+    font-size:11px;letter-spacing:.34em;color:var(--bone)}
   #objectif{position:fixed;top:14px;left:14px;padding:8px 11px;font-size:10px;
     letter-spacing:.1em;background:rgba(7,8,10,.8);border:1px solid var(--rule)}
   #objectif b{color:var(--signal);font-weight:400}
   #inv{position:fixed;inset:0;background:rgba(5,6,8,.94);z-index:7;display:none;
     padding:60px 8vw;overflow:auto}
   #inv h2{font-size:11px;font-weight:400;letter-spacing:.4em;margin-bottom:18px}
-  #inv .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:9px}
+  #inv .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
   #tune h4{font-size:10px;font-weight:500;letter-spacing:.14em;color:var(--dim);margin-bottom:8px}
   .row{margin:0 0 7px}
   .row label{display:flex;justify-content:space-between;color:var(--dim);margin-bottom:2px}
@@ -182,6 +203,7 @@
 <div id="caught"><span>ELLE T'A TROUVÉ</span></div>
 <div id="objectif">SORTIE <b id="oDist">—</b> · CARTES <b id="oCartes">0</b> · <b id="oProf">0 m</b></div>
 <div id="inv"><h2>COLLECTION</h2><div class="g" id="invG"></div></div>
+<div id="loupe"><img alt=""><div class="nom"></div></div>
 
 <div id="charge"><div class="in">
   <h2>DESCENTE</h2>
@@ -435,10 +457,28 @@ const SETUP = {
   },
 
   /* ─────────────── CACHETTES ─────────────── */
+  /* ─── POURQUOI CES NOMBRES ONT DOUBLÉ ───
+      « Je n'ai trouvé aucun gun, cachette ou cabane. » Mesuré : les objets
+      étaient à une centaine de mètres en moyenne — donc pas rares. LE PROBLÈME
+      EST QU'ON NE VOIT QU'À 7,7 m. Pour ratisser les 0,66 km² utiles il
+      faudrait parcourir 43 km, soit plus de trois heures de marche continue.
+
+      Ajouter des objets ne réglait donc rien : il fallait qu'ils SE SIGNALENT
+      au-delà de la vue. Trois leviers, appliqués ensemble — une balise
+      lumineuse qui perce la brume, une portée de sismographe qui a du sens, et
+      une densité un peu relevée. Le troisième seul aurait juste rendu le monde
+      encombré sans le rendre lisible. */
   cachettes:{
-    nombre:16,
-    ecartMin:140,        // mètres entre deux cachettes
-    porteeMarqueur:30,   // distance à laquelle le sismographe la révèle
+    nombre:34,
+    ecartMin:90,         // mètres entre deux cachettes
+    /* 30 m, c'était moins que la distance moyenne entre deux cachettes divisée
+       par trois : on passait à côté sans jamais rien voir. */
+    porteeMarqueur:85,   // distance à laquelle le sismographe la révèle
+    /* La balise : une lueur à l'entrée, faible mais assez pour percer 7,7 m de
+       brume. C'est ce qui transforme « il y a peut-être un trou par là » en
+       « il y a un trou par là ». */
+    balise:[0.30, 0.62, 0.52],
+    baliseGain:1.5,
     filtreSon:520,       // Hz — passe-bas appliqué au monde extérieur
     // le gain de chaleur à l'abri vit dans SETUP.froid.gainCachette :
     // une seule valeur, lue par le seul module qui applique la règle du froid.
@@ -651,6 +691,11 @@ const SETUP = {
 
   /* ─────────────── CRÉATURE MÈRE ─────────────── */
   creature:{
+    /* Une voiture n'est pas un terrier. Elle multiplie la distance PERÇUE :
+       à 3,4, se planquer dans une carcasse à dix mètres revient à être à
+       trente-quatre. Ça suffit à la faire passer son chemin, ça ne suffit
+       pas si elle est déjà lancée. Voir creatures/mere.js. */
+    abriVoiture:3.4,
     vitesseTraque:5.3,
     aversionOuvert:1.1,
     monteePression:0.04,
@@ -719,12 +764,15 @@ const SETUP = {
     limiteurRatio:8,
     limiteurKnee:12,
 
-    gainNote:0.52,       // 0.30 en v2
-    gainPedale:0.34,     // 0.26 en v2
+    /* Le moteur de drones vient de SessionMasterTauri : ses tables de
+       fréquences portent leur propre niveau en dB, relevé sur des
+       enregistrements. Ces gains ne font que les mettre à l'échelle du jeu. */
+    gainNote:0.30,
+    gainPedale:0.23,
+    attaquePedale:9,     // secondes de montée : elle s'installe, elle n'arrive pas
+    gainBruit:0.30,      // le lit de bruit, mis à l'échelle par drone.bruit
 
     // Progression harmonique : le cœur du « plus mélodieux ».
-    accordDuree:[25,50], // secondes, tiré entre les deux
-    accordFondu:8,
 
     reverbCourte:3.5,    // boyau exigu
     reverbLongue:16,     // grande salle
@@ -758,8 +806,36 @@ const SETUP = {
      ont une safe zone et des trousses médicales épuisables. »
      Un village est un amas de maisons, de carcasses et de lampadaires autour
      d'une place barricadée. Rare, mais on le voit de loin à ses lumières. */
+  /* ─── ÉDIFICES ───
+      Les cathédrales. Elles ne sont pas du décor : elles ont plusieurs sols
+      empilés (monde/niveaux.js), on monte dans leurs tours, et les gobelins
+      en sortent. Peu nombreuses et espacées — une cathédrale qu'on croise
+      deux fois par minute n'est plus un événement. */
+  edifices:{
+    nbCathedrales:5,
+    ecartMin:340,          // mètres entre deux
+    deniveleMax:2.4,       // le sol doit être régulier sous l'emprise
+
+    // en cellules de 1,5 m
+    nefLongMin:22, nefLongMax:34,
+    nefLargMin:5,  nefLargMax:7,
+
+    hauteurNef:15.5,       // mètres sous la clef de voûte
+    hauteurBasCote:8.0,
+    fleche:3.4,            // hauteur de l'arc au-dessus de son imposte
+    hauteurTour:26,
+    etageTour:3.6,         // un plancher tous les 3,6 m : on y monte
+    fleeheTour:9,          // la flèche qui coiffe la tour
+  },
+
   villages:{
-    nombre:22,
+    /* On ne les voyait pas parce qu'ils ne s'annonçaient pas et qu'ils sont
+       petits devant 0,66 km². Ils gardent leur discrétion sur la carte — c'est
+       le principe, le repérage se mérite — mais leurs lampadaires portent
+       maintenant assez loin pour qu'on aperçoive une lueur et qu'on aille
+       voir. Une lueur au loin, c'est une invitation ; un point sur la carte,
+       c'est une course. */
+    nombre:30,
     rayon:26,            // mètres
     maisons:[6,14],
     carcasses:[3,9],
@@ -789,8 +865,15 @@ const SETUP = {
     oubliSecondes:38,       // temps pour oublier un coup
     cellulesDepart:0,       // le thunderbolt se trouve vide
     cellulesParTas:4,       // munitions ramassées d'un coup
-    nbArmesDansLeMonde:14,  // exemplaires semés
-    nbTasDeCellules:26,
+    /* 14 armes sur 0,66 km² utiles, c'était une arme tous les 47 000 m² : à
+       7,7 m de visibilité, on ne la trouve jamais. Elles brillent maintenant,
+       et elles sont trois fois plus nombreuses. Trouver une arme reste un
+       événement — mais un événement qui arrive. */
+    nbArmesDansLeMonde:42,
+    nbTasDeCellules:64,
+    /* Le reflet d'un métal dans le noir. C'est ce qu'on aperçoit d'abord. */
+    balise:[0.55, 0.62, 0.78],
+    baliseGain:1.2,
 
     /* ─── COMMENT ON LA TIENT ───
         L'arme est dessinée devant la caméra, pas dans le monde. Ces valeurs
@@ -865,8 +948,11 @@ const SETUP = {
        place qu'il prenait. Rapport 3:4, celui d'une carte à collectionner —
        garde-le si tu changes ces valeurs, sinon les illustrations seront
        déformées. */
-    largeur:0.74,
-    hauteur:0.99,              // 0.74 × 4/3
+    /* Une carte qu'on cherche doit se voir. 0,74 m de large, c'était la
+       taille d'une vraie carte à jouer posée dans l'espace : correct en
+       échelle, illisible à sept mètres de visibilité. */
+    largeur:1.05,
+    hauteur:1.40,              // 1.05 × 4/3
     hauteurFlottement:0.62,    // au-dessus du sol (1.10 en v3.1 : trop haut)
     amplitudeFlottement:0.055, // le balancement vertical (0.12 : trop agité)
 
@@ -1391,7 +1477,14 @@ const CODE_BIOME = [
 
 /** Index de la nappe audio pour un biome. Un pour un, mais nommé : si un jour
     deux biomes partagent une nappe, c'est ici que ça se dit. */
-const NAPPE_DE_BIOME = ['gouffre','givre','beton','gelisol','ville'];
+/* Quel drone pour quel biome. Les identifiants viennent de audio/nappes.js,
+   dont le moteur est repris de SessionMasterTauri.
+
+   Le choix n'est pas décoratif : « caverne » a sa fondamentale à 55 Hz et
+   monte peu, « abysse » espace ses notes de 1,5 s et porte 49 % de bruit,
+   « cathédrale » est en quintes très ouvertes — c'est elle qui ira sous les
+   voûtes. Chaque endroit doit s'entendre avant de se voir. */
+const NAPPE_DE_BIOME = ['caverne','brume','abysse','suspendu','cathedrale'];
 
   return { BIOMES, CODE_BIOME, ETAGES, NAPPE_DE_BIOME, biomePourAltitude };
 })();
@@ -3586,138 +3679,6 @@ function batir(props, t, horiz){
   return { placerPonts, statsPonts };
 })();
 
-/* ─── src/monde/cachettes.js ─── */
-__M['M_monde_cachettes'] = (function(){
-  const { SETUP } = __M['M_setup'];
-  const { rnd, ri, rf } = __M['M_noyau_rng'];
-  const { GW, GH, CELL, FLOOR, grid, floorH, ceilH, openN, blocked, biome, vide, idx, inB, isFloor, isFree, celluleLibre } = __M['M_monde_grille'];
-  const { BIOMES } = __M['M_monde_biomes'];
-  const { autorise } = __M['M_monde_plan'];
-/* ═══ MONDE / CACHETTES ═══
-   Littéralement des trous. Peu dans le monde, discrètement visibles sur la
-   carte.
-
-   RÈGLE DE LA CACHETTE — tenue partout, comme celle du froid :
-     · on y entre avec E quand on est à moins de 2 m de l'entrée ;
-     · dedans, la créature ne perçoit NI ton odeur NI tes vibrations
-       (creatures/mere.js interroge joueur.abrite avant de te sentir) ;
-     · le vent ne t'atteint plus : l'exposition au froid tombe à zéro et la
-       chaleur remonte lentement ;
-     · le monde extérieur passe par un filtre passe-bas : on entend qu'on est
-       enterré ;
-     · sur le sismographe : un petit losange creux, visible seulement à moins
-       de SETUP.cachettes.porteeMarqueur. « Discrètement visible » : il faut
-       s'en approcher pour le voir, et donc les mémoriser.
-
-   Ce n'est pas un abri gratuit : dedans on ne voit presque rien, on ne ramasse
-   rien, et la créature continue de patrouiller. C'est une pause, pas une
-   solution.                                                                 */
-
-
-
-
-
-
-
-const cachettes = [];
-
-/**
- * Creuse les trous. Chaque cachette est une alcôve de 2×2 cellules creusée
- * DANS la roche, reliée au couloir par une entrée d'une seule cellule et à
- * plafond bas — on doit ramper pour y entrer.
- */
-function placerCachettes(props){
-  cachettes.length = 0;
-  const S = SETUP.cachettes;
-
-  for(let essai=0; essai<60000 && cachettes.length < S.nombre; essai++){
-    const c = celluleLibre(ri);
-    const i0 = idx(c.x, c.z);
-    // on veut une paroi juste à côté : la cachette se creuse dedans,
-    // et plutôt dans un boyau que dans une salle
-    if(openN[i0] > 0.55) continue;
-    if(!autorise('cachettes', c.x, c.z)) continue;
-
-    let dir = null;
-    for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
-      if(isFloor(c.x+dx, c.z+dz)) continue;                  // il faut du plein
-      if(!inB(c.x+dx*4, c.z+dz*4)) continue;
-      // les 4 cellules à creuser doivent être de la roche, pas un autre couloir
-      let plein = true;
-      for(let k=1; k<=4 && plein; k++)
-        for(let s=0; s<=1 && plein; s++){
-          const px = c.x + dx*k + (dz ? s : 0), pz = c.z + dz*k + (dx ? s : 0);
-          if(!inB(px,pz) || grid[idx(px,pz)] === FLOOR) plein = false;
-        }
-      if(plein){ dir = [dx,dz]; break; }
-    }
-    if(!dir) continue;
-
-    const [dx,dz] = dir;
-    const wx = (c.x+0.5)*CELL, wz = (c.z+0.5)*CELL;
-    if(cachettes.some(k => Math.hypot(k.x-wx, k.z-wz) < S.ecartMin)) continue;
-
-    const h = floorH[i0], b = biome[i0];
-    const cellules = [];
-
-    // entrée : une cellule, plafond très bas → rampé obligatoire
-    {
-      const ex = c.x+dx, ez = c.z+dz, ei = idx(ex,ez);
-      grid[ei] = FLOOR; floorH[ei] = h - 0.25; ceilH[ei] = h + 0.95;
-      biome[ei] = b; openN[ei] = 0.05; blocked[ei] = 0; vide[ei] = 0;
-      cellules.push(ei);
-    }
-    // alcôve 2 × 2, un peu plus haute : on peut s'y asseoir
-    for(let k=2; k<=3; k++) for(let s=0; s<=1; s++){
-      const px = c.x + dx*k + (dz ? s : 0), pz = c.z + dz*k + (dx ? s : 0);
-      if(!inB(px,pz)) continue;
-      const pi = idx(px,pz);
-      grid[pi] = FLOOR; floorH[pi] = h - 0.25; ceilH[pi] = h + 1.35;
-      biome[pi] = b; openN[pi] = 0.05; blocked[pi] = 0; vide[pi] = 0;
-      cellules.push(pi);
-    }
-
-    const centre = {
-      x: (c.x + dx*2.5 + 0.5) * CELL,
-      z: (c.z + dz*2.5 + 0.5) * CELL,
-      y: h - 0.25,
-      entree: {x: (c.x + dx + 0.5)*CELL, z: (c.z + dz + 0.5)*CELL},
-      cellules,
-    };
-    cachettes.push(centre);
-
-    /* Un repère discret à l'entrée : trois éclats de cristal très faibles.
-       Assez pour qu'on remarque le trou en passant devant à la torche, pas
-       assez pour le voir de loin dans le fog. */
-    const t = BIOMES[b].lum;
-    const parts = [];
-    for(let k=0; k<3; k++)
-      parts.push({
-        x: centre.entree.x + rf(-0.5,0.5), y: h + rf(0.1,0.6),
-        z: centre.entree.z + rf(-0.5,0.5),
-        sx:0.06, sy:rf(0.14,0.30), sz:0.06,
-        c:[t[0]*1.5, t[1]*1.8, t[2]*2.2], r:rf(-0.4,0.4), emis:1,
-      });
-    props.push({parts, cell: idx(c.x+dx, c.z+dz)});
-  }
-  return cachettes.length;
-}
-
-/** La cachette dont l'entrée est à portée, ou null. */
-function cachetteProche(wx, wz, portee = 2.2){
-  for(const k of cachettes)
-    if(Math.hypot(k.entree.x - wx, k.entree.z - wz) < portee) return k;
-  return null;
-}
-
-/** Es-tu à l'intérieur de cette cachette ? (utilisé pour la sortie auto) */
-function dansCachette(k, wx, wz){
-  return k && Math.hypot(k.x - wx, k.z - wz) < 3.2;
-}
-
-  return { cachetteProche, cachettes, dansCachette, placerCachettes };
-})();
-
 /* ─── src/monde/formes.js ─── */
 __M['M_monde_formes'] = (function(){
   const { hash2 } = __M['M_noyau_math'];
@@ -4152,6 +4113,18 @@ __M['M_monde_props'] = (function(){
 
 
 const props = [], lights = [], colliders = [];
+
+/* ═══ LES VOITURES OÙ L'ON SE PLANQUE ═══
+   Une liste à part, parce qu'une voiture n'est pas seulement du décor : on
+   peut s'y cacher. Le reste du jeu ne va pas fouiller `props` pour retrouver
+   les carcasses — il lit ce tableau.
+
+   Seules celles qui sont SUR LEURS ROUES comptent. Une voiture retournée n'a
+   plus d'habitacle où se glisser, et prétendre le contraire serait le genre
+   de règle qu'on ne comprend qu'en lisant le code.
+
+   [{x, z, y, ry, occupee}] */
+const voitures = [];
 
 /* ─────────────── primitives ─────────────── */
 
@@ -4608,41 +4581,168 @@ function addProp(kind, x, z, i){
                      c:[0.16,0.28,0.72], ph:rnd()*6.28});
       solid = false; break; }
 
-    case 'carcasse': {
-      // une voiture, sur le flanc ou sur le toit. Jamais à l'endroit.
-      const L = rf(3.6, 4.6), W = rf(1.6, 1.9), H = rf(1.2, 1.5);
-      const a = rnd()*6.283;
-      const cs = Math.cos(a), sn = Math.sin(a);
-      const roule = rnd() < 0.5 ? 1.5708 : rf(-0.5, 0.5);   // sur le flanc, ou penchée
-      const tole = [.13,.115,.105], rouille = [.20,.11,.07];
-      const c1 = rnd() < 0.4 ? rouille : tole;
+    /* ══════════════ UNE VOITURE ══════════════
+       « Les voitures sont des rochers énormes, ça ne va pas. Être beaucoup
+       plus détaillées et réalistes. »
 
-      // caisse
-      parts.push({x:wx, y:h + (roule > 1 ? W/2 : H/2), z:wz,
-                  sx:L, sy:(roule > 1 ? W : H), sz:(roule > 1 ? H : W),
-                  c:c1, r:roule*0.35});
-      // pavillon, écrasé
-      parts.push({x:wx - cs*L*0.10, y:h + (roule > 1 ? W*0.55 : H*0.92), z:wz - sn*L*0.10,
-                  sx:L*0.52, sy:H*0.40, sz:W*0.86, c:[c1[0]*.8,c1[1]*.8,c1[2]*.8], r:roule*0.35});
-      // roues : celles qui restent
-      for(const [ox, oz] of [[L*0.34,W*0.5],[L*0.34,-W*0.5],[-L*0.34,W*0.5],[-L*0.34,-W*0.5]]){
-        if(rnd() < 0.28) continue;                 // il en manque toujours une
-        const px = wx + cs*ox - sn*oz, pz = wz + sn*ox + cs*oz;
-        parts.push(colonne([px, h+0.32, pz], .30, [px+cs*0.16, h+0.32, pz+sn*0.16], .30,
-                           [.055,.05,.05]));
+       CE QUI N'ALLAIT PAS. L'ancienne version posait une grosse boîte pour la
+       caisse, une plus petite pour le pavillon, quatre cylindres pour les
+       roues — et roulait le tout de 90° une fois sur deux. Une boîte inclinée
+       de 4,6 m avec des cylindres qui dépassent, dans le noir, à travers le
+       brouillard : c'est un rocher. La faute n'est pas le manque de polygones,
+       c'est le manque de SILHOUETTE.
+
+       CE QUI FAIT QU'ON RECONNAÎT UNE VOITURE, dans l'ordre d'importance :
+
+         1. LE PROFIL EN TROIS TEMPS — capot bas, habitacle haut, coffre bas.
+            C'est la seule chose qu'on lit de loin, et l'ancienne version ne
+            l'avait pas : elle avait une caisse uniforme.
+         2. LES PARE-BRISE INCLINÉS. Deux plans penchés, avant et arrière. Ce
+            sont eux qui donnent l'allure ; verticaux, c'est un camion.
+         3. LES ROUES DANS LES PASSAGES. Une roue posée à côté de la caisse
+            fait un jouet. Il faut qu'elle soit encastrée, et que l'aile la
+            recouvre.
+         4. Le reste — vitres, phares, pare-chocs, portière ouverte — n'est
+            que du détail. Nécessaire de près, sans effet sur la
+            reconnaissance de loin.
+
+       Elle est POSÉE SUR SES ROUES par défaut. La v3 la couchait une fois sur
+       deux « parce que c'est plus dramatique » ; en réalité une voiture sur le
+       flanc n'est plus lisible comme une voiture, et on en avait fait la règle
+       plutôt que l'exception. Une sur cinq est retournée, et celle-là est
+       clairement retournée.
+
+       Les primitives de la v3.4 rendent tout ça possible : `coin` pour les
+       pare-brise inclinés et les ailes, `plaque` pour les vitres, `ry` pour
+       l'orientation — avant, on ne pouvait qu'empiler des boîtes sur les axes. */
+    case 'carcasse': {
+      const L = rf(4.0, 4.7), W = rf(1.72, 1.90);
+      const ry = rnd() * 6.283;
+      const cs = Math.cos(ry), sn = Math.sin(ry);
+      /* Repère local : u vers l'avant, v en travers. Tout est décrit dans ce
+         repère, ce qui permet d'orienter la voiture d'un seul paramètre. */
+      const P = (u, v) => [wx + cs*u - sn*v, wz + sn*u + cs*v];
+
+      const retournee = rnd() < 0.2;
+      const teintes = [[.16,.15,.15], [.13,.11,.10], [.10,.12,.14],
+                       [.17,.11,.08], [.11,.13,.11]];
+      const tole = teintes[ri(0, teintes.length-1)];
+      const sombre = [tole[0]*0.55, tole[1]*0.55, tole[2]*0.55];
+      const noir = [.045,.042,.042];
+      const vitre = [.055,.075,.080];
+
+      // hauteurs de la caisse ; tout part de là
+      const ySeuil = retournee ? 1.28 : 0.42;     // bas de caisse
+      const yCapot = ySeuil + 0.34;               // haut du capot
+      const yToit  = ySeuil + 0.98;               // pavillon
+
+      const boite = (u, v, y, su, sv, sy, c, em) => {
+        const p = P(u, v);
+        const q = bloc(p[0], h + y, p[1], su, sy, sv, c, 0, em || 0);
+        q.ry = ry;
+        parts.push(q);
+        return q;
+      };
+
+      /* ── 1. LE PROFIL EN TROIS TEMPS ──
+         C'est la silhouette, et c'est tout ce qui compte de loin. */
+      boite(  L*0.30, 0, (ySeuil + yCapot)/2, L*0.36, W*0.98,
+              yCapot - ySeuil + 0.16, tole);                     // capot
+      boite(-L*0.02, 0, (ySeuil + yToit)/2 + 0.05, L*0.40, W*0.99,
+              yToit - ySeuil, tole);                             // habitacle
+      boite(-L*0.34, 0, (ySeuil + yCapot)/2, L*0.30, W*0.96,
+              yCapot - ySeuil + 0.10, tole);                     // coffre
+
+      /* ── 2. LES PARE-BRISE INCLINÉS ──
+         Deux coins adossés à l'habitacle. Sans eux, c'est un fourgon. */
+      if(!retournee){
+        for(const [u, sens] of [[L*0.19, -1], [L*-0.24, 1]]){
+          const p = P(u, 0);
+          parts.push({coin: sens, x:p[0], y: h + yCapot + (yToit-yCapot)/2,
+                      z:p[1], sx: L*0.13, sy: yToit - yCapot, sz: W*0.95,
+                      c: vitre, ry: ry + Math.PI/2});
+        }
       }
-      // vitres brisées : quelques éclats au sol
-      for(let q=0;q<Math.round(4*D);q++)
-        parts.push(bloc(wx+rf(-L*0.6,L*0.6), h+0.03, wz+rf(-W,W),
-                        .10,.02,.10, [.30,.36,.36], rnd()*3, 0.15));
-      // le plafonnier tient encore, une fois sur trois
-      if(rnd() < 0.34 && lights.length < SETUP.decor.maxLumieres){
-        parts.push(bloc(wx, h+H*0.7, wz, .18,.06,.18, [2.0,1.9,1.5], 0, 1));
-        lights.push({x:wx, y:h+H*0.8, z:wz, c:[0.9,0.85,0.62], ph:rnd()*6.28});
+
+      /* ── 3. LES ROUES, DANS LEURS PASSAGES ──
+         Encastrées de 40 % dans la caisse. Une roue posée à côté fait jouet. */
+      const empatt = L*0.31, voie = W*0.46;
+      for(const [u, v] of [[empatt, voie], [empatt, -voie],
+                           [-empatt, voie], [-empatt, -voie]]){
+        const manque = rnd() < 0.18;               // il en manque parfois une
+        const p = P(u, v);
+        const yR = retournee ? h + ySeuil + 0.55 : h + 0.34;
+        if(!manque){
+          // le pneu : un prisme court, couché en travers
+          const a = P(u, v + 0.10), b2 = P(u, v - 0.10);
+          parts.push({tube:[[a[0], yR, a[1]], 0.335,
+                            [b2[0], yR, b2[1]], 0.335, 8], c: noir});
+          // la jante, plus claire, au centre
+          const c1 = P(u, v + 0.12), c2 = P(u, v - 0.12);
+          parts.push({tube:[[c1[0], yR, c1[1]], 0.16,
+                            [c2[0], yR, c2[1]], 0.16, 6], c: [.22,.22,.23]});
+        }
+        // l'aile qui coiffe la roue, même absente : le passage reste
+        if(!retournee)
+          boite(u, v*1.06, ySeuil + 0.30, 0.86, 0.20, 0.34, sombre);
       }
-      /* Une voiture est longue et étroite. Le disque d'1,40 m qu'elle posait
-         avant débordait de deux mètres à l'avant comme à l'arrière : on se
-         cognait dans le vide. Elle prend maintenant la forme de ses parts. */
+
+      /* ── 4. LE DÉTAIL ──
+         Sans effet à trente mètres, indispensable à trois. */
+      if(D >= 1 && !retournee){
+        // vitres latérales : des plaques, quatre triangles chacune
+        for(const sd of [1, -1]){
+          if(rnd() < 0.45) continue;               // beaucoup sont brisées
+          const p = P(-L*0.02, sd * W*0.50);
+          parts.push({plaque:1, x:p[0], y: h + (yCapot + yToit)/2 + 0.04,
+                      z:p[1], sx: L*0.36, sy: (yToit - yCapot)*0.86,
+                      c: vitre, ry: ry});
+        }
+        // pare-chocs
+        boite( L*0.49, 0, ySeuil + 0.02, 0.14, W*1.02, 0.20, sombre);
+        boite(-L*0.49, 0, ySeuil + 0.02, 0.14, W*1.02, 0.20, sombre);
+        // phares : deux blocs pâles, éteints depuis longtemps
+        for(const sd of [1, -1])
+          boite(L*0.47, sd * W*0.32, ySeuil + 0.24, 0.10, 0.26, 0.16,
+                [.30,.29,.26]);
+        // une portière ouverte, une fois sur trois
+        if(rnd() < 0.34){
+          const sd = rnd() < 0.5 ? 1 : -1;
+          const p = P(-L*0.10, sd * W*0.54);
+          const q = bloc(p[0], h + ySeuil + 0.42, p[1],
+                         L*0.30, 0.78, 0.09, tole);
+          q.ry = ry + sd * 1.05;                   // battante
+          parts.push(q);
+        }
+      }
+
+      // les éclats de verre au sol, autour
+      for(let q=0; q<Math.round(5*D); q++){
+        const p = P(rf(-L*0.6, L*0.6), rf(-W, W));
+        parts.push({plaque:1, x:p[0], y:h+0.02, z:p[1],
+                    sx:.11, sy:.09, c:[.22,.28,.28], r:1.5708,
+                    ry: rnd()*3});
+      }
+
+      /* Le plafonnier tient encore, une fois sur quatre. C'est la seule
+         lumière du village qui soit à hauteur d'homme, et c'est ce qui fait
+         qu'on remarque une voiture avant de la distinguer. */
+      if(rnd() < 0.26 && lights.length < SETUP.decor.maxLumieres){
+        const p = P(-L*0.02, 0);
+        parts.push(bloc(p[0], h + yToit - 0.10, p[1], .20,.05,.20,
+                        [1.6,1.5,1.2], 0, 1));
+        lights.push({x:p[0], y:h + yToit - 0.2, z:p[1],
+                     c:[0.62,0.58,0.44], ph:rnd()*6.28});
+      }
+
+      /* Une voiture est longue et étroite : elle prend la forme de ses parts,
+         pas un disque. Le disque d'1,40 m de la v3 débordait de deux mètres à
+         l'avant comme à l'arrière — on se cognait dans le vide. */
+      /* On la retient : c'est une planque. Pas les retournées — un habitacle
+         sur le toit n'en est plus un. */
+      if(!retournee)
+        voitures.push({x: wx, z: wz, y: h + ySeuil + 0.35, ry, occupee: false});
+
       dur = true; solid = false; break; }
 
     case 'lampadaire': {
@@ -4833,9 +4933,192 @@ function placerProps(){
 /** Remise à zéro avant une nouvelle génération. */
 function viderDecor(){
   props.length = 0; lights.length = 0; colliders.length = 0;
+  voitures.length = 0;
 }
 
-  return { addProp, colliders, lights, placerProps, props, viderDecor };
+  return { addProp, colliders, lights, placerProps, props, viderDecor, voitures };
+})();
+
+/* ─── src/monde/cachettes.js ─── */
+__M['M_monde_cachettes'] = (function(){
+  const { SETUP } = __M['M_setup'];
+  const { rnd, ri, rf } = __M['M_noyau_rng'];
+  const { GW, GH, CELL, FLOOR, grid, floorH, ceilH, openN, blocked, biome, vide, idx, inB, isFloor, isFree, celluleLibre } = __M['M_monde_grille'];
+  const { BIOMES } = __M['M_monde_biomes'];
+  const { autorise } = __M['M_monde_plan'];
+  const { lights, voitures } = __M['M_monde_props'];
+/* ═══ MONDE / CACHETTES ═══
+   Littéralement des trous. Peu dans le monde, discrètement visibles sur la
+   carte.
+
+   RÈGLE DE LA CACHETTE — tenue partout, comme celle du froid :
+     · on y entre avec E quand on est à moins de 2 m de l'entrée ;
+     · dedans, la créature ne perçoit NI ton odeur NI tes vibrations
+       (creatures/mere.js interroge joueur.abrite avant de te sentir) ;
+     · le vent ne t'atteint plus : l'exposition au froid tombe à zéro et la
+       chaleur remonte lentement ;
+     · le monde extérieur passe par un filtre passe-bas : on entend qu'on est
+       enterré ;
+     · sur le sismographe : un petit losange creux, visible seulement à moins
+       de SETUP.cachettes.porteeMarqueur. « Discrètement visible » : il faut
+       s'en approcher pour le voir, et donc les mémoriser.
+
+   Ce n'est pas un abri gratuit : dedans on ne voit presque rien, on ne ramasse
+   rien, et la créature continue de patrouiller. C'est une pause, pas une
+   solution.                                                                 */
+
+
+
+
+
+
+
+
+const cachettes = [];
+
+/**
+ * Creuse les trous. Chaque cachette est une alcôve de 2×2 cellules creusée
+ * DANS la roche, reliée au couloir par une entrée d'une seule cellule et à
+ * plafond bas — on doit ramper pour y entrer.
+ */
+function placerCachettes(props){
+  cachettes.length = 0;
+  const S = SETUP.cachettes;
+
+  for(let essai=0; essai<60000 && cachettes.length < S.nombre; essai++){
+    const c = celluleLibre(ri);
+    const i0 = idx(c.x, c.z);
+    // on veut une paroi juste à côté : la cachette se creuse dedans,
+    // et plutôt dans un boyau que dans une salle
+    if(openN[i0] > 0.55) continue;
+    if(!autorise('cachettes', c.x, c.z)) continue;
+
+    let dir = null;
+    for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      if(isFloor(c.x+dx, c.z+dz)) continue;                  // il faut du plein
+      if(!inB(c.x+dx*4, c.z+dz*4)) continue;
+      // les 4 cellules à creuser doivent être de la roche, pas un autre couloir
+      let plein = true;
+      for(let k=1; k<=4 && plein; k++)
+        for(let s=0; s<=1 && plein; s++){
+          const px = c.x + dx*k + (dz ? s : 0), pz = c.z + dz*k + (dx ? s : 0);
+          if(!inB(px,pz) || grid[idx(px,pz)] === FLOOR) plein = false;
+        }
+      if(plein){ dir = [dx,dz]; break; }
+    }
+    if(!dir) continue;
+
+    const [dx,dz] = dir;
+    const wx = (c.x+0.5)*CELL, wz = (c.z+0.5)*CELL;
+    if(cachettes.some(k => Math.hypot(k.x-wx, k.z-wz) < S.ecartMin)) continue;
+
+    const h = floorH[i0], b = biome[i0];
+    const cellules = [];
+
+    // entrée : une cellule, plafond très bas → rampé obligatoire
+    {
+      const ex = c.x+dx, ez = c.z+dz, ei = idx(ex,ez);
+      grid[ei] = FLOOR; floorH[ei] = h - 0.25; ceilH[ei] = h + 0.95;
+      biome[ei] = b; openN[ei] = 0.05; blocked[ei] = 0; vide[ei] = 0;
+      cellules.push(ei);
+    }
+    // alcôve 2 × 2, un peu plus haute : on peut s'y asseoir
+    for(let k=2; k<=3; k++) for(let s=0; s<=1; s++){
+      const px = c.x + dx*k + (dz ? s : 0), pz = c.z + dz*k + (dx ? s : 0);
+      if(!inB(px,pz)) continue;
+      const pi = idx(px,pz);
+      grid[pi] = FLOOR; floorH[pi] = h - 0.25; ceilH[pi] = h + 1.35;
+      biome[pi] = b; openN[pi] = 0.05; blocked[pi] = 0; vide[pi] = 0;
+      cellules.push(pi);
+    }
+
+    const centre = {
+      x: (c.x + dx*2.5 + 0.5) * CELL,
+      z: (c.z + dz*2.5 + 0.5) * CELL,
+      y: h - 0.25,
+      entree: {x: (c.x + dx + 0.5)*CELL, z: (c.z + dz + 0.5)*CELL},
+      cellules,
+    };
+    cachettes.push(centre);
+
+    /* ── UNE BALISE, PAS UN REPÈRE DISCRET ──
+       La version précédente posait trois éclats « assez pour qu'on remarque le
+       trou en passant devant à la torche, pas assez pour le voir de loin ».
+       C'était l'intention, et c'était une erreur : avec 7,7 m de visibilité,
+       « en passant devant » veut dire à moins de deux mètres. On ne trouvait
+       aucune cachette, jamais.
+
+       Il faut une VRAIE source lumineuse. Une lampe perce le brouillard bien
+       au-delà de la distance à laquelle on distingue une surface : c'est
+       exactement la propriété dont on a besoin. On aperçoit une lueur verte
+       au loin, on va voir, on trouve un trou. */
+    const t = BIOMES[b].lum;
+    const bal = S.balise;
+    const parts = [];
+    for(let k=0; k<3; k++)
+      parts.push({
+        x: centre.entree.x + rf(-0.5,0.5), y: h + rf(0.1,0.6),
+        z: centre.entree.z + rf(-0.5,0.5),
+        sx:0.07, sy:rf(0.18,0.38), sz:0.07,
+        c:[bal[0]*2.2, bal[1]*2.4, bal[2]*2.2], r:rf(-0.4,0.4), emis:1,
+      });
+    props.push({parts, cell: idx(c.x+dx, c.z+dz)});
+
+    if(lights.length < SETUP.decor.maxLumieres)
+      lights.push({x: centre.entree.x, y: h + 0.55, z: centre.entree.z,
+                   c:[bal[0]*S.baliseGain, bal[1]*S.baliseGain,
+                      bal[2]*S.baliseGain], ph: rnd()*6.28});
+  }
+  return cachettes.length;
+}
+
+/** La cachette dont l'entrée est à portée, ou null. */
+function cachetteProche(wx, wz, portee = 2.2){
+  for(const k of cachettes)
+    if(Math.hypot(k.entree.x - wx, k.entree.z - wz) < portee) return k;
+  return null;
+}
+
+/** Es-tu à l'intérieur de cette cachette ? (utilisé pour la sortie auto) */
+function dansCachette(k, wx, wz){
+  return k && Math.hypot(k.x - wx, k.z - wz) < 3.2;
+}
+
+
+/* ═══════════════ LES AUTRES ABRIS ═══════════════
+   « Je croyais qu'on avait dit qu'on pouvait se planquer dans les voitures. »
+
+   C'était dit, et ça n'existait pas. Une voiture est un abri au même titre
+   qu'un terrier — mais un abri PLUS FAIBLE, et c'est ce qui rend le choix
+   intéressant :
+
+     TERRIER   creusé dans la roche. On n'y est ni senti, ni entendu, le vent
+               ne passe plus, la chaleur remonte. C'est une vraie pause.
+     VOITURE   une tôle. On y est caché À LA VUE, ce qui ne sert à rien contre
+               une bête aveugle — mais l'habitacle étouffe l'odeur et amortit
+               les vibrations. Ça ne fait que RÉDUIRE, pas supprimer.
+
+   Le prix d'entrée est le même — la touche E — et la différence ne s'apprend
+   qu'en la vivant : on se planque dans une voiture, elle passe à trois mètres,
+   et elle ralentit. C'est bien plus efficace qu'un tutoriel.                */
+
+/**
+ * L'abri à portée : un terrier, ou une voiture.
+ * @returns {sorte:'terrier'|'voiture', ref} ou null
+ */
+function abriProche(wx, wz, portee = 2.4){
+  const k = cachetteProche(wx, wz, portee);
+  if(k) return {sorte:'terrier', ref:k};
+
+  for(const v of voitures){
+    if(v.occupee) continue;
+    if(Math.hypot(v.x - wx, v.z - wz) < portee + 0.9)
+      return {sorte:'voiture', ref:v};
+  }
+  return null;
+}
+
+  return { abriProche, cachetteProche, cachettes, dansCachette, placerCachettes };
 })();
 
 /* ─── src/monde/villages.js ─── */
@@ -5132,6 +5415,691 @@ function viderVillages(){
 }
 
   return { bois, chargerVillagesVus, dansCabane, dansSafe, fusees, marquerDecouvert, placerBoisEtFusees, placerVillages, trousses, viderVillages, villages };
+})();
+
+/* ─── src/monde/niveaux.js ─── */
+__M['M_monde_niveaux'] = (function(){
+  const { GW, GH, CELL, floorH, ceilH, idx } = __M['M_monde_grille'];
+/* ═══ MONDE / NIVEAUX ═══
+   Plusieurs sols par colonne. C'est le changement de moteur.
+
+   ── CE QUI BLOQUAIT ────────────────────────────────────────────────────────
+   Le monde est un CHAMP DE HAUTEURS : une seule altitude de sol et une seule
+   de plafond par cellule. C'est une structure merveilleuse pour une caverne —
+   compacte, rapide, facile à creuser — et elle interdit trois choses :
+
+     · un surplomb : rien ne peut passer AU-DESSUS d'autre chose ;
+     · une voûte : un plafond en arc a besoin de matière au-dessus du vide ;
+     · un étage : on ne peut pas marcher sur le toit de ce qu'on traverse.
+
+   Une cathédrale, c'est exactement ces trois choses. Tant qu'on reste sur un
+   champ de hauteurs, on peut poser des colonnes et un décor de nef, mais on ne
+   peut pas monter dans une tour ni descendre dans une crypte.
+
+   Un demi-pas avait déjà été fait : `pont[]` et `pontH[]` donnent UN étage
+   au-dessus du terrain, ce qui a suffi aux passerelles. Ce fichier généralise
+   ce demi-pas.
+
+   ── CE QU'ON NE FAIT PAS, ET POURQUOI ──────────────────────────────────────
+   On ne passe PAS à un champ de densité avec extraction de surface (marching
+   cubes). Ce serait la réponse complète, et elle demanderait de réécrire la
+   génération, la collision, la navigation et le maillage — tout ce qui suppose
+   « une hauteur par colonne », c'est-à-dire à peu près tout.
+
+   Or ce dont on a besoin n'est pas de la roche organique : ce sont des
+   BÂTIMENTS. Un bâtiment a des planchers plats et empilés. Une liste de
+   planchers par cellule suffit, coûte presque rien, et n'oblige à toucher
+   qu'un seul endroit du code du joueur.
+
+   ── LA STRUCTURE ───────────────────────────────────────────────────────────
+   Creuse, volontairement. Les bâtiments couvrent quelques milliers de cellules
+   sur 1,18 M : un tableau par niveau gaspillerait vingt mégaoctets pour du
+   vide. Une Map d'indice de cellule vers une liste de planchers, triée par
+   altitude, coûte ce qu'elle occupe.
+
+   Un PLANCHER, c'est :
+     y        la cote sur laquelle on marche
+     tete     le dégagement au-dessus : sous cette hauteur, on ne rentre pas
+     mur      vrai si la cellule est pleine à ce niveau (un pilier, un mur)
+     edifice  à quel bâtiment il appartient, pour le retrouver
+
+   Le terrain lui-même n'est PAS dans cette liste. Il reste le sol par défaut,
+   et `niveaux.js` ne décrit que ce qui s'ajoute par-dessus ou par-dessous.  */
+
+
+
+/** cellule → [{y, tete, mur, edifice}] trié par y croissant. */
+const parCellule = new Map();
+
+/** Combien de planchers en tout, pour le rapport de génération. */
+const statsNiveaux = {planchers: 0, cellules: 0, edifices: 0};
+
+function viderNiveaux(){
+  parCellule.clear();
+  statsNiveaux.planchers = 0;
+  statsNiveaux.cellules = 0;
+  statsNiveaux.edifices = 0;
+}
+
+/**
+ * Ajoute un plancher sur une cellule.
+ *
+ * @param tete  dégagement au-dessus, en mètres. En dessous de la taille du
+ *              joueur, la cellule existe mais on ne peut pas s'y tenir — c'est
+ *              ce qui distingue un plancher d'une simple dalle décorative.
+ */
+function poserPlancher(cx, cz, y, tete = 2.4, edifice = 0, mur = false){
+  if(cx < 0 || cz < 0 || cx >= GW || cz >= GH) return;
+  const i = idx(cx, cz);
+  let l = parCellule.get(i);
+  if(!l){ l = []; parCellule.set(i, l); statsNiveaux.cellules++; }
+
+  /* Deux planchers à dix centimètres l'un de l'autre ne veulent rien dire, et
+     feraient osciller le joueur entre les deux. On fusionne. */
+  for(const p of l){
+    if(Math.abs(p.y - y) < 0.35){
+      p.tete = Math.max(p.tete, tete);
+      p.mur = p.mur && mur;
+      return;
+    }
+  }
+  l.push({y, tete, mur, edifice});
+  l.sort((a, b) => a.y - b.y);
+  statsNiveaux.planchers++;
+}
+
+/** Les planchers d'une cellule, ou null. Ne pas modifier le tableau rendu. */
+function planchersDe(cx, cz){
+  if(cx < 0 || cz < 0 || cx >= GW || cz >= GH) return null;
+  return parCellule.get(idx(cx, cz)) || null;
+}
+
+const aDesNiveaux = () => parCellule.size > 0;
+
+/* ═══════════════ CE QUE LE JOUEUR DEMANDE ═══════════════ */
+
+/**
+ * Sur quoi se tient-on, à cette position et à cette altitude ?
+ *
+ * C'est LA question que pose le code du joueur, et elle a une seule bonne
+ * réponse : la surface praticable la plus haute qui soit AU NIVEAU DES PIEDS
+ * ou juste en dessous. Pas la plus proche — la plus haute en dessous.
+ *
+ * Prendre la plus proche ferait remonter le joueur d'un étage dès qu'il passe
+ * sous un plancher en sautant, ce qui est exactement le genre de téléportation
+ * qui rend un jeu inexplicable.
+ *
+ * @param gy        altitude actuelle des pieds
+ * @param tolerance combien on accepte de monter d'un pas
+ * @returns {y, source} — source vaut 'terrain' ou 'niveau'
+ */
+function solSous(cx, cz, gy, tolerance){
+  const sol = solTerrain(cx, cz);
+  let meilleur = (sol > -9000 && sol <= gy + tolerance) ? sol : -99999;
+  let source = 'terrain';
+
+  const l = planchersDe(cx, cz);
+  if(l){
+    for(const p of l){
+      if(p.mur) continue;                    // un mur ne se marche pas dessus
+      if(p.y > gy + tolerance) continue;     // trop haut pour ce pas
+      if(p.y > meilleur){ meilleur = p.y; source = 'niveau'; }
+    }
+  }
+  return {y: meilleur, source};
+}
+
+const solTerrain = (cx, cz) => {
+  if(cx < 0 || cz < 0 || cx >= GW || cz >= GH) return -99999;
+  return floorH[idx(cx, cz)];
+};
+
+/**
+ * La cellule est-elle bouchée à cette altitude ?
+ *
+ * Un mur de bâtiment n'occupe qu'une TRANCHE : on passe sous une arche et on
+ * bute contre le piédroit qui la porte. C'est toute la différence entre une
+ * cathédrale et un bloc, et c'est ce que `blocked[]` ne savait pas exprimer —
+ * il condamne une colonne entière, du sol au ciel.
+ */
+function murA(cx, cz, gy){
+  const l = planchersDe(cx, cz);
+  if(!l) return false;
+  for(const p of l){
+    if(!p.mur) continue;
+    // le mur occupe de sa base à sa base + sa hauteur
+    if(gy >= p.y - 0.15 && gy < p.y + p.tete) return true;
+  }
+  return false;
+}
+
+/**
+ * Le plafond au-dessus des pieds : le premier plancher qu'on rencontre en
+ * montant, ou le plafond du terrain.
+ *
+ * Sert au saut, et à savoir si l'on tient debout.
+ */
+function plafondSur(cx, cz, gy){
+  if(cx < 0 || cz < 0 || cx >= GW || cz >= GH) return 99999;
+  let plus = ceilH[idx(cx, cz)];
+  const l = planchersDe(cx, cz);
+  if(l){
+    for(const p of l){
+      if(p.y <= gy + 0.20) continue;
+      if(p.y < plus) plus = p.y;
+    }
+  }
+  return plus;
+}
+
+/* ═══════════════ POSER UN VOLUME ═══════════════ */
+
+/**
+ * Marque un rectangle de cellules comme plancher.
+ *
+ * Les bâtiments se décrivent en rectangles — une nef, un bas-côté, une tour —
+ * et non cellule par cellule. C'est la primitive dont `edifices.js` se sert
+ * pour tout.
+ */
+function poserDalle(cx0, cz0, larg, prof, y, tete, edifice){
+  for(let dz = 0; dz < prof; dz++)
+    for(let dx = 0; dx < larg; dx++)
+      poserPlancher(cx0 + dx, cz0 + dz, y, tete, edifice, false);
+}
+
+/** Un mur plein sur un segment, d'une base à une hauteur. */
+function poserMur(cx0, cz0, cx1, cz1, y, hauteur, edifice){
+  const n = Math.max(Math.abs(cx1 - cx0), Math.abs(cz1 - cz0)) + 1;
+  for(let k = 0; k < n; k++){
+    const t = n > 1 ? k / (n - 1) : 0;
+    poserPlancher(Math.round(cx0 + (cx1 - cx0) * t),
+                  Math.round(cz0 + (cz1 - cz0) * t),
+                  y, hauteur, edifice, true);
+  }
+}
+
+/** Rend une trouée dans un mur déjà posé : une porte, une arcade. */
+function percerNiveau(cx, cz, y, hauteur){
+  const l = planchersDe(cx, cz);
+  if(!l) return;
+  for(let k = l.length - 1; k >= 0; k--){
+    const p = l[k];
+    if(!p.mur) continue;
+    if(p.y < y + hauteur && p.y + p.tete > y) l.splice(k, 1);
+  }
+}
+
+  return { aDesNiveaux, murA, percerNiveau, plafondSur, planchersDe, poserDalle, poserMur, poserPlancher, solSous, statsNiveaux, viderNiveaux };
+})();
+
+/* ─── src/monde/edifices.js ─── */
+__M['M_monde_edifices'] = (function(){
+  const { SETUP } = __M['M_setup'];
+  const { rnd, ri, rf } = __M['M_noyau_rng'];
+  const { GW, GH, CELL, FLOOR, grid, floorH, ceilH, blocked, openN, sky, vide, biome, idx, isFloor, c2w, w2c, celluleLibre } = __M['M_monde_grille'];
+  const { poserPlancher, poserDalle, viderNiveaux, statsNiveaux } = __M['M_monde_niveaux'];
+  const { props, lights } = __M['M_monde_props'];
+  const { autorise } = __M['M_monde_plan'];
+/* ═══ MONDE / ÉDIFICES ═══
+   Les bâtiments. Pour l'instant : la cathédrale.
+
+   ── POURQUOI UN MODULE À PART ──────────────────────────────────────────────
+   `props.js` pose des OBJETS : un pilier, une carcasse, une hutte. Chacun tient
+   dans une cellule et se fabrique en une trentaine de primitives. Une
+   cathédrale, c'est quarante mètres de long, trois nefs, des tours, et surtout
+   PLUSIEURS SOLS EMPILÉS. Ce n'est pas un objet plus gros, c'est autre chose.
+
+   Un édifice :
+     · aplanit le terrain sous son emprise, et lève son plafond ;
+     · pose ses planchers dans `monde/niveaux.js` — c'est ce qui permet de
+       monter dans une tour et de descendre dans une crypte ;
+     · pose ses murs comme des TRANCHES d'altitude, si bien qu'on passe sous
+       une arche et qu'on bute contre le piédroit ;
+     · produit sa géométrie sous forme de parts ordinaires.
+
+   ── L'ARC BRISÉ ────────────────────────────────────────────────────────────
+   C'est LE geste gothique, et il ne s'improvise pas. Un arc roman est un
+   demi-cercle : sa hauteur est imposée par sa largeur. Un arc brisé est fait
+   de DEUX arcs de cercle dont les centres sont écartés sur la ligne d'imposte ;
+   on choisit donc sa hauteur indépendamment de sa portée.
+
+   C'est exactement ce qui a permis les cathédrales : des travées de largeurs
+   différentes peuvent culminer à la même hauteur, donc on peut voûter un
+   rectangle et non plus seulement un carré. Sans cette propriété, une nef
+   flanquée de bas-côtés est impossible.
+
+   La conséquence pratique ici : `arcBrise()` prend une portée ET une hauteur,
+   et personne d'autre dans ce fichier n'a besoin de savoir comment.         */
+
+
+
+
+
+
+
+
+/** [{x, z, y, rayon, type, tours:[…], porte:{x,z}}] */
+const edifices = [];
+
+/* ═══════════════ PRIMITIVES D'ARCHITECTURE ═══════════════ */
+
+/**
+ * Un arc brisé, en segments de tube.
+ *
+ * @param a,b     les deux pieds, en coordonnées monde [x, z]
+ * @param yBase   la ligne d'imposte
+ * @param haut    la flèche au-dessus de l'imposte
+ * @param ep      épaisseur du claveau
+ * @param seg     nombre de segments par branche
+ *
+ * Chaque branche est un arc de cercle dont le centre est sur la ligne
+ * d'imposte, du côté OPPOSÉ. Plus le centre est écarté, plus l'arc est aigu :
+ * c'est le seul paramètre qui gouverne l'allure.
+ */
+function arcBrise(parts, a, b, yBase, haut, ep, c, seg = 7){
+  const dx = b[0] - a[0], dz = b[1] - a[1];
+  const portee = Math.hypot(dx, dz);
+  if(portee < 0.2) return;
+  const ux = dx / portee, uz = dz / portee;
+
+  /* Le rayon qui fait passer l'arc par le sommet. On le déduit : le centre est
+     sur la ligne d'imposte, à `d` du milieu, et l'arc doit atteindre `haut` au
+     centre. */
+  const demi = portee / 2;
+  const R = (haut*haut + demi*demi) / (2 * haut);
+  const d = R - demi;                       // écartement des centres
+
+  const branche = (sens) => {
+    // le pied de cette branche, et son centre
+    const pied = sens > 0 ? a : b;
+    const cx = pied[0] + ux * sens * (portee/2 + d) * 0 + (sens > 0 ? a[0] : b[0]) * 0;
+    // centre : sur la ligne d'imposte, décalé du pied opposé
+    const ox = (sens > 0 ? a[0] : b[0]) + ux * sens * (R - haut) * 0;
+    void cx; void ox;
+    const centreX = (sens > 0 ? a[0] : b[0]) + ux * sens * (R - demi + demi) * 0;
+    void centreX;
+
+    /* Repris simplement : le centre de la branche partant de `pied` est situé
+       à distance R de ce pied, le long de la ligne d'imposte, vers l'autre
+       pied. L'arc va du pied au sommet. */
+    const p0 = sens > 0 ? a : b;
+    const s = sens > 0 ? 1 : -1;
+    const Cx = p0[0] + ux * s * (R - 0);
+    const Cz = p0[1] + uz * s * (R - 0);
+    // angle du pied vu du centre, et angle du sommet
+    const aPied = Math.atan2(0 - 0, -s);        // le pied est à l'horizontale
+    const sommetX = (a[0] + b[0]) / 2, sommetZ = (a[1] + b[1]) / 2;
+    const vx = sommetX - Cx, vz = sommetZ - Cz;
+    const horiz = Math.hypot(vx, vz);
+    const aSommet = Math.atan2(haut, -s * horiz * 0 + (s > 0 ? -horiz : horiz) * -s);
+    void aPied; void aSommet;
+
+    /* Paramétrage direct, plus lisible que par angles : on avance du pied vers
+       le sommet et on lit la hauteur sur le cercle de centre (Cx, Cz) et de
+       rayon R. */
+    const pts = [];
+    for(let k = 0; k <= seg; k++){
+      const t = k / seg;
+      // position horizontale, du pied au sommet
+      const px = p0[0] + (sommetX - p0[0]) * t;
+      const pz = p0[1] + (sommetZ - p0[1]) * t;
+      // distance horizontale au centre
+      const dh = Math.hypot(px - Cx, pz - Cz);
+      const y = yBase + Math.sqrt(Math.max(0, R*R - dh*dh));
+      pts.push([px, y, pz]);
+    }
+    for(let k = 0; k < seg; k++)
+      parts.push({tube:[pts[k], ep, pts[k+1], ep, 5], c});
+  };
+
+  branche(+1);
+  branche(-1);
+}
+
+/**
+ * Une voûte d'ogives sur une travée rectangulaire.
+ *
+ * Quatre arcs sur les côtés, DEUX NERVURES DIAGONALES qui se croisent à la
+ * clef, et des voûtains entre elles. Ce sont les diagonales qui font la
+ * voûte gothique : elles portent, et c'est pour ça qu'on peut évider le reste.
+ */
+function voute(parts, cx, cz, larg, prof, yBase, fleche, ep, c, cClef){
+  const hl = larg/2, hp = prof/2;
+  const A = [cx - hl, cz - hp], B = [cx + hl, cz - hp];
+  const C = [cx + hl, cz + hp], D = [cx - hl, cz + hp];
+
+  // les quatre arcs de rive
+  arcBrise(parts, A, B, yBase, fleche, ep, c, 5);
+  arcBrise(parts, D, C, yBase, fleche, ep, c, 5);
+  arcBrise(parts, A, D, yBase, fleche, ep, c, 5);
+  arcBrise(parts, B, C, yBase, fleche, ep, c, 5);
+
+  /* Les nervures diagonales montent PLUS HAUT : leur portée est la diagonale
+     du rectangle, et c'est elle qui fixe la clef. Sans ce surcroît, les
+     diagonales passeraient sous les arcs de rive et la voûte serait creuse au
+     mauvais endroit. */
+  const fd = fleche * 1.22;
+  arcBrise(parts, A, C, yBase, fd, ep*0.85, c, 7);
+  arcBrise(parts, B, D, yBase, fd, ep*0.85, c, 7);
+
+  // la clef de voûte, à l'intersection
+  parts.push({x:cx, y:yBase + fd, z:cz, sx:0.34, sy:0.30, sz:0.34, c:cClef});
+}
+
+/** Une colonne composée : un fût central et quatre colonnettes engagées. */
+function pilier(parts, x, z, yBase, haut, r, c){
+  parts.push({tube:[[x, yBase, z], r, [x, yBase + haut, z], r*0.94, 8], c});
+  for(let k = 0; k < 4; k++){
+    const a = k * Math.PI/2 + Math.PI/4;
+    const px = x + Math.cos(a)*r*0.92, pz = z + Math.sin(a)*r*0.92;
+    parts.push({tube:[[px, yBase, pz], r*0.30,
+                      [px, yBase + haut*0.97, pz], r*0.27, 5], c});
+  }
+  // le chapiteau
+  parts.push({x, y: yBase + haut, z, sx:r*2.5, sy:0.26, sz:r*2.5, c});
+}
+
+/** Une lancette : l'ouverture haute et étroite, avec son remplage. */
+function lancette(parts, x, z, ry, larg, yBase, haut, c, lueur){
+  const cs = Math.cos(ry), sn = Math.sin(ry);
+  const a = [x - cs*larg/2, z - sn*larg/2];
+  const b = [x + cs*larg/2, z + sn*larg/2];
+  arcBrise(parts, a, b, yBase + haut*0.62, haut*0.38, 0.09, c, 5);
+  // les meneaux verticaux
+  for(const t of [-0.32, 0, 0.32]){
+    const px = x + cs*larg*t, pz = z + sn*larg*t;
+    parts.push({tube:[[px, yBase, pz], 0.055,
+                      [px, yBase + haut*0.62, pz], 0.05, 4], c});
+  }
+  /* Le vitrail : une plaque émissive. C'est la seule couleur vive qu'on
+     s'autorise dans ce jeu, et elle est justifiée — un vitrail éclairé par
+     rien est exactement l'image qu'on cherche. */
+  if(lueur)
+    parts.push({plaque:1, x, y: yBase + haut*0.42, z,
+                sx: larg*0.82, sy: haut*0.72, c: lueur, emis:1, ry});
+}
+
+/* ═══════════════ LA CATHÉDRALE ═══════════════ */
+
+/**
+ * Bâtit une cathédrale gothique centrée sur une cellule.
+ *
+ * Le plan est celui d'une église : une NEF flanquée de deux BAS-CÔTÉS, un
+ * TRANSEPT en travers, un CHŒUR au fond, et deux TOURS en façade. Ce plan
+ * n'est pas décoratif — c'est lui qui rend l'intérieur lisible : on entre par
+ * l'ouest, on avance dans un vaisseau haut et étroit, et on débouche sur le
+ * croisement. Un joueur qui n'a jamais vu de cathédrale sait quand même où il
+ * est.
+ */
+function batirCathedrale(cx, cz, id){
+  const S = SETUP.edifices;
+  const parts = [];
+  const h = floorH[idx(cx, cz)];
+
+  const pierre  = [.175,.170,.158];
+  const pierre2 = [.205,.198,.183];
+  const nerf    = [.235,.228,.212];
+  /* Le vitrail est la seule couleur saturée du jeu. Elle est justifiée : une
+     rosace éclairée par rien, au fond d'un souterrain, c'est l'image. */
+  const vitrail = [rf(0.35,0.95), rf(0.12,0.35), rf(0.18,0.55)];
+
+  // ── dimensions, en cellules puis en mètres ──
+  const cLong = ri(S.nefLongMin, S.nefLongMax);      // le long de Z
+  const cLarg = ri(S.nefLargMin, S.nefLargMax);      // la nef seule
+  const cCote = 3;                                    // chaque bas-côté
+  const cTotal = cLarg + cCote*2;
+  const travees = Math.max(3, Math.round(cLong / 4));
+
+  const L = cLong * CELL, W = cTotal * CELL;
+  const yNef = h;
+  const hBasCote = S.hauteurBasCote;
+  const hNef     = S.hauteurNef;
+
+  const x0 = cx - Math.floor(cTotal/2), z0 = cz - Math.floor(cLong/2);
+  const X = (u) => c2w(x0 + u);
+  const Z = (v) => c2w(z0 + v);
+
+  /* ── 1. LE TERRAIN CÈDE LA PLACE ──
+     On aplanit et on lève le plafond. Une cathédrale ne se creuse pas dans la
+     roche : elle occupe un volume, et le champ de hauteurs doit s'écarter. */
+  for(let v = -2; v < cLong + 2; v++)
+    for(let u = -2; u < cTotal + 2; u++){
+      const x = x0 + u, z = z0 + v;
+      if(x < 1 || z < 1 || x >= GW-1 || z >= GH-1) continue;
+      const i = idx(x, z);
+      grid[i] = FLOOR;
+      floorH[i] = h;
+      ceilH[i] = Math.max(ceilH[i], h + hNef + S.fleche + 6);
+      vide[i] = 0;
+      blocked[i] = 0;
+      openN[i] = 1;
+    }
+
+  /* ── 2. LE SOL DE LA NEF ──
+     Posé comme plancher d'édifice : c'est ce qui permettra d'avoir une crypte
+     dessous et un triforium dessus. */
+  poserDalle(x0, z0, cTotal, cLong, yNef, hNef, id);
+
+  /* ── 3. LES MURS GOUTTEREAUX, percés d'arcades ──
+     On pose le mur en tranches et on laisse les baies vides : c'est la couche
+     `niveaux` qui décide où l'on bute, et elle sait ne bloquer QU'UNE tranche
+     d'altitude. */
+  for(let v = 0; v < cLong; v++){
+    const enBaie = (v % 4) === 2;            // une baie toutes les quatre
+    for(const u of [0, cTotal - 1]){
+      if(enBaie) continue;                    // la baie laisse passer le regard
+      poserPlancher(x0 + u, z0 + v, yNef, hBasCote, id, true);
+    }
+  }
+  // façade ouest et chevet est, sauf la porte
+  for(let u = 0; u < cTotal; u++){
+    const porte = Math.abs(u - cTotal/2) < 1.6;
+    if(!porte) poserPlancher(x0 + u, z0, yNef, hBasCote, id, true);
+    poserPlancher(x0 + u, z0 + cLong - 1, yNef, hBasCote, id, true);
+  }
+
+  /* ── 4. LES DEUX FILES DE PILIERS ──
+     Elles séparent la nef des bas-côtés. C'est la structure qui porte, et
+     visuellement c'est ce qui donne la perspective : deux rangées qui fuient. */
+  const uG = cCote, uD = cTotal - cCote - 1;
+  const pasT = cLong / travees;
+  for(let t = 0; t <= travees; t++){
+    const v = Math.min(cLong - 1, Math.round(t * pasT));
+    for(const u of [uG, uD]){
+      pilier(parts, X(u), Z(v), h, hNef, 0.42, pierre2);
+      poserPlancher(x0 + u, z0 + v, yNef, hNef, id, true);
+    }
+  }
+
+  /* ── 5. LES ARCADES entre piliers, et les VOÛTES ── */
+  for(let t = 0; t < travees; t++){
+    const v0 = Math.round(t * pasT), v1 = Math.round((t+1) * pasT);
+    const zc = (Z(v0) + Z(v1)) / 2;
+
+    // grandes arcades le long de la nef
+    for(const u of [uG, uD])
+      arcBrise(parts, [X(u), Z(v0)], [X(u), Z(v1)], h + hNef*0.52,
+               hNef*0.30, 0.15, pierre2, 6);
+
+    // la voûte de la travée principale
+    voute(parts, X((uG+uD)/2), zc, (uD-uG)*CELL, (v1-v0)*CELL,
+          h + hNef*0.78, S.fleche, 0.13, nerf, pierre2);
+
+    // les voûtes plus basses des bas-côtés
+    for(const [ua, ub] of [[0, uG], [uD, cTotal-1]])
+      voute(parts, X((ua+ub)/2), zc, (ub-ua)*CELL, (v1-v0)*CELL,
+            h + hBasCote*0.72, S.fleche*0.55, 0.10, nerf, pierre2);
+  }
+
+  /* ── 6. LES MURS, EN PIERRE ──
+     La géométrie des murs vient après leur pose logique : on dessine ce que la
+     couche `niveaux` a déjà décidé. */
+  const mur = (u0, v0, u1, v1, yb, ht) => {
+    const a = [X(u0), Z(v0)], b = [X(u1), Z(v1)];
+    const lg = Math.hypot(b[0]-a[0], b[1]-a[1]);
+    const ang = Math.atan2(b[1]-a[1], b[0]-a[0]);
+    const q = {x:(a[0]+b[0])/2, y: yb + ht/2, z:(a[1]+b[1])/2,
+               sx: lg, sy: ht, sz: 0.55, c: pierre, ry: ang};
+    parts.push(q);
+  };
+  mur(0, 0, 0, cLong-1, h, hBasCote);
+  mur(cTotal-1, 0, cTotal-1, cLong-1, h, hBasCote);
+  mur(0, cLong-1, cTotal-1, cLong-1, h, hBasCote);
+  // façade : deux morceaux, la porte au milieu
+  mur(0, 0, cTotal/2 - 1.2, 0, h, hBasCote);
+  mur(cTotal/2 + 1.2, 0, cTotal-1, 0, h, hBasCote);
+  // le mur haut de la nef, au-dessus des arcades — le clair-étage
+  for(const u of [uG, uD]) mur(u, 0, u, cLong-1, h + hNef*0.82, hNef*0.30);
+
+  /* ── 7. LES BAIES ET LA ROSACE ──
+     Le vitrail est émissif. Une rosace éclairée par rien, au fond d'un
+     souterrain, c'est l'image qu'on cherche depuis le début. */
+  for(let v = 2; v < cLong - 1; v += 4){
+    for(const [u, ry] of [[0, Math.PI/2], [cTotal-1, Math.PI/2]])
+      lancette(parts, X(u), Z(v), ry, 2.0, h + 1.1, hBasCote - 1.6,
+               pierre2, vitrail);
+  }
+  {
+    // la rosace en façade
+    const rx = X(cTotal/2 - 0.5), rz = Z(0);
+    const R = Math.min(3.2, W*0.22);
+    for(let k = 0; k < 12; k++){
+      const a1 = k/12*6.283, a2 = (k+1)/12*6.283;
+      parts.push({tube:[[rx + Math.cos(a1)*R, h + hNef*0.62 + Math.sin(a1)*R, rz],
+                        0.07,
+                        [rx + Math.cos(a2)*R, h + hNef*0.62 + Math.sin(a2)*R, rz],
+                        0.07, 4], c: pierre2});
+      parts.push({tube:[[rx, h + hNef*0.62, rz], 0.05,
+                        [rx + Math.cos(a1)*R, h + hNef*0.62 + Math.sin(a1)*R, rz],
+                        0.05, 4], c: pierre2});
+    }
+    parts.push({plaque:1, x:rx, y: h + hNef*0.62, z: rz + 0.06,
+                sx: R*1.9, sy: R*1.9, c: vitrail, emis:1});
+    if(lights.length < SETUP.decor.maxLumieres)
+      lights.push({x:rx, y:h + hNef*0.62, z:rz + 1.2,
+                   c:[vitrail[0]*0.9, vitrail[1]*0.9, vitrail[2]*0.9],
+                   ph:rnd()*6.28});
+  }
+
+  /* ── 8. LES ARCS-BOUTANTS ──
+     Ils reportent la poussée des voûtes vers l'extérieur. Techniquement
+     inutiles ici — rien ne pousse — mais c'est la silhouette qui dit
+     « gothique » de l'extérieur, autant que les flèches. */
+  for(let t = 1; t < travees; t++){
+    const v = Math.round(t * pasT);
+    for(const [uInt, uExt, s] of [[uG, -1.6, -1], [uD, cTotal + 0.6, 1]]){
+      const a = [X(uInt + s*0.6), Z(v)], b = [X(uExt), Z(v)];
+      arcBrise(parts, a, b, h + hBasCote*0.95, hNef*0.22, 0.14, pierre2, 5);
+      // la culée
+      parts.push({x: X(uExt), y: h + hBasCote*0.55, z: Z(v),
+                  sx:0.8, sy: hBasCote*1.1, sz:0.8, c: pierre});
+    }
+  }
+
+  /* ── 9. LES DEUX TOURS ──
+     Elles montent, et ON PEUT Y MONTER : chaque étage est un plancher dans
+     `niveaux.js`. C'est la démonstration que le changement de moteur sert à
+     quelque chose — avant, une tour était un décor plein. */
+  const tours = [];
+  for(const u of [1, cTotal - 2]){
+    const th = S.hauteurTour + rf(-2, 3);
+    const tx = X(u), tz = Z(1);
+    // le fût, quatre murs
+    for(let e = 0; e * S.etageTour < th; e++){
+      const y = h + e * S.etageTour;
+      poserPlancher(x0 + u, z0 + 1, y, S.etageTour - 0.3, id, false);
+    }
+    parts.push({x:tx, y:h + th/2, z:tz, sx:2.6, sy:th, sz:2.6, c:pierre});
+    // les baies de la chambre des cloches
+    for(const ry of [0, Math.PI/2])
+      lancette(parts, tx, tz, ry, 1.5, h + th - 4.5, 3.4, pierre2, null);
+    // la flèche
+    parts.push({tube:[[tx, h + th, tz], 1.5,
+                      [tx, h + th + S.fleeheTour, tz], 0.05, 6], c: pierre2});
+    tours.push({x:tx, z:tz, haut: th});
+  }
+
+  /* ── 10. CE QUI VIT DEDANS ──
+     Les gobelins sortent d'ici. Le trou par lequel ils sortent est visible :
+     une brèche dans le dallage du chœur, avec sa lueur. */
+  const brx = X(cTotal/2 - 0.5), brz = Z(cLong - 3);
+  parts.push({roche:[1.1, ri(1,900), 1], x:brx, y:h - 0.5, z:brz,
+              c:[.09,.075,.065]});
+  if(lights.length < SETUP.decor.maxLumieres)
+    lights.push({x:brx, y:h + 0.3, z:brz, c:[0.55,0.30,0.10], ph:rnd()*6.28});
+
+  props.push({parts, cell: idx(cx, cz), r:0, solide:false});
+
+  const e = {
+    x: c2w(cx), z: c2w(cz), y: h, type:'cathedrale', id,
+    rayon: Math.max(L, W) / 2,
+    long: L, larg: W, travees,
+    porte: {x: X(cTotal/2 - 0.5), z: Z(0)},
+    breche: {x: brx, z: brz},
+    tours,
+    primitives: parts.length,
+  };
+  edifices.push(e);
+  statsNiveaux.edifices++;
+  return e;
+}
+
+/* ═══════════════ SEMIS ═══════════════ */
+
+function viderEdifices(){
+  edifices.length = 0;
+  viderNiveaux();
+}
+
+/**
+ * Place les cathédrales. Peu nombreuses et espacées : une cathédrale qu'on
+ * croise deux fois par minute n'est plus un événement.
+ */
+function placerEdifices(){
+  const S = SETUP.edifices;
+  let poses = 0;
+
+  for(let essai = 0; essai < 26000 && poses < S.nbCathedrales; essai++){
+    const c = celluleLibre(ri);
+    if(!autorise('villages', c.x, c.z)) continue;
+
+    // il faut de la place, et un sol régulier
+    const cTotal = S.nefLargMax + 6, cLong = S.nefLongMax;
+    if(c.x < cTotal || c.z < cLong || c.x > GW - cTotal || c.z > GH - cLong)
+      continue;
+
+    let plat = true;
+    const h0 = floorH[idx(c.x, c.z)];
+    for(let v = -cLong/2; v < cLong/2 && plat; v += 3)
+      for(let u = -cTotal/2; u < cTotal/2; u += 3){
+        const i = idx(c.x + (u|0), c.z + (v|0));
+        if(Math.abs(floorH[i] - h0) > S.deniveleMax || vide[i]){ plat = false; break; }
+      }
+    if(!plat) continue;
+
+    // pas deux cathédrales côte à côte
+    let tropPres = false;
+    for(const e of edifices)
+      if(Math.hypot(e.x - c2w(c.x), e.z - c2w(c.z)) < S.ecartMin) tropPres = true;
+    if(tropPres) continue;
+
+    batirCathedrale(c.x, c.z, edifices.length + 1);
+    poses++;
+  }
+  return poses;
+}
+
+/** L'édifice le plus proche, ou null. */
+function edificeProche(wx, wz, portee = 60){
+  let meilleur = null, md = portee;
+  for(const e of edifices){
+    const d = Math.hypot(e.x - wx, e.z - wz);
+    if(d < md){ md = d; meilleur = e; }
+  }
+  return meilleur;
+}
+
+  return { edificeProche, edifices, placerEdifices, viderEdifices };
 })();
 
 /* ─── src/joueur/armes.js ─── */
@@ -6007,6 +6975,7 @@ __M['M_monde_index'] = (function(){
   const { placerCachettes, cachettes } = __M['M_monde_cachettes'];
   const { placerProps, viderDecor, props, lights, colliders } = __M['M_monde_props'];
   const { placerVillages, placerBoisEtFusees, viderVillages, villages } = __M['M_monde_villages'];
+  const { placerEdifices, viderEdifices, edifices } = __M['M_monde_edifices'];
   const { placerArmes, armesAuSol, cellulesAuSol } = __M['M_joueur_armes'];
   const { indexerProps, libererTousLesPaves, statsMaillage } = __M['M_monde_maillage'];
   const { importee } = __M['M_monde_import_png'];
@@ -6024,6 +6993,7 @@ __M['M_monde_index'] = (function(){
    la génération tient en ~1,4 s (mesuré), mais rendre la main reste utile :
    sans ça la page se fige, et sur une machine lente ça dure plusieurs
    secondes. Le rapport final donne la durée réelle.                        */
+
 
 
 
@@ -6070,7 +7040,8 @@ function* construireMonde(hooks){
      terrain, au bit près. C'est ici et nulle part ailleurs, pour que l'éditeur
      et les outils en profitent sans y penser. */
   semerBruit(graine());
-  viderGrille(); viderDecor(); viderVillages(); libererTousLesPaves();
+  viderGrille(); viderDecor(); viderVillages(); viderEdifices();
+  libererTousLesPaves();
   monde.refuges.length = 0; monde.combustibles.length = 0;
   monde.leurres.length = 0; monde.sortie = null;
 
@@ -6122,6 +7093,12 @@ function* construireMonde(hooks){
   yield {nom:'villages engloutis', part:0.82};
   chrono.villages = placerVillages();
 
+  /* Les cathédrales AVANT le décor : elles aplanissent le terrain et lèvent
+     le plafond sur leur emprise, et il ne faut pas qu'un pilier semé se
+     retrouve au milieu de la nef. */
+  yield {nom:'cathédrales', part:0.86};
+  chrono.edifices = placerEdifices();
+
   yield {nom:'décor', part:0.90};
   placerProps();
 
@@ -6132,10 +7109,24 @@ function* construireMonde(hooks){
      poser, pour rester utilisable par la forge et par les tests, où il n'y a
      pas de monde. */
   placerArmes((liste, combien, fabriquer) => {
-    for(let k=0; k<40000 && liste.length < combien; k++){
+    const S = SETUP.armes;
+    for(let k=0; k<60000 && liste.length < combien; k++){
       const c = celluleLibre(ri), i = idx(c.x, c.z);
       if(blocked[i] || vide[i]) continue;
-      liste.push(fabriquer(c2w(c.x), floorH[i] + 0.24, c2w(c.z)));
+      const o = fabriquer(c2w(c.x), floorH[i] + 0.24, c2w(c.z));
+      liste.push(o);
+
+      /* UNE BALISE. Sans elle, une arme posée au sol est invisible : on ne
+         voit qu'à 7,7 m et il y en a une tous les 15 000 m². Une lampe, elle,
+         perce le brouillard bien au-delà de la distance à laquelle on
+         distingue une surface. On aperçoit un reflet, on va voir.
+
+         C'est le seul moyen honnête : le contraire serait de poser un
+         marqueur sur la carte, ce qui transforme la découverte en course. */
+      if(lights.length < SETUP.decor.maxLumieres)
+        lights.push({x:o.x, y:o.y + 0.30, z:o.z,
+                     c:[S.balise[0]*S.baliseGain, S.balise[1]*S.baliseGain,
+                        S.balise[2]*S.baliseGain], ph: Math.random()*6.28});
     }
   });
 
@@ -6163,7 +7154,7 @@ function* construireMonde(hooks){
 }
 
 /** Compteurs remplis pendant la génération. */
-const chrono = {debut:0, duree:0, ponts:0, rampes:0, galeries:0,
+const chrono = {debut:0, duree:0, ponts:0, rampes:0, galeries:0, edifices:0,
                 galeriesFinales:0, villages:0, morceaux:'', isoles:0};
 
 /* ─────────────── carte importée ─────────────── */
@@ -6210,6 +7201,7 @@ function rapportMonde(){
     morceaux: chrono.morceaux,
     isoles: chrono.isoles,
     villages: chrono.villages,
+    cathedrales: chrono.edifices,
     ponts: chrono.ponts,
     cachettes: cachettes.length,
     elements: props.length,
@@ -6801,6 +7793,7 @@ function tirerDansRang(rang, ri){
 /* ─── src/carte/placement.js ─── */
 __M['M_carte_placement'] = (function(){
   const { SETUP } = __M['M_setup'];
+  const { lights } = __M['M_monde_props'];
   const { ri, rnd } = __M['M_noyau_rng'];
   const { idx, floorH, blocked, c2w, celluleLibre, profondeurDe } = __M['M_monde_grille'];
   const { RANGS, rangsPermis } = __M['M_carte_rangs'];
@@ -6813,6 +7806,7 @@ __M['M_carte_placement'] = (function(){
    C'est la mécanique qui donne un sens à descendre, et elle se combine avec la
    géothermie du froid (joueur/froid.js) : plus bas il fait plus chaud ET les
    cartes sont meilleures — mais c'est là qu'elle vit.                       */
+
 
 
 
@@ -6849,10 +7843,26 @@ function placerCartes(){
     for(let n=0; n<permis.length; n++){ t -= poids[n]; if(t <= 0){ choisi = permis[n]; break; } }
 
     const rang = RANGS.indexOf(choisi);
-    cartes.push({
+    const k = {
       x: c2w(c.x), y: floorH[i] + SETUP.cartes.hauteurFlottement, z: c2w(c.z),
       rang, id: tirerDansRang(rang, ri), prise:false,
-    });
+    };
+    cartes.push(k);
+
+    /* UNE LAMPE PAR CARTE, de la couleur de son rang.
+       La carte se voyait autrefois grâce à un halo — un rectangle opaque
+       dessiné derrière elle, qui produisait le « fond carré noir hachuré »
+       signalé en test. Il est supprimé. Ce qui la fait repérer désormais est
+       une VRAIE source lumineuse : une lampe perce le brouillard bien
+       au-delà de la distance à laquelle on distingue une surface, et à 7,7 m
+       de visibilité c'est le seul moyen honnête de trouver quoi que ce soit.
+
+       La teinte dit le rang avant qu'on ait vu l'image : une lueur dorée au
+       loin, c'est une légendaire. */
+    const col = RANGS[rang].couleur;
+    if(lights.length < SETUP.decor.maxLumieres)
+      lights.push({x:k.x, y:k.y + 0.15, z:k.z,
+                   c:[col[0]*1.05, col[1]*1.05, col[2]*1.05], ph:rnd()*6.28});
   }
   return cartes.length;
 }
@@ -6919,10 +7929,19 @@ function majAffichage(){
       const eue = possede.has(id);
       const R = RANGS[rang];
       const col = `rgb(${R.couleur.map(v => Math.round(v*255)).join(',')})`;
-      const fond = (eue && img) ? `background:#000 center/contain no-repeat url('${img.src}')` : '';
-      html += `<div class="carte${eue?' eue':''}" title="${nom}" style="${
-        eue ? `border-color:${col};box-shadow:inset 0 0 18px ${col}22;${fond}` : ''}">`
-        + (eue ? (img ? '' : `${nom}<br><span style="color:${col};font-size:7px">${R.nom.toUpperCase()}</span>`) : '—')
+      /* L'image est une VRAIE balise <img>, plus un fond CSS.
+         Deux raisons, et la seconde est celle qui compte :
+           · `background:#000` posait un rectangle noir derrière une carte
+             découpée — le défaut signalé en jeu, à l'identique ;
+           · un GIF animé en fond CSS s'anime, mais on ne peut pas le cliquer
+             ni l'agrandir. En balise, il se manipule. */
+      html += `<div class="carte${eue?' eue':''}" title="${nom}"`
+        + (eue ? ` data-id="${id}"` : '')
+        + ` style="${eue ? `box-shadow:0 0 22px ${col}33` : ''}">`
+        + (eue
+            ? (img ? `<img src="${img.src}" alt="${nom}">`
+                   : `${nom}<br><span style="color:${col};font-size:7px">${R.nom.toUpperCase()}</span>`)
+            : '—')
         + '</div>';
     }
     el.innerHTML = html;
@@ -6931,7 +7950,56 @@ function majAffichage(){
   if(e) e.textContent = possede.size + '/' + n;
 }
 
-  return { ajouter, charger, majAffichage, oublierTout, possede };
+/* ═══════════════ ADMIRER DE PRÈS ═══════════════
+   « Pouvoir les collecter et admirer de près depuis l'inventaire. »
+
+   Un clic sur une carte possédée l'ouvre en plein écran. C'est le seul endroit
+   du jeu où l'on regarde une image tranquillement, et surtout : le GIF y joue
+   TOUT SEUL. Pas de moteur 3D, pas de texture rafraîchie onze fois par
+   seconde, pas de brouillard — le navigateur affiche le fichier tel qu'il a
+   été dessiné. C'est là que les cartes sont les plus belles, et c'est normal
+   que ce soit là.                                                           */
+
+let loupeBranchee = false;
+
+function brancherLoupe(){
+  if(loupeBranchee) return;
+  loupeBranchee = true;
+
+  const loupe = document.getElementById('loupe');
+  if(!loupe) return;
+  const img = loupe.querySelector('img');
+  const nom = loupe.querySelector('.nom');
+
+  /* Un seul écouteur sur la grille, pas un par vignette : la grille est
+     reconstruite à chaque ramassage, et rebrancher cinquante écouteurs à
+     chaque fois est le genre de fuite qu'on ne voit jamais venir. */
+  for(const cible of ['grille', 'invG']){
+    const el = document.getElementById(cible);
+    if(!el) continue;
+    el.addEventListener('click', e => {
+      const carte = e.target.closest('.carte.eue[data-id]');
+      if(!carte) return;
+      const id = +carte.dataset.id;
+      const ident = identite(id);
+      if(!ident.img) return;
+      img.src = ident.img.src;
+      nom.textContent = ident.nom + '   ·   '
+        + RANGS[ident.rang].nom.toUpperCase();
+      loupe.style.display = 'grid';
+    });
+  }
+
+  const fermer = () => { loupe.style.display = 'none'; img.src = ''; };
+  loupe.addEventListener('click', fermer);
+  addEventListener('keydown', e => {
+    if(loupe.style.display === 'grid' && (e.code === 'Escape' || e.code === 'KeyI')){
+      e.preventDefault(); fermer();
+    }
+  });
+}
+
+  return { ajouter, brancherLoupe, charger, majAffichage, oublierTout, possede };
 })();
 
 /* ─── src/creatures/etats.js ─── */
@@ -7431,10 +8499,26 @@ function sense(dt, joueur, sons, odeur, temps){
   c.distract = Math.max(0, c.distract - dt);
   const dP = Math.hypot(joueur.x - c.x, joueur.z - c.z);
 
-  /* DANS UNE CACHETTE, TU N'EXISTES PAS. Ni contact, ni odeur, ni pas. Elle
+  /* ── DEUX QUALITÉS D'ABRI, ET C'EST LÀ QUE SE JOUE LE CHOIX ──
+
+     DANS UN TERRIER, TU N'EXISTES PAS. Ni contact, ni odeur, ni pas. Elle
      continue de patrouiller normalement — elle ne t'a pas perdu, elle ne t'a
-     jamais eu. C'est ce qui fait du trou un vrai refuge. */
+     jamais eu. C'est ce qui fait du trou un vrai refuge.
+
+     DANS UNE VOITURE, TU EXISTES ENCORE. Une tôle n'enterre personne : elle
+     étouffe l'odeur et amortit les vibrations, elle ne les supprime pas. On
+     reste donc perceptible, mais de beaucoup moins loin — et, surtout, une
+     poursuite en cours ne se termine PAS. Elle sait à peu près où l'on est,
+     et une voiture est un endroit qu'on fouille.
+
+     La distance est la seule chose qu'on change : `dP` gonflé fait croire à
+     l'éloignement, ce qui traverse tous les tests de portée d'un coup sans
+     avoir à en modifier un seul. */
   if(joueur.abrite){
+    if(joueur.abriSorte === 'voiture'){
+      if(c.state === ST.CHASE) return dP;      // trop tard : elle vient voir
+      return dP * SETUP.creature.abriVoiture;
+    }
     if(c.state === ST.CHASE && c.stateT > 1.2){
       directeur.onPerdu(joueur); setState(ST.LISTEN);
     }
@@ -8575,6 +9659,7 @@ const nbSommets = () => cN_/3;
 /* ─── src/joueur/joueur.js ─── */
 __M['M_joueur_joueur'] = (function(){
   const { SETUP } = __M['M_setup'];
+  const { solSous, murA, aDesNiveaux } = __M['M_monde_niveaux'];
   const { clamp, lerp } = __M['M_noyau_math'];
   const { rnd, ri } = __M['M_noyau_rng'];
   const { GW, GH, CELL, floorH, ceilH, sky, vide, pont, pontH, echelle, idx, isFree, isFloor, w2c, c2w, groundAt, degagement, celluleLibre, bornes, biomeAt } = __M['M_monde_grille'];
@@ -8588,6 +9673,7 @@ __M['M_joueur_joueur'] = (function(){
 
    Le vide NE BLOQUE PAS : on marche dans un gouffre et on y tombe. C'est
    volontaire, et c'est ce qui rend les précipices dangereux.               */
+
 
 
 
@@ -8635,6 +9721,10 @@ function spawnJoueur(){
   joueur.gy = floorH[idx(c.x,c.z)]; joueur.vy = 0;
   joueur.yaw = rnd()*6.28; joueur.pitch = 0; joueur.held = 1;
   joueur.abrite = false; joueur.cachette = null;
+  /* Deux qualités d'abri. `abrite` reste le drapeau que tout le reste du jeu
+     interroge — la créature, le froid, le son — et `abriSorte` dit LEQUEL,
+     pour ceux qui font la différence. */
+  joueur.abriSorte = null;
   joueur.degageAuto = 0;
   veille.temps = 0; veille.parcouru = 0; veille.x = 0; veille.z = 0;
   joueur.prone = 0; joueur.shake = 0; joueur.chuteDepuis = null;
@@ -8709,6 +9799,19 @@ function coteSol(wx, wz){
   if(x<0 || z<0 || x>=GW || z>=GH) return -99999;
   const i = idx(x,z);
   if(joueur.surPont && pont[i]) return pontH[i];
+
+  /* ── LES PLANCHERS DE BÂTIMENT ──
+     Depuis monde/niveaux.js, une cellule peut porter plusieurs sols : la
+     crypte, la nef, le triforium. On demande LE PLUS HAUT QUI SOIT SOUS LES
+     PIEDS — pas le plus proche. Prendre le plus proche ferait remonter d'un
+     étage en passant dessous, ce qui est le genre de téléportation qui rend
+     un jeu inexplicable.
+
+     `aDesNiveaux()` évite tout coût dans les mondes sans bâtiment. */
+  if(aDesNiveaux()){
+    const r = solSous(x, z, joueur.gy, SETUP.monde.marcheJoueur);
+    if(r.source === 'niveau') return r.y;
+  }
   if(vide[i]) return -99999;
   if(!isFloor(x,z)) return -99999;
   return floorH[i];
@@ -8867,6 +9970,14 @@ function bloqueA(nx, nz, depuis){
      sol ne peuvent nous arrêter. Seul le bord du tablier compte, et il ne
      bloque pas — il laisse tomber. */
   if(joueur.surPont) return false;
+
+  /* Un mur de bâtiment n'occupe qu'une TRANCHE d'altitude : on passe sous une
+     arche et on bute contre le piédroit qui la porte. C'est toute la
+     différence entre une cathédrale et un bloc — et c'est ce que `blocked[]`
+     ne sait pas exprimer, lui qui condamne une colonne entière du sol au
+     ciel. */
+  if(aDesNiveaux() && murA(w2c(nx), w2c(nz), depuis)) return true;
+
   return heurteElement(nx, nz, depuis) || heurteTerrain(nx, nz, depuis);
 }
 
@@ -10219,432 +11330,360 @@ function placer(p, x, y, z){
 /* ─── src/audio/nappes.js ─── */
 __M['M_audio_nappes'] = (function(){
   const { SETUP } = __M['M_setup'];
-  const { A, dbG, bruitBuffer, bruitBrunBuffer, ping } = __M['M_audio_contexte'];
+  const { A, dbG, bruitBuffer } = __M['M_audio_contexte'];
 /* ═══ AUDIO / NAPPES ═══
-   Les drones d'ambiance. Un par biome, en fondu sortant/entrant.
+   Les drones d'ambiance. Un par biome.
 
-   ── CE QUI A CHANGÉ, ET POURQUOI ───────────────────────────────────────────
-   La v2 faisait : pédale tenue + marche aléatoire sur une gamme. Une marche
-   aléatoire n'est pas une mélodie, c'est un mouvement brownien — d'où le
-   « pas assez mélodieux ». Trois changements :
+   ── D'OÙ VIENT CE MOTEUR ───────────────────────────────────────────────────
+   Il est repris de SessionMasterTauri, sur demande d'Orlando, et la version
+   précédente a été jetée. Elle faisait pédale tenue plus marche aléatoire sur
+   une gamme, avec des accords qui se succédaient. C'était « juste passable »,
+   et il avait raison : un mouvement brownien sur une gamme n'est pas une
+   mélodie, et une harmonie qui change toute seule finit par raconter quelque
+   chose qu'on n'a pas demandé.
 
-   1. HARMONIE. Chaque drone a un MODE (les modes sombres : phrygien, mineur
-      harmonique, locrien) et une PROGRESSION de degrés. Un accord est tenu 25
-      à 50 s puis fondu vers le suivant. La voix mélodique choisit ses notes
-      DANS L'ACCORD COURANT, pas dans toute la gamme : c'est ce qui transforme
-      la dérive en musique. Elle privilégie le mouvement conjoint, avec un saut
-      de temps en temps.
+   ── CE QUI FAIT LA DIFFÉRENCE ──────────────────────────────────────────────
+   CE NE SONT PAS DES ACCORDS TENUS. Chaque drone est une PÉDALE sur laquelle
+   se pose un ARPÈGE LENT : une note toutes les 0,6 à 1,5 s selon le drone,
+   tenue environ 1,6 s. Deux ou trois notes se recouvrent donc en permanence,
+   et c'est ce recouvrement — pas l'accord — qui produit la matière.
 
-   2. REGISTRE. Les fondamentales descendent encore (16–28 Hz au lieu de 20–37)
-      et une voix médiane tient la tierce mineure ou la quinte diminuée — c'est
-      l'intervalle qui fait la couleur sinistre. Plus grave ET plus sombre.
+   Les fréquences ne sont pas construites depuis une gamme théorique : elles
+   sont RELEVÉES sur des enregistrements réels, par analyse résolue dans le
+   temps, avec leur niveau en dB. C'est pour ça que ça sonne comme un lieu et
+   pas comme un synthétiseur.
 
-   3. NIVEAU. Gains de note et de pédale relevés, limiteur desserré, courbe de
-      volume linéarisée. Tout est dans SETUP.audio.
+   Deux règles héritées, et gardées :
+     1. Un drone ne se transforme JAMAIS en un autre. Changer de biome fait un
+        fondu sortant complet puis un fondu entrant.
+     2. À l'intérieur d'un drone, la mélodie ne se répète pas. Les notes sont
+        tirées par une marche sur la gamme relevée, à pas voisin la plupart du
+        temps et saut de temps en temps : c'est ce qui fait entendre une LIGNE
+        plutôt qu'une suite de notes au hasard.
 
-   RÈGLE CONSERVÉE : un drone ne se transforme jamais en un autre. Changer de
-   biome fait un fondu sortant complet puis un fondu entrant. Marcher dans la
-   glacière EST le geste.                                                    */
+   ── DEUX OCTAVES PLUS BAS ──────────────────────────────────────────────────
+   Demandé explicitement. SessionMaster est un fond de travail ; ici c'est un
+   souterrain. `TRANSPOSITION` vaut donc 0,25.
+
+   Attention : deux octaves sous 55 Hz font 13,75 Hz, sous le seuil d'audition.
+   Les fondamentales les plus basses ne s'entendent plus comme des notes mais
+   comme une pression — c'est voulu, et c'est pour cela que chaque drone garde
+   des partiels plus hauts dans sa gamme. Un drone entièrement transposé sous
+   30 Hz serait silencieux sur un ordinateur portable.                       */
 
 
 
 
-/* ─────────────── modes ─────────────── */
-/* En demi-tons depuis la tonique. Ce sont tous des modes mineurs sombres. */
-const MODES = {
-  phrygien:        [0,1,3,5,7,8,10],
-  mineurHarmonique:[0,2,3,5,7,8,11],
-  locrien:         [0,1,3,5,6,8,10],
-  mineurNaturel:   [0,2,3,5,7,8,10],
-};
+/** Deux octaves sous les valeurs relevées. */
+const TRANSPOSITION = 0.25;
 
-/**
- * Un accord = trois degrés empilés en tierces DANS le mode.
- * Renvoie les demi-tons depuis la tonique.
- */
-function accordDe(mode, degre){
-  const m = MODES[mode];
-  const note = d => m[d % m.length] + 12 * Math.floor(d / m.length);
-  return [note(degre), note(degre+2), note(degre+4)];
-}
+/* ═══════════════ LES DRONES ═══════════════
 
-const hz = (racine, demiTons) => racine * Math.pow(2, demiTons/12);
+   `pedale`  notes tenues sous l'arpège, [Hz, dB]
+   `gamme`   les notes de l'arpège, [Hz, dB] — relevées, pas calculées
+   `duree`   tenue d'une note, en secondes
+   `ecart`   temps entre deux attaques
+   `coupure` fréquence du passe-bas sur le lit de bruit
+   `pente`   pente relevée : au-delà de −13 dB/oct on met deux filtres
+   `bruit`   niveau du lit de bruit, 0 à 1                                   */
 
-/* ─────────────── les drones ─────────────── */
-/* racine : la tonique en Hz, très bas.
-   progression : degrés du mode, dans l'ordre. i, VI, iv, V… sombres. */
 const DRONES = [
   {
-    id:'gouffre', nom:'Gouffre',
-    racine:20.6, mode:'phrygien', progression:[0,5,3,1],
-    coupure:34, pente:-13.5, bruit:0.22,
-    duree:3.6, ecart:2.1,
+    id:'caverne', nom:'Caverne', sous:'la mineur, fondamentale à 55 Hz',
+    pedale:[],
+    gamme:[[55.0,-6.5], [110.0,-9.2], [164.8,-17.4], [220.0,-14.5],
+           [329.6,-15.1], [440.0,-20.4], [659.3,-18.2]],
+    duree:1.6, ecart:0.6, coupure:55, pente:-11.2, bruit:0.07,
   },
   {
-    id:'givre', nom:'Givre',
-    racine:27.5, mode:'locrien', progression:[0,4,2,6],
-    coupure:68, pente:-10.5, bruit:0.40,
-    duree:3.0, ecart:1.7,
+    id:'brume', nom:'Brume', sous:'si mineur, mouvement dense',
+    pedale:[],
+    gamme:[[110.0,-15.0], [123.5,-10.8], [146.8,-8.3], [185.0,-8.5],
+           [233.1,-9.6]],
+    duree:1.8, ecart:0.6, coupure:494, pente:-12.2, bruit:0.20,
   },
   {
-    id:'beton', nom:'Béton',
-    racine:16.4, mode:'mineurNaturel', progression:[0,3,5,4],
-    coupure:28, pente:-8.0, bruit:0.56,
-    duree:4.2, ecart:2.9,
+    id:'suspendu', nom:'Suspendu', sous:'la sans tierce, notes rares',
+    pedale:[[220.0,-6.0], [329.6,-6.0]],
+    gamme:[[110.0,-7.0], [174.6,-7.2], [293.7,-7.7], [349.2,-10.7],
+           [440.0,-13.1], [587.3,-5.2], [659.3,-12.2]],
+    duree:1.8, ecart:0.8, coupure:112, pente:-11.2, bruit:0.09,
   },
   {
-    id:'ville', nom:'Ville rouge',
-    racine:21.8, mode:'mineurHarmonique', progression:[0,5,4,0,3],
-    coupure:32, pente:-12.0, bruit:0.32,
-    duree:3.8, ecart:2.5,
+    id:'clairiere', nom:'Clairière', sous:'do majeur, arpège calme sur pédale',
+    pedale:[[164.8,-6.0], [196.0,-6.0]],
+    gamme:[[65.4,-6.6], [130.8,-10.9], [246.9,-8.8], [329.6,-8.5],
+           [392.0,-11.5]],
+    duree:1.6, ecart:0.6, coupure:166, pente:-14.4, bruit:0.04,
   },
   {
-    id:'gelisol', nom:'Gélisol',
-    racine:24.5, mode:'phrygien', progression:[0,2,5,4],
-    coupure:46, pente:-11.5, bruit:0.44,
-    duree:3.4, ecart:2.4,
+    id:'cathedrale', nom:'Cathédrale', sous:'quintes de ré♯, très ouvert',
+    pedale:[],
+    gamme:[[155.6,-4.0], [233.1,-5.9], [311.1,-4.1], [349.2,-4.5],
+           [466.2,-7.1], [740.0,-6.7]],
+    duree:1.6, ecart:0.6, coupure:77, pente:-9.2, bruit:0.17,
+  },
+  {
+    id:'abysse', nom:'Abysse', sous:'sol souterrain, notes très espacées',
+    pedale:[],
+    gamme:[[98.0,-3.9], [196.0,-13.7], [220.0,-13.7], [784.0,-9.3]],
+    duree:1.4, ecart:1.5, coupure:99, pente:-7.4, bruit:0.49,
   },
 ];
 
-/* ─────────────── état ─────────────── */
+/* ═══════════════ ÉTAT ═══════════════ */
+
 const N = {
-  drone:null, id:null,
-  pedales:[], mediane:null,
-  src:null, fb1:null, fb2:null, gb:null,
-  horloge:null, horlogeEvt:null, horlogeAccord:null, retourMaree:null,
-  accord:0, dernierDegre:null,
-  grondement:null,
+  drone:null, dernier:null, horloge:null,
+  pedales:[], bruitSrc:null, bruitG:null, f1:null, f2:null,
+  bus:null, gain:null,
+  gen:0,                    // génération : invalide les rappels d'un ancien drone
   enTransition:false,
 };
 
 const nomNappe = () => N.drone ? N.drone.nom : '—';
 
-/* ─────────────── voix ─────────────── */
+const droneDe = id => DRONES.find(d => d.id === id) || DRONES[0];
+
+/* ═══════════════ UNE NOTE ═══════════════ */
 
 /**
- * Une note tenue, deux oscillateurs légèrement désaccordés qui battent.
- * @param opts.attaque / opts.relache pour les apparitions lentes.
+ * Une note de l'arpège, ou de la pédale.
+ *
+ * Deux oscillateurs désaccordés de ±3 cents : c'est ce qui donne l'épaisseur.
+ * Un seul sonne comme un test de tonalité.
+ *
+ * L'enveloppe est exponentielle des deux côtés — jamais linéaire, jamais
+ * jusqu'à zéro. `exponentialRampToValueAtTime(0)` est interdit par la norme et
+ * lève une exception ; 0,0001 est inaudible et légal.
  */
-function jouerNote(freq, db, duree, gmax, opts){
-  opts = opts || {};
-  const ctx = A.ctx, t = ctx.currentTime;
-  const att = opts.attaque || Math.min(duree*0.45, 1.4);
-  const rel = opts.relache || duree*0.9;
-  const cible = Math.max(0.0002, dbG(db) * gmax);
+function jouerNote(freq, db, duree, attaque){
+  const ctx = A.ctx;
+  if(!ctx || !N.bus) return;
+  const t = ctx.currentTime;
+  const relache = Math.max(0.4, duree * 0.55);
+  const cible = dbG(db) * SETUP.audio.gainNote;
+
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(cible, t + att);
+  g.gain.exponentialRampToValueAtTime(cible, t + attaque);
   g.gain.setValueAtTime(cible, t + duree);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + duree + rel);
-  g.connect(A.pan);
-  const oscs = [-3,3].map(cents => {
+  g.gain.exponentialRampToValueAtTime(0.0001, t + duree + relache);
+  g.connect(N.bus);
+
+  const oscs = [-3, 3].map(cents => {
     const o = ctx.createOscillator();
-    o.type = 'sine'; o.frequency.value = freq; o.detune.value = cents;
-    o.connect(g); o.start(t); o.stop(t + duree + rel + 0.2);
+    o.type = 'sine';
+    o.frequency.value = freq;
+    o.detune.value = cents;
+    o.connect(g);
+    o.start(t);
+    o.stop(t + duree + relache + 0.2);
     return o;
   });
+
+  /* Sans déconnexion explicite, les nœuds éteints s'accumulent : au bout
+     d'une heure de jeu cela fait plusieurs milliers de gains fantômes. */
   oscs[1].onended = () => { try{ g.disconnect(); }catch(e){} };
 }
 
+/* ═══════════════ L'ARPÈGE ═══════════════ */
+
 /**
- * La voix mélodique. Elle choisit un degré de L'ACCORD COURANT et une octave,
- * en privilégiant le mouvement conjoint. C'est ici que la nappe devient une
- * mélodie plutôt qu'un tirage.
+ * Le degré suivant : un pas voisin la plupart du temps, un saut parfois.
+ *
+ * C'est LE détail qui fait entendre une ligne plutôt qu'une suite de notes au
+ * hasard. Un tirage uniforme donne du bruit ; une boucle donne une comptine.
  */
-function planifierMelodie(){
-  if(!A.ctx || !N.drone) return;
-  const d = N.drone;
-  const notes = accordDe(d.mode, d.progression[N.accord]);
-
-  // pas conjoint la plupart du temps, saut d'accord parfois
-  let i;
-  if(N.dernierDegre === null) i = Math.floor(Math.random()*notes.length);
-  else {
-    const pas = (Math.random() < 0.70 ? 1 : 2) * (Math.random() < 0.5 ? -1 : 1);
-    i = (N.dernierDegre + pas + notes.length*3) % notes.length;
+function choisirIndex(n){
+  if(n <= 1) return 0;
+  if(N.dernier === null){ N.dernier = Math.floor(Math.random()*n); return N.dernier; }
+  let i = N.dernier;
+  for(let essai = 0; essai < 8 && i === N.dernier; essai++){
+    const pas = (Math.random() < 0.72 ? 1 : 2) * (Math.random() < 0.5 ? -1 : 1);
+    i = N.dernier + pas;
+    if(i < 0) i += n;
+    if(i >= n) i -= n;
   }
-  N.dernierDegre = i;
-
-  /* La mélodie plane au-dessus du grave — mais deux octaves plus bas qu'en
-     v3.0, où elle montait jusqu'à +60 demi-tons (660 Hz). À cette hauteur
-     elle sonnait « joli », pas menaçant. Entre +24 et +36, soit 80 à 220 Hz,
-     elle reste dans le registre sombre et se mêle aux pédales. */
-  const octave = 24 + [0,0,0,12,12][Math.floor(Math.random()*5)];
-  const f = hz(d.racine, notes[i] + octave);
-  const db = -7 - i*2.5 - (octave > 30 ? 4 : 0);
-
-  jouerNote(f, db, d.duree * (0.8 + Math.random()*0.5), SETUP.audio.gainNote);
-  N.horloge = setTimeout(planifierMelodie, d.ecart * (0.7 + Math.random()*0.8) * 1000);
+  N.dernier = i;
+  return i;
 }
 
-/**
- * Les pédales — le sol de la nappe.
- *
- * ── POURQUOI ÇA NE SONNAIT PAS « GRAVE » (v3.0) ────────────────────────────
- * Retour de test : « ça doit être beaucoup plus grave et flippant ».
- * Paradoxalement, c'était parce que c'était TROP bas. Les fondamentales
- * étaient à 16–27 Hz : sous le seuil d'audition, et carrément absentes de
- * n'importe quel haut-parleur d'ordinateur. On n'entendait donc pas un grave,
- * on n'entendait RIEN, et il ne restait que la voix aiguë.
- *
- * Quatre voix maintenant, dont une seule est un vrai sub :
- *   −12 dt   le SUB à la fréquence réelle du drone : on le sent, on ne
- *            l'entend pas. Il donne le poids.
- *     0      la tonique remontée d'une octave — 33 à 55 Hz, LE grave audible
- *    +7      la quinte, même octave
- *   +13      la neuvième mineure, très en retrait : c'est l'intervalle qui
- *            gratte. Le « flippant » ne vient pas de la hauteur, il vient de
- *            la dissonance tenue.
- */
+function planifier(){
+  if(!A.ctx || !N.drone) return;
+  const d = N.drone;
+  const [f, db] = d.gamme[choisirIndex(d.gamme.length)];
+
+  /* Durée et écart tirés AUTOUR des valeurs relevées. Une cadence
+     parfaitement régulière s'entend comme une horloge, et une horloge dans un
+     souterrain, on l'écoute au lieu de l'oublier. */
+  const duree = d.duree * (0.8 + Math.random()*0.5);
+  jouerNote(f * TRANSPOSITION, db, duree, 0.30);
+
+  const ecart = d.ecart * (0.7 + Math.random()*0.8);
+  N.horloge = setTimeout(planifier, ecart * 1000);
+}
+
+/* ═══════════════ LA PÉDALE ═══════════════ */
+
 function monterPedale(d){
   const ctx = A.ctx, t = ctx.currentTime;
-  //            demi-tons, dB, type d'onde
-  const voix = [
-    [-12, -3.0, 'sine'],      // sub : le poids
-    [ 12, -5.5, 'sine'],      // tonique audible
-    [ 19, -11.0,'sine'],      // quinte
-    [ 25, -19.0,'triangle'],  // neuvième mineure : la dissonance qui gratte
-  ];
-  N.pedales = voix.map(([demi, db, type], i) => {
-    const f = hz(d.racine, demi);
-    const g = ctx.createGain(), cible = dbG(db) * SETUP.audio.gainPedale;
+  N.pedales = d.pedale.map(([f, db], i) => {
+    const g = ctx.createGain();
+    const cible = dbG(db) * SETUP.audio.gainPedale;
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(cible, t + 11);
-    g.connect(A.pan);
-    // deux oscillateurs désaccordés : ils battent, et le battement respire
-    const oscs = [-4, 4].map(c => {
+    g.gain.exponentialRampToValueAtTime(cible, t + SETUP.audio.attaquePedale);
+    g.connect(N.bus);
+
+    const oscs = [-3, 3].map(cents => {
       const o = ctx.createOscillator();
-      o.type = type; o.frequency.value = f; o.detune.value = c;
-      o.connect(g); o.start(t); return o;
+      o.type = 'sine';
+      o.frequency.value = f * TRANSPOSITION;
+      o.detune.value = cents;
+      o.connect(g);
+      o.start(t);
+      return o;
     });
-    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.043 + i*0.017;
-    const prof = ctx.createGain(); prof.gain.value = cible*0.26;
-    lfo.connect(prof).connect(g.gain); lfo.start(t);
+
+    // Elle respire très lentement, sinon elle s'entend comme une sirène.
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.043 + i * 0.017;
+    const prof = ctx.createGain();
+    prof.gain.value = cible * 0.22;
+    lfo.connect(prof).connect(g.gain);
+    lfo.start(t);
+
     return {g, oscs, lfo};
   });
 }
 
-/**
- * La voix médiane : elle tient la TIERCE de l'accord courant, deux octaves
- * au-dessus de la pédale. C'est elle qui porte la couleur — mineure, ou
- * diminuée en locrien. Elle glisse d'un accord au suivant.
- */
-function monterMediane(d){
-  const ctx = A.ctx, t = ctx.currentTime;
-  const notes = accordDe(d.mode, d.progression[0]);
-  const g = ctx.createGain();
-  const cible = dbG(-13) * SETUP.audio.gainPedale;
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(cible, t + 14);
-  g.connect(A.pan);
-  const oscs = [-4, 4].map(c => {
-    const o = ctx.createOscillator();
-    o.type = 'triangle';                 // un peu d'harmoniques : moins lisse
-    o.frequency.value = hz(d.racine, notes[1] + 12);
-    o.detune.value = c; o.connect(g); o.start(t); return o;
-  });
-  N.mediane = {g, oscs};
-}
+/* ═══════════════ LE LIT DE BRUIT ═══════════════ */
 
-/**
- * Avance d'un accord. La médiane glisse vers sa nouvelle tierce en
- * SETUP.audio.accordFondu secondes — c'est le mouvement harmonique qu'on
- * entend, et c'est ce qui manquait complètement en v2.
- */
-function avancerAccord(){
-  if(!A.ctx || !N.drone) return;
-  const d = N.drone;
-  N.accord = (N.accord + 1) % d.progression.length;
-  const notes = accordDe(d.mode, d.progression[N.accord]);
-  if(N.mediane){
-    const t = A.ctx.currentTime, f = hz(d.racine, notes[1] + 12);
-    N.mediane.oscs.forEach(o =>
-      o.frequency.setTargetAtTime(f, t, SETUP.audio.accordFondu/3));
-  }
-  const [a,b] = SETUP.audio.accordDuree;
-  N.horlogeAccord = setTimeout(avancerAccord, (a + Math.random()*(b-a)) * 1000);
-}
-
-/* ─────────────── lit de bruit ─────────────── */
-
-function construireBruit(d){
+function monterBruit(d){
   const ctx = A.ctx;
   const src = ctx.createBufferSource();
-  src.buffer = bruitBuffer(ctx, 8); src.loop = true;
+  src.buffer = bruitBuffer(ctx, 6);
+  src.loop = true;
+
+  /* Un biquad passe-bas vaut −12 dB/octave. La pente relevée dit combien il
+     en faut : au-delà de −13, un seul filtre ne suffit pas. */
   const f1 = ctx.createBiquadFilter();
-  f1.type = 'lowpass'; f1.frequency.value = d.coupure; f1.Q.value = d.pente > -10 ? 0.4 : 0.7;
-  let out = f1, f2 = null;
+  f1.type = 'lowpass';
+  f1.frequency.value = d.coupure;
+  f1.Q.value = d.pente > -10 ? 0.4 : 0.7;
+  src.connect(f1);
+  let sortie = f1;
+
+  let f2 = null;
   if(d.pente <= -13){
     f2 = ctx.createBiquadFilter();
-    f2.type = 'lowpass'; f2.frequency.value = d.coupure*1.3; f2.Q.value = 0.5;
-    f1.connect(f2); out = f2;
+    f2.type = 'lowpass';
+    f2.frequency.value = d.coupure * 1.3;
+    f2.Q.value = 0.5;
+    sortie.connect(f2);
+    sortie = f2;
   }
-  const g = ctx.createGain(); g.gain.value = d.bruit * 0.34;
-  src.connect(f1); out.connect(g); g.connect(A.pan); src.start();
-  N.src = src; N.fb1 = f1; N.fb2 = f2; N.gb = g;
-}
 
-/* ─────────────── événements lents ─────────────── */
-
-/* La cloche : une note de l'accord courant, très haut, très loin. 6 s
-   d'attaque — une apparition, jamais une frappe. */
-function evtCloche(){
-  const d = N.drone;
-  const notes = accordDe(d.mode, d.progression[N.accord]);
-  const n = notes[Math.floor(Math.random()*notes.length)];
-  jouerNote(hz(d.racine, n + 48), -22, 4, SETUP.audio.gainNote, {attaque:6, relache:12});
-}
-
-/* La marée : la coupure du lit de bruit s'ouvre lentement puis se referme.
-   Le fond « respire ». */
-function evtMaree(){
-  const gen = A.gen, base = N.drone.coupure;
-  N.fb1.frequency.setTargetAtTime(base*3, A.ctx.currentTime, 8);
-  if(N.fb2) N.fb2.frequency.setTargetAtTime(base*3.9, A.ctx.currentTime, 8);
-  N.retourMaree = setTimeout(() => {
-    if(!A.ctx || gen !== A.gen || !N.fb1) return;
-    N.fb1.frequency.setTargetAtTime(base, A.ctx.currentTime, 8);
-    if(N.fb2) N.fb2.frequency.setTargetAtTime(base*1.3, A.ctx.currentTime, 8);
-  }, 25000);
-}
-
-/* Le soupir : un glissando descendant très lent sur la quinte diminuée. Le son
-   le plus explicitement inquiétant de la nappe. Nouveau en v3. */
-function evtSoupir(){
-  const d = N.drone, ctx = A.ctx, t = ctx.currentTime;
-  const o = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter();
-  o.type = 'triangle';
-  o.frequency.setValueAtTime(hz(d.racine, 30), t);
-  o.frequency.exponentialRampToValueAtTime(hz(d.racine, 18), t + 9);
-  f.type = 'lowpass'; f.frequency.value = 340; f.Q.value = 2.2;
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(dbG(-16)*SETUP.audio.gainNote, t + 3.5);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 11);
-  o.connect(f).connect(g).connect(A.pan);
-  o.start(t); o.stop(t + 11.5);
-  o.onended = () => { try{ g.disconnect(); }catch(e){} };
-}
-
-function planifierEvt(premier){
-  clearTimeout(N.horlogeEvt);
-  const min = premier ? 0.5 + Math.random()*1.0 : 1.4 + Math.random()*3;
-  const gen = A.gen;
-  N.horlogeEvt = setTimeout(() => {
-    if(gen !== A.gen) return;
-    const lot = [evtCloche, evtSoupir];
-    if(N.drone.bruit >= 0.10 && N.fb1) lot.push(evtMaree);
-    try{ lot[Math.floor(Math.random()*lot.length)](); }catch(e){}
-    planifierEvt(false);
-  }, min * 60000);
-}
-
-/* ─────────────── montage / démontage ─────────────── */
-
-/**
- * LE GRONDEMENT — nouveau en v3.1.
- * Un bruit brun passé dans un passe-bas très résonant qui balaie lentement
- * entre 40 et 110 Hz. Ce n'est pas une note : c'est une masse qui bouge sous
- * le sol. C'est ce qui manquait pour que la nappe soit inquiétante en
- * permanence plutôt que seulement triste.
- */
-function monterGrondement(d){
-  const ctx = A.ctx, t = ctx.currentTime;
-  const src = ctx.createBufferSource();
-  src.buffer = bruitBrunBuffer(ctx, 11); src.loop = true;
-  const f1 = ctx.createBiquadFilter();
-  f1.type = 'lowpass'; f1.frequency.value = 70; f1.Q.value = 9;
-  const g = ctx.createGain(); g.gain.value = 0.0001;
-  g.gain.exponentialRampToValueAtTime(0.34, t + 9);
-  src.connect(f1).connect(g).connect(A.pan);
-  // balayage très lent : le sol respire
-  const lfo = ctx.createOscillator(); lfo.frequency.value = 0.023;
-  const prof = ctx.createGain(); prof.gain.value = 34;
-  lfo.connect(prof).connect(f1.frequency); lfo.start(t);
+  const g = ctx.createGain();
+  g.gain.value = d.bruit * SETUP.audio.gainBruit;
+  sortie.connect(g).connect(N.bus);
   src.start();
-  N.grondement = {src, g, lfo, f1};
+
+  N.bruitSrc = src; N.bruitG = g; N.f1 = f1; N.f2 = f2;
 }
 
-function monterDrone(d){
-  N.drone = d; N.id = d.id; N.dernierDegre = null; N.accord = 0;
-  monterPedale(d);
-  monterMediane(d);
-  monterGrondement(d);
-  construireBruit(d);
-  planifierMelodie();
-  planifierEvt(true);
-  const [a,b] = SETUP.audio.accordDuree;
-  N.horlogeAccord = setTimeout(avancerAccord, (a + Math.random()*(b-a)) * 1000);
-}
+/* ═══════════════ MONTER, DESCENDRE ═══════════════ */
 
-function descendreDrone(apres){
+function demonter(){
+  clearTimeout(N.horloge); N.horloge = null;
   const ctx = A.ctx;
-  if(!ctx){ if(apres) apres(); return; }
-  [N.horloge, N.horlogeEvt, N.horlogeAccord, N.retourMaree].forEach(clearTimeout);
-  N.horloge = N.horlogeEvt = N.horlogeAccord = N.retourMaree = null;
+  if(!ctx) return;
+  const t = ctx.currentTime;
 
-  const t = ctx.currentTime, rel = 3.5;
-  const eteindre = v => { try{
-    v.g.gain.cancelScheduledValues(t);
-    v.g.gain.setValueAtTime(Math.max(0.0001, v.g.gain.value), t);
-    v.g.gain.exponentialRampToValueAtTime(0.0001, t + rel);
-    v.oscs.forEach(o => o.stop(t + rel + 0.3));
-    if(v.lfo) v.lfo.stop(t + rel + 0.3);
-  }catch(e){} };
+  for(const p of N.pedales){
+    try{
+      p.g.gain.cancelScheduledValues(t);
+      p.g.gain.setValueAtTime(Math.max(0.0001, p.g.gain.value), t);
+      p.g.gain.exponentialRampToValueAtTime(0.0001, t + 2.0);
+      p.oscs.forEach(o => o.stop(t + 2.3));
+      p.lfo.stop(t + 2.3);
+    }catch(e){}
+  }
+  N.pedales = [];
 
-  N.pedales.forEach(eteindre);
-  if(N.mediane) eteindre(N.mediane);
-  if(N.gb){ try{
-    N.gb.gain.cancelScheduledValues(t);
-    N.gb.gain.setValueAtTime(N.gb.gain.value, t);
-    N.gb.gain.linearRampToValueAtTime(0.0001, t + rel);
-    N.src.stop(t + rel + 0.3);
-  }catch(e){} }
-
-  if(N.grondement){ try{
-    N.grondement.g.gain.cancelScheduledValues(t);
-    N.grondement.g.gain.setValueAtTime(N.grondement.g.gain.value, t);
-    N.grondement.g.gain.linearRampToValueAtTime(0.0001, t + rel);
-    N.grondement.src.stop(t + rel + 0.3);
-    N.grondement.lfo.stop(t + rel + 0.3);
-  }catch(e){} }
-
-  N.pedales = []; N.mediane = null; N.grondement = null;
-  N.src = N.gb = N.fb1 = N.fb2 = null;
-  if(apres) setTimeout(apres, (rel + 0.4) * 1000);
+  if(N.bruitG){
+    try{
+      N.bruitG.gain.cancelScheduledValues(t);
+      N.bruitG.gain.setValueAtTime(Math.max(0.0001, N.bruitG.gain.value), t);
+      N.bruitG.gain.exponentialRampToValueAtTime(0.0001, t + 2.0);
+      N.bruitSrc.stop(t + 2.3);
+    }catch(e){}
+  }
+  N.bruitSrc = N.bruitG = N.f1 = N.f2 = null;
+  N.dernier = null;
 }
 
-/* ─────────────── API ─────────────── */
+function monter(d){
+  const ctx = A.ctx;
+  if(!ctx) return;
+  N.drone = d;
+
+  if(!N.bus){
+    N.bus = ctx.createGain();
+    N.bus.gain.value = 1;
+    N.bus.connect(A.pan);
+  }
+  monterPedale(d);
+  monterBruit(d);
+  planifier();
+}
+
+/* ═══════════════ INTERFACE ═══════════════ */
 
 function demarrerNappe(id){
-  monterDrone(DRONES.find(d => d.id === id) || DRONES[0]);
+  if(!A.ctx) return;
+  demonter();
+  monter(droneDe(id));
 }
 
-/** Fondu sortant puis entrant. Jamais de morphose : c'est la règle. */
+/**
+ * Change de drone.
+ *
+ * RÈGLE : un drone ne se transforme jamais en un autre. On éteint
+ * complètement, puis on rallume. Interpoler entre deux tables de fréquences
+ * relevées ne donne rien de musical — juste une bouillie pendant dix secondes.
+ * Marcher d'un biome à l'autre EST le geste, et il doit s'entendre.
+ */
 function changerNappe(id){
-  const d = DRONES.find(x => x.id === id) || DRONES[0];
-  if(!A.ctx || N.enTransition || d.id === N.id) return;
-  N.enTransition = true; N.id = d.id;
-  const gen = A.gen;
-  descendreDrone(() => {
-    if(gen !== A.gen) return;
+  if(!A.ctx) return;
+  if(N.drone && N.drone.id === id) return;
+  if(N.enTransition) return;
+
+  N.enTransition = true;
+  const gen = ++N.gen;
+  demonter();
+  setTimeout(() => {
+    if(gen !== N.gen){ N.enTransition = false; return; }
+    monter(droneDe(id));
     N.enTransition = false;
-    monterDrone(d);
-  });
+  }, 2400);
 }
 
-/** Un accroc bref dans la nappe : elle vient de te repérer. */
+/**
+ * Un accroc : la nappe se fige une seconde, puis reprend.
+ *
+ * Utilisé quand la créature passe tout près. Ce n'est pas un effet sonore,
+ * c'est une ABSENCE : on remarque le silence d'un fond qu'on avait cessé
+ * d'entendre, et c'est bien plus efficace qu'un bruit de plus.
+ */
 function accroc(){
-  if(!A.ctx || !N.drone) return;
+  if(!A.ctx || !N.bus) return;
   const t = A.ctx.currentTime;
-  N.pedales.forEach(v => {
-    try{
-      const g = v.g.gain.value;
-      v.g.gain.cancelScheduledValues(t);
-      v.g.gain.setValueAtTime(g, t);
-      v.g.gain.linearRampToValueAtTime(g*0.15, t + 0.08);
-      v.g.gain.setTargetAtTime(g, t + 0.5, 1.4);
-    }catch(e){}
-  });
+  const g = N.bus.gain;
+  g.cancelScheduledValues(t);
+  g.setValueAtTime(g.value, t);
+  g.exponentialRampToValueAtTime(0.06, t + 0.10);
+  g.exponentialRampToValueAtTime(1.0, t + 1.30);
 }
 
   return { DRONES, accroc, changerNappe, demarrerNappe, nomNappe };
@@ -12104,17 +13143,29 @@ uniform vec3 uTeinte, uFog;
 uniform float uAvecTex, uEclat, uFogD, uDist;
 
 void main(){
-  vec3 c;
-  if(uAvecTex > 0.5){
-    vec4 t = texture(uTex, vUv);
-    if(t.a < 0.15) discard;                    // les cartes découpées gardent leur forme
-    c = t.rgb * uEclat;
-  } else {
-    c = uTeinte * uEclat;
-  }
-  // la même brume que le reste du monde, sinon la carte flotte hors du décor
-  float f = exp(-pow(max(uDist - 0.6, 0.0) * uFogD * 0.01, 2.0));
-  frag = vec4(mix(uFog, c, clamp(f, 0.0, 1.0)), 1.0);
+  vec4 t = texture(uTex, vUv);
+
+  /* ── L'ALPHA ÉTAIT FORCÉ À 1, ET C'ÉTAIT LE BUG ──
+     « Il y a comme une hachure sur l'image et elle est toute petite dans un
+     fond carré noir. »
+
+     Le carré noir n'était pas un fond : c'était la passe de LUEUR, un
+     rectangle sans texture, une fois et demie plus grand que la carte, dessiné
+     avec un alpha force a 1. Un aplat opaque, donc. Et la hachure, c'est le grain
+     de la passe écran qui se voit sur un aplat sombre et uniforme — il est
+     invisible sur une texture, il saute aux yeux sur du plat.
+
+     La passe de lueur est supprimée. Il ne reste que l'image, et son alpha est
+     celui du fichier : une carte découpée garde sa découpe. */
+  if(t.a < 0.08) discard;
+
+  vec3 c = t.rgb * uEclat;
+
+  /* La brume, comme le reste du monde — sinon la carte flotte hors du décor.
+     Mais on la MODÈRE sur les cartes : c'est le seul objet du jeu qu'on
+     cherche, et le noyer à huit mètres reviendrait à le cacher. */
+  float f = exp(-pow(max(uDist - 0.6, 0.0) * uFogD * 0.006, 2.0));
+  frag = vec4(mix(uFog, c, clamp(f, 0.35, 1.0)), t.a);
 }`;
 
 let P = null, U = null, vao = null;
@@ -12237,6 +13288,17 @@ function dessinerCartes(ctx){
   gl.activeTexture(gl.TEXTURE0);
   gl.uniform1i(U.uTex, 0);
 
+  /* ── LE MÉLANGE ALPHA, ACTIVÉ POUR LES CARTES SEULES ──
+     Le reste du jeu est entièrement opaque : le moteur n'allume jamais le
+     mélange. Or les cartes sont découpées, et leur bord est adouci sur
+     quelques pixels. Sans mélange, ce bord se rend en marches d'escalier.
+
+     On l'allume ici, on l'éteint juste après. L'écriture de profondeur reste
+     active : deux cartes qui se recouvrent sont rarissimes, et les trier
+     coûterait plus que le défaut qu'on éviterait. */
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
   for(const k of cartes){
     if(k.prise) continue;
     const dx = k.x - cam.x, dz = k.z - cam.z;
@@ -12272,35 +13334,26 @@ function dessinerCartes(ctx){
       gl.uniform1f(U.uDist, dist);
     };
 
-    /* ── PLUS DE CADRE ──
-       « Retirer le cadre que tu as fait. Tu gardes que mes cartes GIF, avec la
-       lumière projetée, et la carte prend toute la place. »
+    /* ── RIEN QUE LA CARTE ──
+       « Je ne veux que voir les jolies cartes. »
 
-       Il ne reste donc que deux passes : la lueur, et l'image. Le liseré a
-       disparu — les cartes d'Orlando portent DÉJÀ leur propre bord découpé,
-       et en ajouter un revenait à encadrer un cadre.
+       Une seule passe, une seule chose à l'écran : l'image, avec son propre
+       alpha. Plus de cadre, plus de lueur. La lueur était un rectangle opaque
+       — voir le shader — et elle produisait exactement le fond noir hachuré
+       signalé en test.
 
-       1. LA LUEUR — large, sans texture. C'est ce qu'on aperçoit dans la brume
-          avant de distinguer la carte : elle sert à la repérer, pas à
-          l'habiller. Elle déborde donc franchement, et reste faible. */
-    gl.uniform1f(U.uAvecTex, 0);
-    gl.uniform3fv(U.uTeinte, [col[0]*0.50, col[1]*0.50, col[2]*0.50]);
-    poser(C.largeur * 1.85, C.hauteur * 1.85, 0.26 * puls);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-    /* 2. L'IMAGE, pleine taille. */
-    if(tex){
-      gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.uniform1f(U.uAvecTex, 1);
-    } else {
-      // pas encore chargée : une plaque sourde, le temps que le GIF arrive
-      gl.uniform1f(U.uAvecTex, 0);
-      gl.uniform3fv(U.uTeinte, [col[0]*0.30, col[1]*0.30, col[2]*0.30]);
-    }
-    poser(C.largeur, C.hauteur, C.eclatIllustration);
+       Ce qui fait qu'on la repère de loin, désormais, c'est la LAMPE qu'elle
+       porte : une vraie source lumineuse posée à sa hauteur, qui perce le
+       brouillard là où un aplat ne perçait rien. C'est le même remède que
+       pour les armes et les cachettes. */
+    if(!tex) continue;                      // pas encore chargée : on n'affiche rien
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1f(U.uAvecTex, 1);
+    poser(C.largeur, C.hauteur, C.eclatIllustration * puls);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
 
+  gl.disable(gl.BLEND);
   gl.bindVertexArray(null);
 }
 
@@ -13304,7 +14357,7 @@ __M['M_jeu'] = (function(){
   const { armes, ARMES, armeCourante, choisirArme, armeSuivante, majArmes, frapper, reculMere, memoire, oublierCoups, reinitialiserArmes, armesAuSol, cellulesAuSol, ramasserArmes, reprendreArmesAuSol } = __M['M_joueur_armes'];
   const { majVueArme, matriceArme, maillagePour, viderMaillages } = __M['M_joueur_vue_arme'];
   const { gouffres, effondrerZone } = __M['M_monde_relief'];
-  const { cachettes, cachetteProche, dansCachette } = __M['M_monde_cachettes'];
+  const { cachettes, cachetteProche, dansCachette, abriProche } = __M['M_monde_cachettes'];
   const { addProp } = __M['M_monde_props'];
   const { majPaves, indexerProps, libererTousLesPaves, paves } = __M['M_monde_maillage'];
   const { placerSortie, atteinte, objectif } = __M['M_monde_sortie'];
@@ -13315,7 +14368,7 @@ __M['M_jeu'] = (function(){
   const { RANGS } = __M['M_carte_rangs'];
   const { sonderStacks, identite } = __M['M_carte_catalogue'];
   const { cartes, placerCartes, ramasser } = __M['M_carte_placement'];
-  const { possede, ajouter, charger: chargerCollection, majAffichage } = __M['M_carte_collection'];
+  const { possede, ajouter, charger: chargerCollection, majAffichage, brancherLoupe } = __M['M_carte_collection'];
   const { ST } = __M['M_creatures_etats'];
   const { directeur } = __M['M_creatures_directeur'];
   const { creature, repousserMere, spawnCreature, updateCreature, brancherCri } = __M['M_creatures_mere'];
@@ -13700,7 +14753,7 @@ function utiliserArme(){
  * présentent jamais au même endroit.
  */
 function actionContextuelle(){
-  if(joueur.abrite || cachetteProche(joueur.x, joueur.z, 2.4)){
+  if(joueur.abrite || abriProche(joueur.x, joueur.z, 2.4)){
     basculerCachette();
     return;
   }
@@ -13713,22 +14766,46 @@ function actionContextuelle(){
 function basculerCachette(){
   if(joueur.abrite){
     joueur.abrite = false;
-    // on ressort par l'entrée
-    if(joueur.cachette){ joueur.x = joueur.cachette.entree.x; joueur.z = joueur.cachette.entree.z; }
+    // on ressort par l'entrée, ou par la portière
+    if(joueur.cachette && joueur.cachette.entree){
+      joueur.x = joueur.cachette.entree.x;
+      joueur.z = joueur.cachette.entree.z;
+    } else if(joueur.cachette){
+      joueur.cachette.occupee = false;
+      // on se dégage sur le côté : ressortir dans la tôle serait fâcheux
+      joueur.x += Math.cos(joueur.cachette.ry + Math.PI/2) * 1.6;
+      joueur.z += Math.sin(joueur.cachette.ry + Math.PI/2) * 1.6;
+    }
     joueur.cachette = null;
+    joueur.abriSorte = null;
     Audio.murer(false);
     Audio.effets.sortirCachette();
     flash('À DÉCOUVERT');
     return;
   }
-  const k = cachetteProche(joueur.x, joueur.z, 2.4);
-  if(!k) return;
-  joueur.abrite = true; joueur.cachette = k;
-  joueur.x = k.x; joueur.z = k.z;
+
+  const a = abriProche(joueur.x, joueur.z, 2.4);
+  if(!a) return;
+
+  joueur.abrite = true;
+  joueur.cachette = a.ref;
+  joueur.abriSorte = a.sorte;
+  joueur.x = a.ref.x; joueur.z = a.ref.z;
   joueur.vx = joueur.vz = 0;
-  Audio.murer(true);
-  Audio.effets.entrerCachette();
-  flash('À L\'ABRI');
+
+  if(a.sorte === 'voiture'){
+    a.ref.occupee = true;
+    /* Une tôle n'enterre pas : le monde extérieur reste audible, seulement
+       assourdi. Le terrier, lui, coupe tout — c'est ce qui les distingue, et
+       c'est ce qu'on entend en y entrant. */
+    Audio.murer(false);
+    Audio.effets.entrerCachette();
+    flash('DANS LA VOITURE · ELLE PEUT ENCORE TE SENTIR');
+  } else {
+    Audio.murer(true);
+    Audio.effets.entrerCachette();
+    flash('À L\'ABRI');
+  }
 }
 
 /* ─────────────── mort et fin ─────────────── */
@@ -14154,6 +15231,7 @@ async function demarrer(){
 
   chargerCollection();
   sonderStacks(() => majAffichage());
+  brancherLoupe();
   majAffichage();
 
   brancherCri(() => { Audio.cri(); Audio.accroc(); });

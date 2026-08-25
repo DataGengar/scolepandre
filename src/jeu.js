@@ -34,7 +34,7 @@ import {
 import {majVueArme, matriceArme, maillagePour, viderMaillages}
   from './joueur/vue-arme.js';
 import {gouffres, effondrerZone} from './monde/relief.js';
-import {cachettes, cachetteProche, dansCachette} from './monde/cachettes.js';
+import {cachettes, cachetteProche, dansCachette, abriProche} from './monde/cachettes.js';
 import {addProp} from './monde/props.js';
 import {majPaves, indexerProps, libererTousLesPaves, paves} from './monde/maillage.js';
 import {placerSortie, atteinte, objectif} from './monde/sortie.js';
@@ -49,7 +49,8 @@ import {pancartes, chargerPancartes, poser as poserPancarte,
 import {RANGS} from './carte/rangs.js';
 import {sonderStacks, identite} from './carte/catalogue.js';
 import {cartes, placerCartes, ramasser} from './carte/placement.js';
-import {possede, ajouter, charger as chargerCollection, majAffichage} from './carte/collection.js';
+import {possede, ajouter, charger as chargerCollection, majAffichage,
+        brancherLoupe} from './carte/collection.js';
 
 import {ST} from './creatures/etats.js';
 import {directeur} from './creatures/directeur.js';
@@ -390,7 +391,7 @@ function utiliserArme(){
  * présentent jamais au même endroit.
  */
 function actionContextuelle(){
-  if(joueur.abrite || cachetteProche(joueur.x, joueur.z, 2.4)){
+  if(joueur.abrite || abriProche(joueur.x, joueur.z, 2.4)){
     basculerCachette();
     return;
   }
@@ -403,22 +404,46 @@ function actionContextuelle(){
 function basculerCachette(){
   if(joueur.abrite){
     joueur.abrite = false;
-    // on ressort par l'entrée
-    if(joueur.cachette){ joueur.x = joueur.cachette.entree.x; joueur.z = joueur.cachette.entree.z; }
+    // on ressort par l'entrée, ou par la portière
+    if(joueur.cachette && joueur.cachette.entree){
+      joueur.x = joueur.cachette.entree.x;
+      joueur.z = joueur.cachette.entree.z;
+    } else if(joueur.cachette){
+      joueur.cachette.occupee = false;
+      // on se dégage sur le côté : ressortir dans la tôle serait fâcheux
+      joueur.x += Math.cos(joueur.cachette.ry + Math.PI/2) * 1.6;
+      joueur.z += Math.sin(joueur.cachette.ry + Math.PI/2) * 1.6;
+    }
     joueur.cachette = null;
+    joueur.abriSorte = null;
     Audio.murer(false);
     Audio.effets.sortirCachette();
     flash('À DÉCOUVERT');
     return;
   }
-  const k = cachetteProche(joueur.x, joueur.z, 2.4);
-  if(!k) return;
-  joueur.abrite = true; joueur.cachette = k;
-  joueur.x = k.x; joueur.z = k.z;
+
+  const a = abriProche(joueur.x, joueur.z, 2.4);
+  if(!a) return;
+
+  joueur.abrite = true;
+  joueur.cachette = a.ref;
+  joueur.abriSorte = a.sorte;
+  joueur.x = a.ref.x; joueur.z = a.ref.z;
   joueur.vx = joueur.vz = 0;
-  Audio.murer(true);
-  Audio.effets.entrerCachette();
-  flash('À L\'ABRI');
+
+  if(a.sorte === 'voiture'){
+    a.ref.occupee = true;
+    /* Une tôle n'enterre pas : le monde extérieur reste audible, seulement
+       assourdi. Le terrier, lui, coupe tout — c'est ce qui les distingue, et
+       c'est ce qu'on entend en y entrant. */
+    Audio.murer(false);
+    Audio.effets.entrerCachette();
+    flash('DANS LA VOITURE · ELLE PEUT ENCORE TE SENTIR');
+  } else {
+    Audio.murer(true);
+    Audio.effets.entrerCachette();
+    flash('À L\'ABRI');
+  }
 }
 
 /* ─────────────── mort et fin ─────────────── */
@@ -844,6 +869,7 @@ async function demarrer(){
 
   chargerCollection();
   sonderStacks(() => majAffichage());
+  brancherLoupe();
   majAffichage();
 
   brancherCri(() => { Audio.cri(); Audio.accroc(); });

@@ -43,17 +43,29 @@ uniform vec3 uTeinte, uFog;
 uniform float uAvecTex, uEclat, uFogD, uDist;
 
 void main(){
-  vec3 c;
-  if(uAvecTex > 0.5){
-    vec4 t = texture(uTex, vUv);
-    if(t.a < 0.15) discard;                    // les cartes découpées gardent leur forme
-    c = t.rgb * uEclat;
-  } else {
-    c = uTeinte * uEclat;
-  }
-  // la même brume que le reste du monde, sinon la carte flotte hors du décor
-  float f = exp(-pow(max(uDist - 0.6, 0.0) * uFogD * 0.01, 2.0));
-  frag = vec4(mix(uFog, c, clamp(f, 0.0, 1.0)), 1.0);
+  vec4 t = texture(uTex, vUv);
+
+  /* ── L'ALPHA ÉTAIT FORCÉ À 1, ET C'ÉTAIT LE BUG ──
+     « Il y a comme une hachure sur l'image et elle est toute petite dans un
+     fond carré noir. »
+
+     Le carré noir n'était pas un fond : c'était la passe de LUEUR, un
+     rectangle sans texture, une fois et demie plus grand que la carte, dessiné
+     avec un alpha force a 1. Un aplat opaque, donc. Et la hachure, c'est le grain
+     de la passe écran qui se voit sur un aplat sombre et uniforme — il est
+     invisible sur une texture, il saute aux yeux sur du plat.
+
+     La passe de lueur est supprimée. Il ne reste que l'image, et son alpha est
+     celui du fichier : une carte découpée garde sa découpe. */
+  if(t.a < 0.08) discard;
+
+  vec3 c = t.rgb * uEclat;
+
+  /* La brume, comme le reste du monde — sinon la carte flotte hors du décor.
+     Mais on la MODÈRE sur les cartes : c'est le seul objet du jeu qu'on
+     cherche, et le noyer à huit mètres reviendrait à le cacher. */
+  float f = exp(-pow(max(uDist - 0.6, 0.0) * uFogD * 0.006, 2.0));
+  frag = vec4(mix(uFog, c, clamp(f, 0.35, 1.0)), t.a);
 }`;
 
 let P = null, U = null, vao = null;
@@ -176,6 +188,17 @@ export function dessinerCartes(ctx){
   gl.activeTexture(gl.TEXTURE0);
   gl.uniform1i(U.uTex, 0);
 
+  /* ── LE MÉLANGE ALPHA, ACTIVÉ POUR LES CARTES SEULES ──
+     Le reste du jeu est entièrement opaque : le moteur n'allume jamais le
+     mélange. Or les cartes sont découpées, et leur bord est adouci sur
+     quelques pixels. Sans mélange, ce bord se rend en marches d'escalier.
+
+     On l'allume ici, on l'éteint juste après. L'écriture de profondeur reste
+     active : deux cartes qui se recouvrent sont rarissimes, et les trier
+     coûterait plus que le défaut qu'on éviterait. */
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
   for(const k of cartes){
     if(k.prise) continue;
     const dx = k.x - cam.x, dz = k.z - cam.z;
@@ -211,34 +234,25 @@ export function dessinerCartes(ctx){
       gl.uniform1f(U.uDist, dist);
     };
 
-    /* ── PLUS DE CADRE ──
-       « Retirer le cadre que tu as fait. Tu gardes que mes cartes GIF, avec la
-       lumière projetée, et la carte prend toute la place. »
+    /* ── RIEN QUE LA CARTE ──
+       « Je ne veux que voir les jolies cartes. »
 
-       Il ne reste donc que deux passes : la lueur, et l'image. Le liseré a
-       disparu — les cartes d'Orlando portent DÉJÀ leur propre bord découpé,
-       et en ajouter un revenait à encadrer un cadre.
+       Une seule passe, une seule chose à l'écran : l'image, avec son propre
+       alpha. Plus de cadre, plus de lueur. La lueur était un rectangle opaque
+       — voir le shader — et elle produisait exactement le fond noir hachuré
+       signalé en test.
 
-       1. LA LUEUR — large, sans texture. C'est ce qu'on aperçoit dans la brume
-          avant de distinguer la carte : elle sert à la repérer, pas à
-          l'habiller. Elle déborde donc franchement, et reste faible. */
-    gl.uniform1f(U.uAvecTex, 0);
-    gl.uniform3fv(U.uTeinte, [col[0]*0.50, col[1]*0.50, col[2]*0.50]);
-    poser(C.largeur * 1.85, C.hauteur * 1.85, 0.26 * puls);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-    /* 2. L'IMAGE, pleine taille. */
-    if(tex){
-      gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.uniform1f(U.uAvecTex, 1);
-    } else {
-      // pas encore chargée : une plaque sourde, le temps que le GIF arrive
-      gl.uniform1f(U.uAvecTex, 0);
-      gl.uniform3fv(U.uTeinte, [col[0]*0.30, col[1]*0.30, col[2]*0.30]);
-    }
-    poser(C.largeur, C.hauteur, C.eclatIllustration);
+       Ce qui fait qu'on la repère de loin, désormais, c'est la LAMPE qu'elle
+       porte : une vraie source lumineuse posée à sa hauteur, qui perce le
+       brouillard là où un aplat ne perçait rien. C'est le même remède que
+       pour les armes et les cachettes. */
+    if(!tex) continue;                      // pas encore chargée : on n'affiche rien
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1f(U.uAvecTex, 1);
+    poser(C.largeur, C.hauteur, C.eclatIllustration * puls);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
 
+  gl.disable(gl.BLEND);
   gl.bindVertexArray(null);
 }

@@ -18,6 +18,7 @@ Ce que ça n'attrape pas : les erreurs sémantiques, les variables non définies
 les erreurs de type. Pour ça, il faut ouvrir la page et lire la console.
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -37,6 +38,36 @@ OUVRANTS = set("([{")
 AVANT_REGEX = set("(,=:[!&|?{};+-*%~^<>") | {"return", "typeof", "case", "in", "of", "new", "delete"}
 
 
+def _accents_graves_glsl(s):
+    """
+    Tout accent grave dans un commentaire de bloc, dans un fichier GLSL.
+
+    LA RÈGLE EXISTAIT DÉJÀ, ET ELLE NE POUVAIT PAS SE DÉCLENCHER. Elle vivait
+    dans l'analyseur lexical, qui parcourt le fichier de gauche à droite : en
+    arrivant sur l'accent grave qui ouvre la source du shader, il entre en mode
+    « chaîne gabarit » et avale tout jusqu'au suivant. Or le suivant est
+    justement celui du commentaire fautif — donc le commentaire n'est jamais
+    vu COMME un commentaire, et la règle n'est jamais consultée.
+
+    Vécu deux fois : « `ang` » dans un shader du monde, puis « `frag.a = 1.0` »
+    dans celui des cartes. Les deux fois, page blanche et une erreur de syntaxe
+    à une ligne qui n'a rien à voir.
+
+    On cherche donc les commentaires dans le TEXTE BRUT, par expression
+    régulière, sans se soucier de l'état du lexeur. C'est approximatif — un
+    « /* » dans une chaîne serait pris pour un commentaire — mais pour cette
+    question précise, l'approximation ne peut que signaler trop, jamais trop
+    peu, et c'est le bon sens de l'erreur.
+    """
+    pb = []
+    for m in re.finditer(r"/\*.*?\*/", s, re.S):
+        if "`" in m.group(0):
+            ligne = s.count(chr(10), 0, m.start()) + 1
+            pb.append(f"ligne {ligne} : accent grave dans un commentaire de bloc "
+                      f"— il FERME le template literal GLSL qui l'englobe")
+    return pb
+
+
 def controler(chemin: Path):
     """Renvoie une liste de messages d'erreur pour ce fichier."""
     s = chemin.read_text(encoding="utf-8")
@@ -47,6 +78,11 @@ def controler(chemin: Path):
     glsl = "#version 300 es" in s
     n = len(s)
     pb = []
+
+    # contrôle en amont : voir _accents_graves_glsl
+    if glsl:
+        pb.extend(_accents_graves_glsl(s))
+
     pile = []          # [(caractère, ligne)]
     i = 0
     ligne = 1

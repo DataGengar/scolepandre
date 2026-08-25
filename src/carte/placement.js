@@ -7,6 +7,7 @@
    cartes sont meilleures — mais c'est là qu'elle vit.                       */
 
 import {SETUP} from '../setup.js';
+import {lights} from '../monde/props.js';
 import {ri, rnd} from '../noyau/rng.js';
 import {
   idx, floorH, blocked, c2w, celluleLibre, profondeurDe,
@@ -43,10 +44,26 @@ export function placerCartes(){
     for(let n=0; n<permis.length; n++){ t -= poids[n]; if(t <= 0){ choisi = permis[n]; break; } }
 
     const rang = RANGS.indexOf(choisi);
-    cartes.push({
+    const k = {
       x: c2w(c.x), y: floorH[i] + SETUP.cartes.hauteurFlottement, z: c2w(c.z),
       rang, id: tirerDansRang(rang, ri), prise:false,
-    });
+    };
+    cartes.push(k);
+
+    /* UNE LAMPE PAR CARTE, de la couleur de son rang.
+       La carte se voyait autrefois grâce à un halo — un rectangle opaque
+       dessiné derrière elle, qui produisait le « fond carré noir hachuré »
+       signalé en test. Il est supprimé. Ce qui la fait repérer désormais est
+       une VRAIE source lumineuse : une lampe perce le brouillard bien
+       au-delà de la distance à laquelle on distingue une surface, et à 7,7 m
+       de visibilité c'est le seul moyen honnête de trouver quoi que ce soit.
+
+       La teinte dit le rang avant qu'on ait vu l'image : une lueur dorée au
+       loin, c'est une légendaire. */
+    const col = RANGS[rang].couleur;
+    if(lights.length < SETUP.decor.maxLumieres)
+      lights.push({x:k.x, y:k.y + 0.15, z:k.z,
+                   c:[col[0]*1.05, col[1]*1.05, col[2]*1.05], ph:rnd()*6.28});
   }
   return cartes.length;
 }

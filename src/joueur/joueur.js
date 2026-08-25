@@ -9,6 +9,7 @@
    volontaire, et c'est ce qui rend les précipices dangereux.               */
 
 import {SETUP} from '../setup.js';
+import {solSous, murA, aDesNiveaux} from '../monde/niveaux.js';
 import {clamp, lerp} from '../noyau/math.js';
 import {rnd, ri} from '../noyau/rng.js';
 import {
@@ -58,6 +59,10 @@ export function spawnJoueur(){
   joueur.gy = floorH[idx(c.x,c.z)]; joueur.vy = 0;
   joueur.yaw = rnd()*6.28; joueur.pitch = 0; joueur.held = 1;
   joueur.abrite = false; joueur.cachette = null;
+  /* Deux qualités d'abri. `abrite` reste le drapeau que tout le reste du jeu
+     interroge — la créature, le froid, le son — et `abriSorte` dit LEQUEL,
+     pour ceux qui font la différence. */
+  joueur.abriSorte = null;
   joueur.degageAuto = 0;
   veille.temps = 0; veille.parcouru = 0; veille.x = 0; veille.z = 0;
   joueur.prone = 0; joueur.shake = 0; joueur.chuteDepuis = null;
@@ -132,6 +137,19 @@ export function coteSol(wx, wz){
   if(x<0 || z<0 || x>=GW || z>=GH) return -99999;
   const i = idx(x,z);
   if(joueur.surPont && pont[i]) return pontH[i];
+
+  /* ── LES PLANCHERS DE BÂTIMENT ──
+     Depuis monde/niveaux.js, une cellule peut porter plusieurs sols : la
+     crypte, la nef, le triforium. On demande LE PLUS HAUT QUI SOIT SOUS LES
+     PIEDS — pas le plus proche. Prendre le plus proche ferait remonter d'un
+     étage en passant dessous, ce qui est le genre de téléportation qui rend
+     un jeu inexplicable.
+
+     `aDesNiveaux()` évite tout coût dans les mondes sans bâtiment. */
+  if(aDesNiveaux()){
+    const r = solSous(x, z, joueur.gy, SETUP.monde.marcheJoueur);
+    if(r.source === 'niveau') return r.y;
+  }
   if(vide[i]) return -99999;
   if(!isFloor(x,z)) return -99999;
   return floorH[i];
@@ -290,6 +308,14 @@ export function bloqueA(nx, nz, depuis){
      sol ne peuvent nous arrêter. Seul le bord du tablier compte, et il ne
      bloque pas — il laisse tomber. */
   if(joueur.surPont) return false;
+
+  /* Un mur de bâtiment n'occupe qu'une TRANCHE d'altitude : on passe sous une
+     arche et on bute contre le piédroit qui la porte. C'est toute la
+     différence entre une cathédrale et un bloc — et c'est ce que `blocked[]`
+     ne sait pas exprimer, lui qui condamne une colonne entière du sol au
+     ciel. */
+  if(aDesNiveaux() && murA(w2c(nx), w2c(nz), depuis)) return true;
+
   return heurteElement(nx, nz, depuis) || heurteTerrain(nx, nz, depuis);
 }
 
