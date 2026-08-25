@@ -210,10 +210,28 @@ export const SETUP = {
   },
 
   /* ─────────────── CACHETTES ─────────────── */
+  /* ─── POURQUOI CES NOMBRES ONT DOUBLÉ ───
+      « Je n'ai trouvé aucun gun, cachette ou cabane. » Mesuré : les objets
+      étaient à une centaine de mètres en moyenne — donc pas rares. LE PROBLÈME
+      EST QU'ON NE VOIT QU'À 7,7 m. Pour ratisser les 0,66 km² utiles il
+      faudrait parcourir 43 km, soit plus de trois heures de marche continue.
+
+      Ajouter des objets ne réglait donc rien : il fallait qu'ils SE SIGNALENT
+      au-delà de la vue. Trois leviers, appliqués ensemble — une balise
+      lumineuse qui perce la brume, une portée de sismographe qui a du sens, et
+      une densité un peu relevée. Le troisième seul aurait juste rendu le monde
+      encombré sans le rendre lisible. */
   cachettes:{
-    nombre:16,
-    ecartMin:140,        // mètres entre deux cachettes
-    porteeMarqueur:30,   // distance à laquelle le sismographe la révèle
+    nombre:34,
+    ecartMin:90,         // mètres entre deux cachettes
+    /* 30 m, c'était moins que la distance moyenne entre deux cachettes divisée
+       par trois : on passait à côté sans jamais rien voir. */
+    porteeMarqueur:85,   // distance à laquelle le sismographe la révèle
+    /* La balise : une lueur à l'entrée, faible mais assez pour percer 7,7 m de
+       brume. C'est ce qui transforme « il y a peut-être un trou par là » en
+       « il y a un trou par là ». */
+    balise:[0.30, 0.62, 0.52],
+    baliseGain:1.5,
     filtreSon:520,       // Hz — passe-bas appliqué au monde extérieur
     // le gain de chaleur à l'abri vit dans SETUP.froid.gainCachette :
     // une seule valeur, lue par le seul module qui applique la règle du froid.
@@ -537,7 +555,13 @@ export const SETUP = {
      Un village est un amas de maisons, de carcasses et de lampadaires autour
      d'une place barricadée. Rare, mais on le voit de loin à ses lumières. */
   villages:{
-    nombre:22,
+    /* On ne les voyait pas parce qu'ils ne s'annonçaient pas et qu'ils sont
+       petits devant 0,66 km². Ils gardent leur discrétion sur la carte — c'est
+       le principe, le repérage se mérite — mais leurs lampadaires portent
+       maintenant assez loin pour qu'on aperçoive une lueur et qu'on aille
+       voir. Une lueur au loin, c'est une invitation ; un point sur la carte,
+       c'est une course. */
+    nombre:30,
     rayon:26,            // mètres
     maisons:[6,14],
     carcasses:[3,9],
@@ -567,8 +591,15 @@ export const SETUP = {
     oubliSecondes:38,       // temps pour oublier un coup
     cellulesDepart:0,       // le thunderbolt se trouve vide
     cellulesParTas:4,       // munitions ramassées d'un coup
-    nbArmesDansLeMonde:14,  // exemplaires semés
-    nbTasDeCellules:26,
+    /* 14 armes sur 0,66 km² utiles, c'était une arme tous les 47 000 m² : à
+       7,7 m de visibilité, on ne la trouve jamais. Elles brillent maintenant,
+       et elles sont trois fois plus nombreuses. Trouver une arme reste un
+       événement — mais un événement qui arrive. */
+    nbArmesDansLeMonde:42,
+    nbTasDeCellules:64,
+    /* Le reflet d'un métal dans le noir. C'est ce qu'on aperçoit d'abord. */
+    balise:[0.55, 0.62, 0.78],
+    baliseGain:1.2,
 
     /* ─── COMMENT ON LA TIENT ───
         L'arme est dessinée devant la caméra, pas dans le monde. Ces valeurs

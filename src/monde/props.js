@@ -485,41 +485,163 @@ export function addProp(kind, x, z, i){
                      c:[0.16,0.28,0.72], ph:rnd()*6.28});
       solid = false; break; }
 
-    case 'carcasse': {
-      // une voiture, sur le flanc ou sur le toit. Jamais à l'endroit.
-      const L = rf(3.6, 4.6), W = rf(1.6, 1.9), H = rf(1.2, 1.5);
-      const a = rnd()*6.283;
-      const cs = Math.cos(a), sn = Math.sin(a);
-      const roule = rnd() < 0.5 ? 1.5708 : rf(-0.5, 0.5);   // sur le flanc, ou penchée
-      const tole = [.13,.115,.105], rouille = [.20,.11,.07];
-      const c1 = rnd() < 0.4 ? rouille : tole;
+    /* ══════════════ UNE VOITURE ══════════════
+       « Les voitures sont des rochers énormes, ça ne va pas. Être beaucoup
+       plus détaillées et réalistes. »
 
-      // caisse
-      parts.push({x:wx, y:h + (roule > 1 ? W/2 : H/2), z:wz,
-                  sx:L, sy:(roule > 1 ? W : H), sz:(roule > 1 ? H : W),
-                  c:c1, r:roule*0.35});
-      // pavillon, écrasé
-      parts.push({x:wx - cs*L*0.10, y:h + (roule > 1 ? W*0.55 : H*0.92), z:wz - sn*L*0.10,
-                  sx:L*0.52, sy:H*0.40, sz:W*0.86, c:[c1[0]*.8,c1[1]*.8,c1[2]*.8], r:roule*0.35});
-      // roues : celles qui restent
-      for(const [ox, oz] of [[L*0.34,W*0.5],[L*0.34,-W*0.5],[-L*0.34,W*0.5],[-L*0.34,-W*0.5]]){
-        if(rnd() < 0.28) continue;                 // il en manque toujours une
-        const px = wx + cs*ox - sn*oz, pz = wz + sn*ox + cs*oz;
-        parts.push(colonne([px, h+0.32, pz], .30, [px+cs*0.16, h+0.32, pz+sn*0.16], .30,
-                           [.055,.05,.05]));
+       CE QUI N'ALLAIT PAS. L'ancienne version posait une grosse boîte pour la
+       caisse, une plus petite pour le pavillon, quatre cylindres pour les
+       roues — et roulait le tout de 90° une fois sur deux. Une boîte inclinée
+       de 4,6 m avec des cylindres qui dépassent, dans le noir, à travers le
+       brouillard : c'est un rocher. La faute n'est pas le manque de polygones,
+       c'est le manque de SILHOUETTE.
+
+       CE QUI FAIT QU'ON RECONNAÎT UNE VOITURE, dans l'ordre d'importance :
+
+         1. LE PROFIL EN TROIS TEMPS — capot bas, habitacle haut, coffre bas.
+            C'est la seule chose qu'on lit de loin, et l'ancienne version ne
+            l'avait pas : elle avait une caisse uniforme.
+         2. LES PARE-BRISE INCLINÉS. Deux plans penchés, avant et arrière. Ce
+            sont eux qui donnent l'allure ; verticaux, c'est un camion.
+         3. LES ROUES DANS LES PASSAGES. Une roue posée à côté de la caisse
+            fait un jouet. Il faut qu'elle soit encastrée, et que l'aile la
+            recouvre.
+         4. Le reste — vitres, phares, pare-chocs, portière ouverte — n'est
+            que du détail. Nécessaire de près, sans effet sur la
+            reconnaissance de loin.
+
+       Elle est POSÉE SUR SES ROUES par défaut. La v3 la couchait une fois sur
+       deux « parce que c'est plus dramatique » ; en réalité une voiture sur le
+       flanc n'est plus lisible comme une voiture, et on en avait fait la règle
+       plutôt que l'exception. Une sur cinq est retournée, et celle-là est
+       clairement retournée.
+
+       Les primitives de la v3.4 rendent tout ça possible : `coin` pour les
+       pare-brise inclinés et les ailes, `plaque` pour les vitres, `ry` pour
+       l'orientation — avant, on ne pouvait qu'empiler des boîtes sur les axes. */
+    case 'carcasse': {
+      const L = rf(4.0, 4.7), W = rf(1.72, 1.90);
+      const ry = rnd() * 6.283;
+      const cs = Math.cos(ry), sn = Math.sin(ry);
+      /* Repère local : u vers l'avant, v en travers. Tout est décrit dans ce
+         repère, ce qui permet d'orienter la voiture d'un seul paramètre. */
+      const P = (u, v) => [wx + cs*u - sn*v, wz + sn*u + cs*v];
+
+      const retournee = rnd() < 0.2;
+      const teintes = [[.16,.15,.15], [.13,.11,.10], [.10,.12,.14],
+                       [.17,.11,.08], [.11,.13,.11]];
+      const tole = teintes[ri(0, teintes.length-1)];
+      const sombre = [tole[0]*0.55, tole[1]*0.55, tole[2]*0.55];
+      const noir = [.045,.042,.042];
+      const vitre = [.055,.075,.080];
+
+      // hauteurs de la caisse ; tout part de là
+      const ySeuil = retournee ? 1.28 : 0.42;     // bas de caisse
+      const yCapot = ySeuil + 0.34;               // haut du capot
+      const yToit  = ySeuil + 0.98;               // pavillon
+
+      const boite = (u, v, y, su, sv, sy, c, em) => {
+        const p = P(u, v);
+        const q = bloc(p[0], h + y, p[1], su, sy, sv, c, 0, em || 0);
+        q.ry = ry;
+        parts.push(q);
+        return q;
+      };
+
+      /* ── 1. LE PROFIL EN TROIS TEMPS ──
+         C'est la silhouette, et c'est tout ce qui compte de loin. */
+      boite(  L*0.30, 0, (ySeuil + yCapot)/2, L*0.36, W*0.98,
+              yCapot - ySeuil + 0.16, tole);                     // capot
+      boite(-L*0.02, 0, (ySeuil + yToit)/2 + 0.05, L*0.40, W*0.99,
+              yToit - ySeuil, tole);                             // habitacle
+      boite(-L*0.34, 0, (ySeuil + yCapot)/2, L*0.30, W*0.96,
+              yCapot - ySeuil + 0.10, tole);                     // coffre
+
+      /* ── 2. LES PARE-BRISE INCLINÉS ──
+         Deux coins adossés à l'habitacle. Sans eux, c'est un fourgon. */
+      if(!retournee){
+        for(const [u, sens] of [[L*0.19, -1], [L*-0.24, 1]]){
+          const p = P(u, 0);
+          parts.push({coin: sens, x:p[0], y: h + yCapot + (yToit-yCapot)/2,
+                      z:p[1], sx: L*0.13, sy: yToit - yCapot, sz: W*0.95,
+                      c: vitre, ry: ry + Math.PI/2});
+        }
       }
-      // vitres brisées : quelques éclats au sol
-      for(let q=0;q<Math.round(4*D);q++)
-        parts.push(bloc(wx+rf(-L*0.6,L*0.6), h+0.03, wz+rf(-W,W),
-                        .10,.02,.10, [.30,.36,.36], rnd()*3, 0.15));
-      // le plafonnier tient encore, une fois sur trois
-      if(rnd() < 0.34 && lights.length < SETUP.decor.maxLumieres){
-        parts.push(bloc(wx, h+H*0.7, wz, .18,.06,.18, [2.0,1.9,1.5], 0, 1));
-        lights.push({x:wx, y:h+H*0.8, z:wz, c:[0.9,0.85,0.62], ph:rnd()*6.28});
+
+      /* ── 3. LES ROUES, DANS LEURS PASSAGES ──
+         Encastrées de 40 % dans la caisse. Une roue posée à côté fait jouet. */
+      const empatt = L*0.31, voie = W*0.46;
+      for(const [u, v] of [[empatt, voie], [empatt, -voie],
+                           [-empatt, voie], [-empatt, -voie]]){
+        const manque = rnd() < 0.18;               // il en manque parfois une
+        const p = P(u, v);
+        const yR = retournee ? h + ySeuil + 0.55 : h + 0.34;
+        if(!manque){
+          // le pneu : un prisme court, couché en travers
+          const a = P(u, v + 0.10), b2 = P(u, v - 0.10);
+          parts.push({tube:[[a[0], yR, a[1]], 0.335,
+                            [b2[0], yR, b2[1]], 0.335, 8], c: noir});
+          // la jante, plus claire, au centre
+          const c1 = P(u, v + 0.12), c2 = P(u, v - 0.12);
+          parts.push({tube:[[c1[0], yR, c1[1]], 0.16,
+                            [c2[0], yR, c2[1]], 0.16, 6], c: [.22,.22,.23]});
+        }
+        // l'aile qui coiffe la roue, même absente : le passage reste
+        if(!retournee)
+          boite(u, v*1.06, ySeuil + 0.30, 0.86, 0.20, 0.34, sombre);
       }
-      /* Une voiture est longue et étroite. Le disque d'1,40 m qu'elle posait
-         avant débordait de deux mètres à l'avant comme à l'arrière : on se
-         cognait dans le vide. Elle prend maintenant la forme de ses parts. */
+
+      /* ── 4. LE DÉTAIL ──
+         Sans effet à trente mètres, indispensable à trois. */
+      if(D >= 1 && !retournee){
+        // vitres latérales : des plaques, quatre triangles chacune
+        for(const sd of [1, -1]){
+          if(rnd() < 0.45) continue;               // beaucoup sont brisées
+          const p = P(-L*0.02, sd * W*0.50);
+          parts.push({plaque:1, x:p[0], y: h + (yCapot + yToit)/2 + 0.04,
+                      z:p[1], sx: L*0.36, sy: (yToit - yCapot)*0.86,
+                      c: vitre, ry: ry});
+        }
+        // pare-chocs
+        boite( L*0.49, 0, ySeuil + 0.02, 0.14, W*1.02, 0.20, sombre);
+        boite(-L*0.49, 0, ySeuil + 0.02, 0.14, W*1.02, 0.20, sombre);
+        // phares : deux blocs pâles, éteints depuis longtemps
+        for(const sd of [1, -1])
+          boite(L*0.47, sd * W*0.32, ySeuil + 0.24, 0.10, 0.26, 0.16,
+                [.30,.29,.26]);
+        // une portière ouverte, une fois sur trois
+        if(rnd() < 0.34){
+          const sd = rnd() < 0.5 ? 1 : -1;
+          const p = P(-L*0.10, sd * W*0.54);
+          const q = bloc(p[0], h + ySeuil + 0.42, p[1],
+                         L*0.30, 0.78, 0.09, tole);
+          q.ry = ry + sd * 1.05;                   // battante
+          parts.push(q);
+        }
+      }
+
+      // les éclats de verre au sol, autour
+      for(let q=0; q<Math.round(5*D); q++){
+        const p = P(rf(-L*0.6, L*0.6), rf(-W, W));
+        parts.push({plaque:1, x:p[0], y:h+0.02, z:p[1],
+                    sx:.11, sy:.09, c:[.22,.28,.28], r:1.5708,
+                    ry: rnd()*3});
+      }
+
+      /* Le plafonnier tient encore, une fois sur quatre. C'est la seule
+         lumière du village qui soit à hauteur d'homme, et c'est ce qui fait
+         qu'on remarque une voiture avant de la distinguer. */
+      if(rnd() < 0.26 && lights.length < SETUP.decor.maxLumieres){
+        const p = P(-L*0.02, 0);
+        parts.push(bloc(p[0], h + yToit - 0.10, p[1], .20,.05,.20,
+                        [1.6,1.5,1.2], 0, 1));
+        lights.push({x:p[0], y:h + yToit - 0.2, z:p[1],
+                     c:[0.62,0.58,0.44], ph:rnd()*6.28});
+      }
+
+      /* Une voiture est longue et étroite : elle prend la forme de ses parts,
+         pas un disque. Le disque d'1,40 m de la v3 débordait de deux mètres à
+         l'avant comme à l'arrière — on se cognait dans le vide. */
       dur = true; solid = false; break; }
 
     case 'lampadaire': {

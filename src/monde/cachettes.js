@@ -26,6 +26,7 @@ import {
 } from './grille.js';
 import {BIOMES} from './biomes.js';
 import {autorise} from './plan.js';
+import {lights} from './props.js';
 
 export const cachettes = [];
 
@@ -94,19 +95,33 @@ export function placerCachettes(props){
     };
     cachettes.push(centre);
 
-    /* Un repère discret à l'entrée : trois éclats de cristal très faibles.
-       Assez pour qu'on remarque le trou en passant devant à la torche, pas
-       assez pour le voir de loin dans le fog. */
+    /* ── UNE BALISE, PAS UN REPÈRE DISCRET ──
+       La version précédente posait trois éclats « assez pour qu'on remarque le
+       trou en passant devant à la torche, pas assez pour le voir de loin ».
+       C'était l'intention, et c'était une erreur : avec 7,7 m de visibilité,
+       « en passant devant » veut dire à moins de deux mètres. On ne trouvait
+       aucune cachette, jamais.
+
+       Il faut une VRAIE source lumineuse. Une lampe perce le brouillard bien
+       au-delà de la distance à laquelle on distingue une surface : c'est
+       exactement la propriété dont on a besoin. On aperçoit une lueur verte
+       au loin, on va voir, on trouve un trou. */
     const t = BIOMES[b].lum;
+    const bal = S.balise;
     const parts = [];
     for(let k=0; k<3; k++)
       parts.push({
         x: centre.entree.x + rf(-0.5,0.5), y: h + rf(0.1,0.6),
         z: centre.entree.z + rf(-0.5,0.5),
-        sx:0.06, sy:rf(0.14,0.30), sz:0.06,
-        c:[t[0]*1.5, t[1]*1.8, t[2]*2.2], r:rf(-0.4,0.4), emis:1,
+        sx:0.07, sy:rf(0.18,0.38), sz:0.07,
+        c:[bal[0]*2.2, bal[1]*2.4, bal[2]*2.2], r:rf(-0.4,0.4), emis:1,
       });
     props.push({parts, cell: idx(c.x+dx, c.z+dz)});
+
+    if(lights.length < SETUP.decor.maxLumieres)
+      lights.push({x: centre.entree.x, y: h + 0.55, z: centre.entree.z,
+                   c:[bal[0]*S.baliseGain, bal[1]*S.baliseGain,
+                      bal[2]*S.baliseGain], ph: rnd()*6.28});
   }
   return cachettes.length;
 }

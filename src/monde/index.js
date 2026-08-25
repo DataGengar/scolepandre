@@ -122,10 +122,24 @@ export function* construireMonde(hooks){
      poser, pour rester utilisable par la forge et par les tests, où il n'y a
      pas de monde. */
   placerArmes((liste, combien, fabriquer) => {
-    for(let k=0; k<40000 && liste.length < combien; k++){
+    const S = SETUP.armes;
+    for(let k=0; k<60000 && liste.length < combien; k++){
       const c = celluleLibre(ri), i = idx(c.x, c.z);
       if(blocked[i] || vide[i]) continue;
-      liste.push(fabriquer(c2w(c.x), floorH[i] + 0.24, c2w(c.z)));
+      const o = fabriquer(c2w(c.x), floorH[i] + 0.24, c2w(c.z));
+      liste.push(o);
+
+      /* UNE BALISE. Sans elle, une arme posée au sol est invisible : on ne
+         voit qu'à 7,7 m et il y en a une tous les 15 000 m². Une lampe, elle,
+         perce le brouillard bien au-delà de la distance à laquelle on
+         distingue une surface. On aperçoit un reflet, on va voir.
+
+         C'est le seul moyen honnête : le contraire serait de poser un
+         marqueur sur la carte, ce qui transforme la découverte en course. */
+      if(lights.length < SETUP.decor.maxLumieres)
+        lights.push({x:o.x, y:o.y + 0.30, z:o.z,
+                     c:[S.balise[0]*S.baliseGain, S.balise[1]*S.baliseGain,
+                        S.balise[2]*S.baliseGain], ph: Math.random()*6.28});
     }
   });
 

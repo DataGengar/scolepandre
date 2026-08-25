@@ -36,7 +36,7 @@ import {cuireParts} from '../monde/maillage.js';
 import {trianglesPart} from '../monde/formes.js';
 import {libererMesh} from '../noyau/gl.js';
 import {addProp, props as propsJeu, lights as lightsJeu} from '../monde/props.js';
-import {grid, floorH, ceilH, biome, blocked, sky, idx, FLOOR, c2w} from '../monde/grille.js';
+import {grid, floorH, ceilH, biome, blocked, sky, openN, idx, FLOOR, c2w} from '../monde/grille.js';
 import {semer} from '../noyau/rng.js';
 
 import {PRIMITIVES, ORDRE, formeDe, creer, convertir, centreDe, rayonDe}
@@ -403,9 +403,16 @@ export function chargerDuJeu(type, biomeIndex, graine){
   const cx = 4, cz = 4, i = idx(cx, cz);
 
   const sauve = {g:grid[i], f:floorH[i], c:ceilH[i], b:biome[i],
-                 bl:blocked[i], s:sky[i]};
+                 bl:blocked[i], s:sky[i], o:openN[i]};
   grid[i] = FLOOR; floorH[i] = 0; ceilH[i] = 6; biome[i] = biomeIndex;
   blocked[i] = 0; sky[i] = 0;
+  /* Une cellule BIEN DÉGAGÉE. `addProp` refuse de poser un élément massif
+     dans un boyau — c'est le garde-fou anti-bouchon — et `openN` vaut zéro
+     dans un bac à sable qu'on vient de fabriquer. Sans cette ligne, la forge
+     déclarait « aucune géométrie » pour tout ce qui est volumineux : voiture,
+     maison, monolithe. Le test avait raison de le signaler, mais il accusait
+     l'élément alors que c'était son décor d'essai. */
+  openN[i] = 1;
 
   semer(graine >>> 0);
   let panne = null;
@@ -416,6 +423,7 @@ export function chargerDuJeu(type, biomeIndex, graine){
   lightsJeu.length = avantL;
   grid[i] = sauve.g; floorH[i] = sauve.f; ceilH[i] = sauve.c;
   biome[i] = sauve.b; blocked[i] = sauve.bl; sky[i] = sauve.s;
+  openN[i] = sauve.o;
 
   // on recentre sur l'origine : il a été bâti autour de la cellule d'essai
   const dx = c2w(cx), dz = c2w(cz);
