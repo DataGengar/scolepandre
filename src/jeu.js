@@ -26,6 +26,9 @@ import {
 } from './monde/grille.js';
 import * as Grille from './monde/grille.js';
 import {construireMonde, rapportMonde, monde, props, lights, colliders} from './monde/index.js';
+import {effondrer, sousLEffondrement} from './monde/destruction.js';
+import {ophiure, majOphiure, distanceOphiure, reinitialiserOphiure}
+  from './creatures/ophiure.js';
 import {
   armes, ARMES, armeCourante, choisirArme, armeSuivante,
   majArmes, frapper, reculMere, memoire, oublierCoups, reinitialiserArmes,
@@ -148,6 +151,7 @@ async function genererMonde(nouvelleGraine){
   reinitialiserSante();
   reinitialiserFeu();
   reinitialiserArmes();
+  reinitialiserOphiure();
   reprendreArmesAuSol();
   viderMaillages();
   reprendreTous();
@@ -487,16 +491,35 @@ function declencherEffondrement(){
   const proximite = 1 - d/SETUP.audio.effondrement.portee;
   setTimeout(() => {
     if(!jeu.pret) return;
-    // la secousse, la vibration qui l'attire, et les gravats
+
+    /* La secousse et la vibration qui l'attire. Le vrai danger d'un
+       effondrement n'a jamais été la roche : c'est ce qu'elle appelle. */
     jeu.secousseEvt = SETUP.audio.effondrement.secousse * (0.45 + proximite*0.55);
     emettreSon(wx, wz, 60, false);
+
     const cx = w2c(wx), cz = w2c(wz);
-    if(isFloor(cx,cz)){
-      const touchees = effondrerZone(cx, cz, 3);
-      for(const t of touchees) if(Math.random() < 0.4) addProp('gravats', t.x, t.z, t.i);
-      indexerProps(); libererTousLesPaves();
+    if(!isFloor(cx, cz)) return;
+
+    const D = SETUP.destruction;
+    const r = effondrer(cx, cz, ri(D.rayonMin, D.rayonMax));
+    if(!r.issue) return;
+
+    /* ── ÊTRE DESSOUS ──
+       Le jeu jouait le son d'un plafond qui cède sans jamais rien laisser
+       tomber. Maintenant il tombe, et il tombe sur qui se trouve là. Un abri
+       protège : c'est à ça qu'il sert, et c'est une raison de plus d'en
+       chercher un quand ça gronde. */
+    if(!joueur.abrite && sousLEffondrement(joueur.x, joueur.z, joueur.gy)){
+      blesser(D.degatsDessous);
+      joueur.shake = 1;
+      Audio.effets.chute(1);
+      if(sante.mort){ mourir(CHUTE.MORT_HAUTEUR); return; }
+      flash(r.issue === 'trou' ? 'LE SOL CÈDE SOUS TOI' : 'LE PLAFOND TE TOMBE DESSUS');
+    } else {
+      flash(r.issue === 'trou'
+        ? 'LE SOL S\'EST OUVERT · ' + r.cellules + ' CELLULES'
+        : 'ÉBOULEMENT · UN PASSAGE EST BOUCHÉ');
     }
-    flash('EFFONDREMENT');
   }, 2000);
 }
 
@@ -721,6 +744,60 @@ function simuler(dt){
   const humide = (nb === 0 || nb === 2) ? 1 : nb === 1 ? 0.35 : 0.1;
   Audio.majCavernes(dt, exiguite, humide, joueur.abrite);
   Audio.majEffondrements(dt, declencherEffondrement);
+
+  /* ── L'OPHIURE ──
+     Elle traverse le monde et le détruit. On ne lui passe PAS la position du
+     joueur : sa trajectoire est tirée entre deux bords, une fois pour toutes,
+     et rien ne peut l'infléchir. C'est la règle, et elle tient parce que la
+     fonction n'a pas l'information — pas parce qu'on a promis de ne pas s'en
+     servir.
+
+     Ce qu'on lit d'elle, en revanche, c'est la distance : elle décide du
+     grondement et du tremblement. Elle s'entend de deux cents mètres, ce qui
+     laisse le temps de comprendre et de s'écarter. */
+  {
+    const arrivee = majOphiure(dt, (dx, dz, issue) => {
+      emettreSon(dx, dz, 90, false);
+      Audio.effets.chute(0.8);
+    });
+    if(arrivee) flash('QUELQUE CHOSE ENTRE DANS LE MONDE');
+
+    if(ophiure.active){
+      const dO = distanceOphiure(joueur.x, joueur.z);
+      const S = SETUP.ophiure;
+
+      /* ── ON L'ENTEND AVANT DE LA VOIR ──
+         Deux cent vingt mètres, contre sept virgule sept de visibilité. C'est
+         délibérément disproportionné : elle doit s'annoncer très longtemps
+         avant d'être là, pour qu'on ait le temps de comprendre ce qui arrive
+         et de décider où aller. Une catastrophe qu'on ne voit pas venir n'est
+         pas un événement, c'est une mort arbitraire.
+
+         Le grondement se rapproche : sa cadence et son volume suivent la
+         distance, et c'est cette accélération qu'on lit sans y penser. */
+      if(dO < S.porteeSon){
+        const p = 1 - dO / S.porteeSon;
+        jeu.grondeT = (jeu.grondeT || 0) - dt;
+        if(jeu.grondeT <= 0){
+          jeu.grondeT = 5.5 - p * 3.6;
+          const cy = Math.cos(joueur.yaw), sy = Math.sin(joueur.yaw);
+          const ex = ophiure.x - joueur.x, ez = ophiure.z - joueur.z;
+          Audio.declencher(ex*cy - ez*sy, 1.5, -(ex*-sy + ez*-cy));
+        }
+      }
+      if(dO < S.porteeSecousse){
+        const p = 1 - dO / S.porteeSecousse;
+        jeu.secousseEvt = Math.max(jeu.secousseEvt, p * p * 0.9);
+      }
+      /* Être sur son passage. Elle n'a pas visé — elle passe, et on était là.
+         C'est tout l'intérêt d'une trajectoire aveugle : la catastrophe est
+         possible parce qu'elle n'est arrangée par personne. */
+      if(dO < S.rayonDisque * 1.5 && !joueur.abrite){
+        blesser(400);
+        if(sante.mort) mourir(CHUTE.MORT_HAUTEUR);
+      }
+    }
+  }
   jeu.secousseEvt = Math.max(0, jeu.secousseEvt - dt/SETUP.audio.effondrement.duree);
 
   /* ── tremblement et chute sismique ── */

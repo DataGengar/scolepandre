@@ -679,6 +679,53 @@ export const SETUP = {
   /* ─── LA SORTIE ───
       Elle doit porter plus loin qu'elle ne se voit : c'est un point unique
       dans 0,19 km², et la vue s'arrête à 7,7 m. Voir monde/sortie.js. */
+  /* ─── DESTRUCTION ───
+      Le plafond cède pour de bon. Deux issues opposées — l'une ferme un
+      passage, l'autre en ouvre un gouffre — parce qu'un événement qui fait
+      toujours la même chose cesse d'être un événement au troisième.
+      Voir monde/destruction.js. */
+  /* ─── L'OPHIURE ───
+      Le colosse. Ce n'est PAS un second prédateur : elle ne chasse pas, elle
+      TRAVERSE, et ce qu'elle rencontre cesse d'exister. On s'écarte de son
+      chemin et on récupère un monde modifié.
+
+      SA TRAJECTOIRE IGNORE LE JOUEUR, structurellement : creatures/ophiure.js
+      n'importe pas monde/cachettes.js et ne reçoit jamais la position du
+      joueur. Si un terrier se trouve sur son passage, il est détruit avec
+      tout ce qu'il contenait — parce que le hasard l'a voulu, jamais parce
+      qu'on l'a arrangé. */
+  ophiure:{
+    premiereMin:280, premiereMax:520,   // secondes avant la première
+    entreDeuxMin:420, entreDeuxMax:900,
+    vitesse:1.35,          // m/s : lente, inexorable
+
+    rayonDisque:6,         // cellules détruites sous le corps
+    rayonBras:3,
+    brasLongMin:16, brasLongMax:27,     // mètres
+    balayage:0.22,         // vitesse de balayage des bras
+    amplitudeBras:0.55,
+    memoireBras:26,        // points d'historique : c'est la sinuosité
+    partBrasDestructeurs:0.55,
+    intervalleDestruction:1.1,          // secondes entre deux effondrements
+
+    porteeSon:220,         // on l'entend de très loin
+    porteeSecousse:90,
+  },
+
+  destruction:{
+    partTrous:0.40,          // sinon un éboulis
+    /* On ne perce jamais dans un boyau : un trou dans un couloir d'une
+       cellule coupe la carte définitivement, et aucun générateur de ponts ne
+       repasse après. */
+    ouvertureTrou:0.62,
+    combleEboulis:0.85,      // part de l'espace refermée au centre
+    hauteurMuree:0.9,        // en dessous, la cellule devient de la roche
+    partFond:0.55,           // part du rayon qui tombe vraiment
+    affaissementLevre:1.4,   // de combien la lèvre s'affaisse, en mètres
+    rayonMin:3, rayonMax:7,  // en cellules
+    degatsDessous:70,        // si l'on est dedans quand ça tombe
+  },
+
   sortie:{
     teinte:[1.00, 0.82, 0.42],
     gainFanal:5.5,        // la source haute, celle qui perce la brume

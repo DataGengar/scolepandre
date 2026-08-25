@@ -529,3 +529,95 @@ export function dessinerCreatures(){
 }
 
 export const nbSommets = () => cN_/3;
+
+
+/* ═══════════════ L'OPHIURE ═══════════════
+   Un disque et cinq bras, sur le plan du fossile.
+
+   ── POURQUOI ELLE EST FACILE À BÂTIR ──────────────────────────────────────
+   Parce que la machinerie existait déjà. Le corps de la mère est un tube
+   construit le long de sa trace ; un bras d'ophiure est la même chose, en
+   plus fin et en cinq exemplaires. On ne réinvente rien, on démultiplie.
+
+   ── CE QUI LA REND ÉNORME ─────────────────────────────────────────────────
+   Pas le nombre de segments : l'ÉCHELLE et la LENTEUR. Un bras fait vingt
+   mètres et met huit secondes à balayer. À côté, la mère — trois mètres, vive
+   — redevient un animal. C'est le contraste qui donne la taille, pas les
+   dimensions dans l'absolu : sans point de comparaison, tout est grand.
+
+   ── DÉGOÛTANTE, PAS MONUMENTALE ───────────────────────────────────────────
+   Une ophiure n'est pas un monument, c'est un animal marin. Ses bras sont
+   annelés — des plaques calcaires empilées, avec des épines latérales par
+   paires — et ils sont HUMIDES : la teinte est pâle et grasse, pas minérale.
+   Une créature sèche est une statue.                                        */
+
+export function batirOphiure(o, joueur, temps){
+  if(!o.active) return;
+  if(cN_ > C_MAXV*3 - 20000) return;
+  const d = Math.hypot(o.x - joueur.x, o.z - joueur.z);
+  if(d > 190) return;
+
+  const S = SETUP.ophiure;
+  const chair  = [0.30, 0.27, 0.235];
+  const plaque = [0.375, 0.345, 0.295];
+  const creux  = [0.115, 0.10, 0.095];
+  const suint  = [0.46, 0.44, 0.36];
+
+  /* ── LE DISQUE ──
+     Bas et large, posé sur le sol. C'est le corps entier d'une ophiure : tout
+     le reste est bras. */
+  const RD = S.rayonDisque * 1.5 * 0.62;
+  const cy = o.y + RD * 0.36;
+  cBulbe([o.x, cy, o.z], RD, chair, 10);
+  // les plaques dorsales, en couronne
+  for(let k = 0; k < 10; k++){
+    const a = k / 10 * 6.283 + o.cap;
+    const px = o.x + Math.cos(a) * RD * 0.62;
+    const pz = o.z + Math.sin(a) * RD * 0.62;
+    cBulbe([px, cy + RD * 0.30, pz], RD * 0.26, plaque, 6);
+  }
+  // la bouche, dessous : cinq mâchoires en étoile, comme chez le vrai animal
+  for(let k = 0; k < 5; k++){
+    const a = k / 5 * 6.283 + o.cap + 0.3;
+    cTube([o.x, o.y + 0.25, o.z], RD * 0.16,
+          [o.x + Math.cos(a)*RD*0.55, o.y + 0.05, o.z + Math.sin(a)*RD*0.55],
+          RD * 0.05, creux, 5);
+  }
+
+  /* ── LES CINQ BRAS ──
+     Chacun suit l'historique de son extrémité. Le tronçon près du disque est
+     épais, l'extrémité effilée — c'est cette dégressivité qui les fait lire
+     comme des bras et non comme des tuyaux. */
+  for(const b of o.bras){
+    const H = b.hist;
+    if(H.length < 3) continue;
+    const N = Math.min(H.length, 22);
+
+    for(let i = 0; i < N - 1; i++){
+      const t0 = i / (N - 1), t1 = (i + 1) / (N - 1);
+      /* L'historique va du plus ancien au plus récent : le plus RÉCENT est
+         l'extrémité, donc on inverse pour que l'épaisseur décroisse vers
+         elle. */
+      const p0 = H[H.length - 1 - Math.floor(t0 * (N-1))];
+      const p1 = H[H.length - 1 - Math.floor(t1 * (N-1))];
+      if(!p0 || !p1) continue;
+
+      const r0 = S.rayonBras * 0.5 * (1 - t0*0.88) + 0.10;
+      const r1 = S.rayonBras * 0.5 * (1 - t1*0.88) + 0.08;
+      cTube([p0.x, p0.y, p0.z], r0, [p1.x, p1.y, p1.z], r1,
+            i % 2 ? chair : plaque, 6);
+
+      /* Les épines latérales, par paires. C'est LA signature d'une ophiure :
+         sans elles, un bras annelé est un ver. */
+      if(i % 2 === 0 && r0 > 0.18){
+        let dx = p1.x - p0.x, dz = p1.z - p0.z;
+        const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
+        const ep = r0 * 2.4;
+        for(const sd of [1, -1])
+          cTube([p0.x, p0.y, p0.z], r0 * 0.30,
+                [p0.x + dz*sd*ep, p0.y + r0*0.5, p0.z - dx*sd*ep],
+                r0 * 0.05, suint, 4);
+      }
+    }
+  }
+}

@@ -16,7 +16,9 @@ import {BIOMES} from '../monde/biomes.js';
 import {paves} from '../monde/maillage.js';
 import {proj, view, model, cam} from './camera.js';
 import {lpArr, lcArr, choisirLumieres, projeterGodrays} from './lumieres.js';
-import {batirCreature, batirJeune, dessinerCreatures} from '../creatures/geometrie.js';
+import {batirCreature, batirJeune, batirOphiure, dessinerCreatures}
+  from '../creatures/geometrie.js';
+import {ophiure} from '../creatures/ophiure.js';
 import {creerLune, directionLune} from './lune.js';
 import {dessinerCartes} from './carte-rendu.js';
 import {M} from '../noyau/math.js';
@@ -272,6 +274,12 @@ export function rendre(ctx){
     trs(model, p.x, y + 0.03, p.z, r + 1.1, 0, -0.3, 0.12, 0.09, 0.16);
     draw(meshCarte, [0.52,0.48,0.40], 0.05);
   }
+
+  /* L'ophiure est bâtie avec les autres : même tampon dynamique, même appel
+     de rendu. Elle est simplement beaucoup plus grande, et son test de
+     distance est plus généreux — on doit la voir venir de loin, c'est tout
+     l'intérêt. */
+  if(ophiure.active) batirOphiure(ophiure, ctx.joueur, temps);
 
   // ── les créatures, en un seul appel
   gl.uniform3fv(uS.uTint, [1,1,1]);
