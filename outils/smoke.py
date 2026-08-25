@@ -410,6 +410,16 @@ def main():
     if r["journal"]:
         print("\n  journal :")
         for l in r["journal"][-8:]:
+            # Le rapport du monde est long, et c'est justement celui qu'on
+            # vient lire : le tronquer a 200 caracteres cachait la moitie des
+            # compteurs. On le deplie ligne par ligne.
+            if l.startswith("MONDE "):
+                try:
+                    for k, v in json.loads(l[6:]).items():
+                        print("      %-24s %s" % (k, v))
+                    continue
+                except json.JSONDecodeError:
+                    pass
             print("      " + l[:200])
 
     if r["erreurs"]:

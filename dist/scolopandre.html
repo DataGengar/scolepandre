@@ -283,8 +283,29 @@ const SETUP = {
         et l'on frotte le décor sans comprendre pourquoi. */
     irregularite:0.11,
     cellule:1.5,         // côté d'une cellule en mètres (3.0 en v2)
-    largeur:1088,        // cellules en X  → 1088 × 1.5 = 1632 m
-    hauteur:1088,        // cellules en Z
+    /* ─── POURQUOI LE MONDE A ÉTÉ DIVISÉ PAR QUATRE ───
+        « Je crois que le monde est trop grand, je ne trouve jamais la
+        sortie. »
+
+        Mesuré. Pour parcourir l'aire utile à la largeur de vue — 7,7 m depuis
+        la réduction de visibilité — il fallait marcher :
+
+            1632 m de côté   0,75 km2 utiles   48 km   252 minutes
+             816 m de côté   0,19 km2 utiles   12 km    63 minutes
+
+        Deux cent cinquante minutes, ce n'est pas un défi, c'est une panne. Et
+        ce n'était pas visible tant que la visibilité était de vingt mètres :
+        c'est la réduction de brouillard, demandée et justifiée, qui a rendu
+        la taille intenable. Les deux réglages étaient bons séparément.
+
+        816 m, donc. Et comme les NOMBRES d'objets n'ont pas été divisés dans
+        la même proportion, le monde devient plus dense : plus de villages,
+        plus de cachettes, plus de bêtes au kilomètre carré. C'est exactement
+        ce qui était demandé dans la même phrase — « tu dois augmenter le
+        challenge ». Un monde plus petit et plus peuplé est plus effrayant
+        qu'un monde vide où l'on marche une heure. */
+    largeur:544,         // cellules en X  → 544 × 1.5 = 816 m
+    hauteur:544,         // cellules en Z
     pave:32,             // côté d'un pavé de maillage, en cellules (48 m)
 
     // Amplitude verticale. ×3 par rapport à la v2 qui allait de −42 à +44.
@@ -414,7 +435,7 @@ const SETUP = {
     // Toutes ces dimensions sont en MÈTRES ; relief.js les convertit en
     // cellules. Mesurés en jeu, les premiers réglages donnaient des crevasses
     // de 17 × 7 m — on ne les lisait pas comme des gouffres.
-    nbGouffres:42,       // fosses sans fond creusées à l'intérieur
+    nbGouffres:15,       // fosses sans fond creusées à l'intérieur
     gouffreLongMin:20,
     gouffreLongMax:64,
     gouffreLargMin:9,
@@ -431,9 +452,9 @@ const SETUP = {
         outils/diag_passage.py. monde/connexite.js perce donc une fissure
         jusqu'aux poches qui en valent la peine. */
     enclaveTailleMin:110,  // cellules : en dessous, une alcôve, on laisse
-    nbGaleries:70,         // borne haute : au-delà le monde devient un gruyère
+    nbGaleries:28,         // borne haute : au-delà le monde devient un gruyère
 
-    nbRampes:120,
+    nbRampes:45,
     rampeChuteMax:11,      // au-delà, un escalier n'est plus plausible
     rampePasses:4,         // on recommence tant que ça relie encore
     rampeTailleMin:260,    // cellules : en dessous, c'est une miette
@@ -469,8 +490,8 @@ const SETUP = {
       une densité un peu relevée. Le troisième seul aurait juste rendu le monde
       encombré sans le rendre lisible. */
   cachettes:{
-    nombre:34,
-    ecartMin:90,         // mètres entre deux cachettes
+    nombre:15,
+    ecartMin:55,         // mètres entre deux cachettes
     /* 30 m, c'était moins que la distance moyenne entre deux cachettes divisée
        par trois : on passait à côté sans jamais rien voir. */
     porteeMarqueur:85,   // distance à laquelle le sismographe la révèle
@@ -812,8 +833,8 @@ const SETUP = {
       en sortent. Peu nombreuses et espacées — une cathédrale qu'on croise
       deux fois par minute n'est plus un événement. */
   edifices:{
-    nbCathedrales:5,
-    ecartMin:340,          // mètres entre deux
+    nbCathedrales:3,
+    ecartMin:190,          // mètres entre deux
     deniveleMax:2.4,       // le sol doit être régulier sous l'emprise
 
     // en cellules de 1,5 m
@@ -835,7 +856,7 @@ const SETUP = {
        maintenant assez loin pour qu'on aperçoive une lueur et qu'on aille
        voir. Une lueur au loin, c'est une invitation ; un point sur la carte,
        c'est une course. */
-    nombre:30,
+    nombre:11,
     rayon:26,            // mètres
     maisons:[6,14],
     carcasses:[3,9],
@@ -869,8 +890,8 @@ const SETUP = {
        7,7 m de visibilité, on ne la trouve jamais. Elles brillent maintenant,
        et elles sont trois fois plus nombreuses. Trouver une arme reste un
        événement — mais un événement qui arrive. */
-    nbArmesDansLeMonde:42,
-    nbTasDeCellules:64,
+    nbArmesDansLeMonde:16,
+    nbTasDeCellules:24,
     /* Le reflet d'un métal dans le noir. C'est ce qu'on aperçoit d'abord. */
     balise:[0.55, 0.62, 0.78],
     baliseGain:1.2,
@@ -890,6 +911,18 @@ const SETUP = {
     suiviRegard:11.0,
     amplitudeRetard:0.55,
     inclinaisonCoup:0.9,     // radians, au sommet du geste
+  },
+
+  /* ─── LA SORTIE ───
+      Elle doit porter plus loin qu'elle ne se voit : c'est un point unique
+      dans 0,19 km², et la vue s'arrête à 7,7 m. Voir monde/sortie.js. */
+  sortie:{
+    teinte:[1.00, 0.82, 0.42],
+    gainFanal:5.5,        // la source haute, celle qui perce la brume
+    hauteurFanal:14,
+    hauteurColonne:22,    // le faisceau vertical, en mètres
+    nbJalons:14,          // la couronne de bornes autour
+    rayonJalons:42,       // à quelle distance on tombe dessus
   },
 
   sante:{
@@ -936,7 +969,7 @@ const SETUP = {
      Les CHEMINS des stacks sont dans src/carte/rangs.js — c'est le seul
      fichier à ouvrir pour brancher tes dossiers. Ici, seulement le dosage. */
   cartes:{
-    nombreDansLeMonde:420,
+    nombreDansLeMonde:150,
     essaisPlacement:48000,
 
     /* ─── APPARENCE DANS LE MONDE ───
@@ -1566,7 +1599,21 @@ function profondeurDe(y){
 const idx    = (x,z) => z * GW + x;
 const inB    = (x,z) => x > 0 && z > 0 && x < GW-1 && z < GH-1;
 const isFloor= (x,z) => inB(x,z) && grid[idx(x,z)] === FLOOR;
-const isFree = (x,z) => isFloor(x,z) && !blocked[idx(x,z)];
+/* ── LA RÈGLE : RIEN NE FLOTTE AU-DESSUS DU VIDE ──
+   « Au-dessus des gouffres il y a des objets flottants. Rectifier et les
+   virer. Règle. »
+
+   La cause tenait ici. `isFree` disait « cette cellule est libre » sans jamais
+   regarder `vide[]` — et c'est cette fonction que `celluleLibre()` interroge
+   pour semer le décor, les cartes, le bois, les leurres. Un gouffre creusé au
+   milieu d'un ancien sol laissait donc tout ce qu'on y avait posé suspendu
+   dans les airs.
+
+   Corrigé À LA SOURCE plutôt qu'objet par objet : la règle vaut pour tout ce
+   qui est semé, y compris ce qu'on ajoutera demain. C'est la différence entre
+   corriger un symptôme et poser une règle. */
+const isFree = (x,z) =>
+  isFloor(x,z) && !blocked[idx(x,z)] && !vide[idx(x,z)];
 const w2c    = v => Math.floor(v / CELL);
 const c2w    = c => (c + 0.5) * CELL;
 const estVide= (x,z) => (x<0 || z<0 || x>=GW || z>=GH) || vide[idx(x,z)] === 1;
@@ -4081,7 +4128,7 @@ __M['M_monde_props'] = (function(){
   const { SETUP } = __M['M_setup'];
   const { rnd, ri, rf } = __M['M_noyau_rng'];
   const { BIOMES } = __M['M_monde_biomes'];
-  const { GW, GH, CELL, floorH, ceilH, openN, blocked, biome, sky, idx, isFloor, isFree, c2w, celluleLibre } = __M['M_monde_grille'];
+  const { GW, GH, CELL, floorH, ceilH, openN, blocked, biome, sky, vide, idx, isFloor, isFree, c2w, celluleLibre } = __M['M_monde_grille'];
   const { salles } = __M['M_monde_generation'];
   const { rayonPart, capsulePart } = __M['M_monde_formes'];
   const { autorise, densiteEn } = __M['M_monde_plan'];
@@ -4148,6 +4195,12 @@ function eclat(out, x,y,z, taille, c){
 /* ─────────────── un élément de décor ─────────────── */
 
 function addProp(kind, x, z, i){
+  /* Seconde barrière, après celle d'`isFree`. Un élément peut être demandé
+     explicitement — par un village, par la forge, par un semis qui a sa
+     propre boucle — sans passer par `celluleLibre()`. Rien ne doit se poser
+     au-dessus d'un gouffre, jamais, quel que soit le chemin emprunté. */
+  if(vide[i]) return;
+
   const b = BIOMES[biome[i]], wx = c2w(x), wz = c2w(z), h = floorH[i];
   const D = SETUP.image.detail;
   let solid = true, dur = false, parts = [];
@@ -7359,7 +7412,7 @@ __M['M_monde_sortie'] = (function(){
   const { SETUP } = __M['M_setup'];
   const { ri } = __M['M_noyau_rng'];
   const { DERIVE } = __M['M_setup'];
-  const { floorH, openN, idx, c2w, celluleLibre } = __M['M_monde_grille'];
+  const { floorH, openN, idx, c2w, celluleLibre, w2c, isFree } = __M['M_monde_grille'];
 /* ═══ MONDE / SORTIE ═══
    L'objectif. Sans sortie il n'y a pas de jeu, seulement une promenade.
 
@@ -7394,16 +7447,89 @@ function placerSortie(joueur, props, lights){
   objectif.sortie = best;
   const sortie = best;
 
-  // une colonne de lumière visible de loin à travers le fog
-  for(let k=0;k<10;k++)
-    lights.push({x:sortie.x, y:sortie.y+1+k*2.2, z:sortie.z, c:[1.5,1.25,0.6], ph:k*0.6});
+  /* ══════════════ ELLE DOIT S'ANNONCER ══════════════
+     « Je ne trouve jamais la sortie. »
 
+     Le monde a été ramené de 1632 m à 816 m, ce qui divise par quatre le
+     terrain à couvrir. Ça ne suffit pas : la sortie reste UN point dans
+     0,19 km², et on ne voit qu'à 7,7 m. Il faut qu'elle porte plus loin
+     qu'elle ne se voit.
+
+     Une colonne de dix lampes existait déjà, et elle ne portait pas : dix
+     petites sources au même endroit ne font pas une balise, elles font une
+     lueur locale que le brouillard mange à quinze mètres.
+
+     TROIS PORTÉES, et il les faut toutes les trois :
+
+       LE FANAL    une source très intense, très haut. Une lampe perce la
+                   brume bien au-delà de la distance à laquelle on distingue
+                   une surface — c'est le seul phénomène du moteur qui
+                   traverse le fog, et c'est donc le seul outil disponible.
+       LA COLONNE  un faisceau vertical qui monte jusqu'au plafond. On ne le
+                   voit pas de face, on le voit AU-DESSUS des obstacles :
+                   c'est ce qui la rend repérable depuis un couloir voisin.
+       LES JALONS  une couronne de petites bornes à quarante mètres autour.
+                   On tombe dessus avant de trouver la sortie, et elles disent
+                   « c'est par là » sans donner la direction — on ne triche
+                   pas, on récompense l'approche.
+
+     Aucun marqueur sur la carte : le repérage se mérite, comme pour les
+     villages. Mais chercher un point invisible dans le noir n'est pas du
+     mérite, c'est une loterie.                                             */
+
+  const S = SETUP.sortie;
   const parts = [];
+
+  // ── le fanal ──
+  lights.push({x:sortie.x, y:sortie.y + S.hauteurFanal, z:sortie.z,
+               c:[S.teinte[0]*S.gainFanal, S.teinte[1]*S.gainFanal,
+                  S.teinte[2]*S.gainFanal], ph:0});
+
+  // ── la colonne : elle monte, et on la voit par-dessus le décor ──
+  for(let k = 0; k < S.hauteurColonne; k += 2){
+    const t = 1 - k / S.hauteurColonne;
+    lights.push({x:sortie.x, y:sortie.y + 1 + k, z:sortie.z,
+                 c:[S.teinte[0]*1.6*t, S.teinte[1]*1.6*t, S.teinte[2]*1.6*t],
+                 ph:k*0.5});
+    parts.push({x:sortie.x, y:sortie.y + 1 + k, z:sortie.z,
+                sx:0.30, sy:1.9, sz:0.30,
+                c:[S.teinte[0]*2.4*t, S.teinte[1]*2.4*t, S.teinte[2]*2.4*t],
+                emis:1});
+  }
+
+  // ── le portique lui-même ──
   for(const sd of [1,-1])
-    parts.push({x:sortie.x+sd*1.5, y:sortie.y+2.6, z:sortie.z, sx:.5, sy:5.2, sz:.5, c:[.5,.45,.34]});
-  parts.push({x:sortie.x, y:sortie.y+5.0, z:sortie.z, sx:3.6, sy:.6,  sz:.6,  c:[.5,.45,.34]});
-  parts.push({x:sortie.x, y:sortie.y+2.4, z:sortie.z, sx:2.6, sy:4.6, sz:.18, c:[2.2,1.8,0.9], emis:1});
+    parts.push({x:sortie.x+sd*1.5, y:sortie.y+2.6, z:sortie.z,
+                sx:.5, sy:5.2, sz:.5, c:[.5,.45,.34]});
+  parts.push({x:sortie.x, y:sortie.y+5.0, z:sortie.z,
+              sx:3.6, sy:.6, sz:.6, c:[.5,.45,.34]});
+  parts.push({x:sortie.x, y:sortie.y+2.4, z:sortie.z,
+              sx:2.6, sy:4.6, sz:.18,
+              c:[S.teinte[0]*2.6, S.teinte[1]*2.6, S.teinte[2]*2.6], emis:1});
   props.push({parts, cell:sortie.cell});
+
+  /* ── les jalons ──
+     Une couronne de bornes autour de la sortie. Elles sont plantées sur du
+     sol praticable seulement : une borne au fond d'un gouffre n'indique rien
+     et ferait tomber celui qui la suit. */
+  for(let k = 0; k < S.nbJalons; k++){
+    const a = k / S.nbJalons * 6.283 + 0.3;
+    const d = S.rayonJalons * (0.75 + Math.random()*0.5);
+    const jx = sortie.x + Math.cos(a)*d, jz = sortie.z + Math.sin(a)*d;
+    const cx = w2c(jx), cz = w2c(jz);
+    if(!isFree(cx, cz)) continue;
+    const ji = idx(cx, cz);
+    const jy = floorH[ji];
+    lights.push({x:jx, y:jy + 1.0, z:jz,
+                 c:[S.teinte[0]*0.55, S.teinte[1]*0.55, S.teinte[2]*0.42],
+                 ph:Math.random()*6.28});
+    props.push({parts:[
+      {tube:[[jx, jy, jz], 0.10, [jx, jy + 1.5, jz], 0.07, 5], c:[.32,.29,.22]},
+      {x:jx, y:jy + 1.6, z:jz, sx:0.22, sy:0.22, sz:0.22,
+       c:[S.teinte[0]*2.2, S.teinte[1]*2.2, S.teinte[2]*1.7], emis:1},
+    ], cell:ji});
+  }
+
   return sortie;
 }
 

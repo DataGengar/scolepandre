@@ -361,159 +361,165 @@ function cPlaque(centre, avant, droite, larg, lon, haut, col, cotes){
   }
 }
 
+/* ═══════════════ LE GOBELIN ═══════════════
+
+   « Je pense que les bébés scolopandres sont nuls et cons. Peut-être tu mets
+   des gobelins qui s'échappent des églises et envahissent le monde. »
+
+   Le jugement était juste. Les jeunes étaient des LARVES : un corps
+   segmenté qui suivait la trace de sa tête, comme la mère en plus court. Ça
+   marchait très bien pour la mère — trois mètres d'ondulation, c'est
+   terrifiant — et ça ne marchait pas du tout à quarante centimètres, où la
+   même reptation devient un jouet à ressort.
+
+   ── CE QUI REND UN GOBELIN INQUIÉTANT PLUTÔT QUE COMIQUE ──────────────────
+   Ce n'est pas le nombre de polygones, c'est la POSTURE. Quatre décisions, et
+   il faut les quatre :
+
+     1. VOÛTÉ. La tête est PLUS BAS que les épaules, portée en avant au bout
+        d'un cou horizontal. Un gobelin debout est un lutin ; un gobelin plié
+        en avant est un animal qui va sauter.
+     2. DES BRAS TROP LONGS, qui touchent presque le sol. C'est la
+        disproportion qui met mal à l'aise — elle dit « ça ne marche pas
+        comme nous ».
+     3. DES JAMBES DIGITIGRADES, pliées à l'envers à la cheville. Un genou
+        humain rend n'importe quoi sympathique.
+     4. PAS D'YEUX LUMINEUX. La mère en a ; leur en donner ferait des
+        miniatures d'elle. Le gobelin a une BOUCHE — large, pâle, ouverte en
+        permanence — et c'est elle qu'on voit en premier.
+
+   Sa peau est blafarde, presque blanche : dans le faisceau d'une lampe, c'est
+   ce qui accroche l'œil à vingt mètres alors qu'une carapace sombre disparaît.
+   Un ennemi qu'on ne voit pas venir n'est pas effrayant, il est injuste.     */
+
 export function batirJeune(j, joueur, temps){
   if(cN_ > C_MAXV*3 - 9000) return;
   if(Math.hypot(j.x - joueur.x, j.z - joueur.z) > 62) return;
 
-  const e = j.ech;                      // échelle : 0.30 à 0.52
-  const Y = j.yeux, g = eclat(Y, temps);
+  const e = j.ech * 2.05;               // les larves étaient minuscules
   const chasse = j.etat === ST.CHASE;
-  const ph = temps * (chasse ? 15 : 8) + j.ph;
+  /* La cadence du pas. En charge il ne court pas plus vite qu'il ne se jette :
+     le rythme double, et c'est ce qu'on entend avant de le voir. */
+  const ph = temps * (chasse ? 11.5 : 5.2) + j.ph;
+  const pas = Math.sin(ph), pas2 = Math.sin(ph + Math.PI);
 
-  const carapace = [0.115,0.10,0.088];
-  const ecaille  = [0.175,0.150,0.125];
-  const pale     = [0.42,0.38,0.30];
+  const peau   = [0.46, 0.44, 0.39];    // blafarde : elle accroche la lampe
+  const creux  = [0.26, 0.24, 0.22];
+  const gueule = [0.09, 0.055, 0.055];
+  const dent   = [0.62, 0.60, 0.53];
 
-  /* Le corps suit la trace, comme celui de la mère, mais BEAUCOUP plus court :
-     une larve n'ondule pas sur trois mètres, elle est compacte. */
-  const SEG = 8, PAS = e * 0.62;
-  const S = [];
-  for(let i=0;i<=SEG;i++){
-    const back = i * PAS;
-    const h = j.hist;
-    let p;
-    if(h.length < 2) p = [j.x + Math.sin(j.h)*back, j.y, j.z + Math.cos(j.h)*back];
-    else {
-      const tg = j.cum - back; let q = h[0];
-      for(let n2=h.length-1; n2>0; n2--)
-        if(h[n2-1].cum <= tg && tg <= h[n2].cum){
-          const t2 = (tg - h[n2-1].cum)/Math.max(1e-4, h[n2].cum - h[n2-1].cum);
-          q = {x: lerp(h[n2-1].x,h[n2].x,t2), y: lerp(h[n2-1].y,h[n2].y,t2),
-               z: lerp(h[n2-1].z,h[n2].z,t2)};
-          break;
-        }
-      p = [q.x, q.y, q.z];
-    }
-    S.push(p);
+  // ── orientation ──
+  let av = [-Math.sin(j.h), 0, -Math.cos(j.h)];
+  if(j.hist && j.hist.length > 1){
+    const a = j.hist[j.hist.length-1], b = j.hist[Math.max(0, j.hist.length-4)];
+    const dx = a.x - b.x, dz = a.z - b.z;
+    const L = Math.hypot(dx, dz);
+    if(L > 0.05) av = [dx/L, 0, dz/L];
+  }
+  const dr = [av[2], 0, -av[0]];
+
+  const P = (u, y, v) => [j.x + av[0]*u + dr[0]*v, j.y + y, j.z + av[2]*u + dr[2]*v];
+
+  /* ── LA POSTURE ──
+     Le bassin est bas, les épaules devant et plus haut, la tête devant et
+     PLUS BAS que les épaules. C'est ce décalage qui fait tout : il donne la
+     silhouette penchée qu'on lit avant tout détail. */
+  const hBassin  = e * 0.92;
+  const hEpaule  = e * 1.34;
+  const avEpaule = e * 0.30;
+  const avTete   = e * 0.78;
+  const hTete    = e * 1.16;            // sous les épaules : voûté
+
+  const tangage = (chasse ? 0.16 : 0.06) * Math.sin(ph * 0.5);
+  const bassin = P(0, hBassin + tangage*e*0.2, 0);
+  const epaule = P(avEpaule, hEpaule + tangage*e*0.3, 0);
+  const tete   = P(avTete, hTete + tangage*e*0.4, 0);
+
+  // ── le torse : maigre, la cage saillante ──
+  cTube(bassin, e*0.30, epaule, e*0.34, peau, 7);
+  for(let k = 0; k < 3; k++){
+    const t = 0.28 + k*0.22;
+    const c = [bassin[0] + (epaule[0]-bassin[0])*t,
+               bassin[1] + (epaule[1]-bassin[1])*t,
+               bassin[2] + (epaule[2]-bassin[2])*t];
+    // les côtes, en travers
+    cTube([c[0]-dr[0]*e*0.30, c[1], c[2]-dr[2]*e*0.30], e*0.055,
+          [c[0]+dr[0]*e*0.30, c[1], c[2]+dr[2]*e*0.30], e*0.055, creux, 4);
   }
 
-  // repères locaux
-  const rep = [];
-  for(let i=0;i<=SEG;i++){
-    const a = S[Math.max(0,i-1)], b = S[Math.min(SEG,i+1)];
-    let dx = a[0]-b[0], dz = a[2]-b[2];
-    const L = Math.hypot(dx,dz) || 1; dx/=L; dz/=L;
-    if(i === 0 && L < 1e-3){ dx = -Math.sin(j.h); dz = -Math.cos(j.h); }
-    rep.push({av:[dx,0,dz], dr:[dz,0,-dx]});
-  }
+  /* ── LE COU, HORIZONTAL ──
+     Il ne monte pas : il avance. C'est la deuxième moitié du voûtement. */
+  cTube(epaule, e*0.20, tete, e*0.17, peau, 6);
 
-  /* ── LES PLAQUES ──
-     Largeur maximale au tiers avant, effilée vers l'arrière. Chaque plaque
-     déborde sur la suivante, d'où l'aspect d'écailles empilées. */
-  for(let i=0;i<SEG;i++){
-    const t = i/(SEG-1);
-    const larg = e * (0.62 + 0.42*Math.sin(Math.min(1, t*2.6)*1.571)) * (1 - t*0.42);
-    const haut = e * (0.30 + 0.16*Math.sin(Math.min(1, t*2.4)*1.571)) * (1 - t*0.40);
-    const p = S[i], r = rep[i];
-    // léger roulis de reptation : le corps se tortille en avançant
-    const roul = Math.sin(ph*0.5 - i*0.7) * e * 0.10;
-    const c = [p[0] + r.dr[0]*roul, p[1] - e*0.14, p[2] + r.dr[2]*roul];
-    cPlaque(c, r.av, r.dr, larg, PAS*1.45, haut, i%2 ? carapace : ecaille, 7);
-  }
-
-  /* ── L'ABDOMEN LUMINEUX ──
-     Une poche translucide sous les dernières plaques, qui pulse lentement.
-     C'est le signal visuel du jeune : ce qu'on aperçoit avant la silhouette. */
+  /* ── LA TÊTE, ET SA GUEULE ──
+     Pas d'yeux lumineux — la mère en a, et en donner au gobelin ferait des
+     miniatures d'elle. Une bouche, large et pâle, ouverte en permanence. */
+  cBulbe(tete, e*0.27, peau, 7);
   {
-    const pulse = 0.45 + 0.55 * Math.sin(temps*2.1 + j.ph);
-    const inten = (chasse ? 0.35 : 1.0) * pulse;
-    const col = couleurInterstice(Y, inten * 1.6);
-    const p = S[SEG-1], r = rep[SEG-1];
-    cBulbe([p[0], p[1] - e*0.05, p[2]], e*0.34, col, 6);
-    const p2 = S[SEG-2];
-    cBulbe([p2[0], p2[1] - e*0.05, p2[2]], e*0.28, col, 5);
+    const bou = [tete[0] + av[0]*e*0.20, tete[1] - e*0.06, tete[2] + av[2]*e*0.20];
+    const ouvre = e * (chasse ? 0.20 : 0.11) * (0.7 + 0.3*Math.sin(ph*0.9));
+    cPlaque(bou, av, dr, e*0.40, e*0.26, ouvre, gueule, 6);
+    // deux rangées de dents, minuscules et nombreuses
+    for(let k = -3; k <= 3; k++){
+      const px = bou[0] + dr[0]*k*e*0.055 + av[0]*e*0.10;
+      const pz = bou[2] + dr[2]*k*e*0.055 + av[2]*e*0.10;
+      cTube([px, bou[1] + ouvre*0.5, pz], e*0.016,
+            [px, bou[1] + ouvre*0.5 - e*0.06, pz], e*0.004, dent, 3);
+    }
+    // les oreilles : deux membranes en arrière, qui pivotent
+    for(const sd of [1,-1]){
+      const bat = Math.sin(ph*0.6 + (sd>0?0:1.7)) * e*0.06;
+      cPlaque([tete[0] - av[0]*e*0.10 + dr[0]*sd*e*0.26,
+               tete[1] + e*0.14 + bat,
+               tete[2] - av[2]*e*0.10 + dr[2]*sd*e*0.26],
+              [dr[0]*sd, 0.35, dr[2]*sd], av, e*0.30, e*0.34, e*0.02, peau, 5);
+    }
   }
 
-  /* ── LA TÊTE ──
-     Plus large que le premier segment, aplatie, avancée. Deux mandibules
-     courbes qui s'écartent quand il charge — le seul moment où on les voit. */
-  {
-    const p = S[0], r = rep[0];
-    const av = r.av, dr = r.dr;
-    const tete = [p[0] + av[0]*e*0.34, p[1] - e*0.12, p[2] + av[2]*e*0.34];
-    cPlaque(tete, av, dr, e*0.72, e*0.80, e*0.30, ecaille, 8);
-
-    // les joues, qui retombent : la tête a une épaisseur
-    for(const sd of [1,-1])
-      cTube([tete[0]+dr[0]*e*0.62*sd, tete[1]+e*0.04, tete[2]+dr[2]*e*0.62*sd], e*0.16,
-            [tete[0]+dr[0]*e*0.52*sd+av[0]*e*0.22, tete[1]-e*0.16,
-             tete[2]+dr[2]*e*0.52*sd+av[2]*e*0.22], e*0.07, carapace, 5);
-
-    // mandibules : deux crochets courbes, en trois segments
-    const ouv = (chasse ? 0.55 : 0.18) + Math.abs(Math.sin(temps*(chasse?9:2.2)))*0.30;
-    for(const sd of [1,-1]){
-      let pt = [tete[0]+av[0]*e*0.40+dr[0]*e*0.24*sd, tete[1]-e*0.06,
-                tete[2]+av[2]*e*0.40+dr[2]*e*0.24*sd];
-      let ang = 0;
-      for(let q=0;q<3;q++){
-        ang += ouv * (q === 2 ? -1.6 : 0.75);   // il se referme au bout : un crochet
-        const L2 = e*0.26;
-        const nx = [pt[0] + av[0]*L2*Math.cos(ang) + dr[0]*L2*Math.sin(ang)*sd,
-                    pt[1] - e*0.03,
-                    pt[2] + av[2]*L2*Math.cos(ang) + dr[2]*L2*Math.sin(ang)*sd];
-        cTube(pt, e*(0.09 - q*0.022), nx, e*(0.07 - q*0.022), q===2 ? pale : carapace, 5);
-        pt = nx;
-      }
+  /* ── LES BRAS, TROP LONGS ──
+     Ils descendent presque au sol. La disproportion est le point : elle dit
+     « ça ne marche pas comme nous » sans qu'on ait à l'expliquer. */
+  for(const [sd, sw] of [[1, pas], [-1, pas2]]){
+    const ep = [epaule[0] + dr[0]*sd*e*0.30, epaule[1], epaule[2] + dr[2]*sd*e*0.30];
+    const coude = [ep[0] + av[0]*(e*0.16 + sw*e*0.22) + dr[0]*sd*e*0.10,
+                   ep[1] - e*0.42,
+                   ep[2] + av[2]*(e*0.16 + sw*e*0.22) + dr[2]*sd*e*0.10];
+    const main = [coude[0] + av[0]*(e*0.26 + sw*e*0.30),
+                  coude[1] - e*0.46,
+                  coude[2] + av[2]*(e*0.26 + sw*e*0.30)];
+    cTube(ep, e*0.115, coude, e*0.085, peau, 5);
+    cTube(coude, e*0.085, main, e*0.065, peau, 5);
+    // la main : trois doigts crochus, plus longs que la paume
+    for(let d = -1; d <= 1; d++){
+      const bout = [main[0] + av[0]*e*0.20 + dr[0]*sd*d*e*0.07,
+                    main[1] - e*0.10,
+                    main[2] + av[2]*e*0.20 + dr[2]*sd*d*e*0.07];
+      cTube(main, e*0.035, bout, e*0.012, peau, 4);
     }
-
-    /* QUATRE YEUX en grappe, pas deux. C'est ce qui fait « insecte » plutôt
-       qu'« animal », et c'est aussi ce qui se voit de loin. */
-    const YJ = SETUP.jeunes.yeux;
-    const col = [Y.c[0]*g*YJ.c[0]*2.4, Y.c[1]*g*YJ.c[1]*2.8, Y.c[2]*g*YJ.c[2]*2.8];
-    for(const sd of [1,-1]) for(const [av2, dr2, r2] of
-        [[0.52, 0.30, 0.10], [0.44, 0.46, 0.062]]){
-      cBulbe([tete[0]+av[0]*e*av2+dr[0]*e*dr2*sd,
-              tete[1]+e*0.14,
-              tete[2]+av[2]*e*av2+dr[2]*e*dr2*sd],
-             e*r2*YJ.taille*2.4, col, 5);
-    }
-    if(lumieresTemporaires.length < 6)
-      lumieresTemporaires.push({
-        x: tete[0]+av[0]*e*0.5, y: tete[1]+e*0.14, z: tete[2]+av[2]*e*0.5,
-        c: [col[0]*0.5, col[1]*0.5, col[2]*0.5],
-      });
   }
 
-  /* ── LES PATTES ──
-     Douze, courtes, anguleuses, en vague. Deux articulations : elles pointent
-     vers l'extérieur puis retombent d'aplomb, comme des pattes d'arthropode —
-     pas comme des piquets. Elles cherchent le sol réel. */
-  for(let i=0;i<6;i++){
-    const seg = 1 + i;
-    if(seg > SEG) break;
-    const p = S[seg], r = rep[seg];
-    const t = i/5;
-    const larg = e * (0.66 - t*0.22);
-    for(const sd of [1,-1]){
-      const dec = sd > 0 ? 0 : 2.1;
-      const bal = Math.sin(ph*0.62 - i*0.9 + dec);
-      const lev = Math.max(0, Math.sin(ph*0.62 - i*0.9 + dec + 1.5));
-      const hanche = [p[0]+r.dr[0]*larg*sd, p[1]-e*0.16, p[2]+r.dr[2]*larg*sd];
-      const px = hanche[0] + r.dr[0]*e*0.42*sd + r.av[0]*bal*e*0.30;
-      const pz = hanche[2] + r.dr[2]*e*0.42*sd + r.av[2]*bal*e*0.30;
-      const sol = estVide(w2c(px), w2c(pz)) ? p[1]-e*0.9 : groundAt(px, pz);
-      const pied = [px, Math.min(sol + 0.02 + lev*e*0.22, hanche[1]-e*0.05), pz];
-      // le genou, relevé vers l'extérieur : la silhouette en accent circonflexe
-      const genou = [(hanche[0]+px)/2 + r.dr[0]*e*0.16*sd,
-                     hanche[1] + e*0.22 + lev*e*0.10,
-                     (hanche[2]+pz)/2 + r.dr[2]*e*0.16*sd];
-      cTube(hanche, e*0.075, genou, e*0.055, carapace, 5);
-      cTube(genou, e*0.055, pied, e*0.018, couleurPatte(Y, ph*0.62 - i*0.9 + dec), 4);
-    }
+  /* ── LES JAMBES, DIGITIGRADES ──
+     Pliées à l'envers à la cheville, comme une patte d'oiseau. Un genou
+     humain rendrait la bête sympathique, et c'est exactement ce qu'on ne
+     veut pas. */
+  for(const [sd, sw] of [[1, pas2], [-1, pas]]){
+    const ha = [bassin[0] + dr[0]*sd*e*0.20, bassin[1], bassin[2] + dr[2]*sd*e*0.20];
+    const genou = [ha[0] + av[0]*(e*0.20 + sw*e*0.26),
+                   ha[1] - e*0.36,
+                   ha[2] + av[2]*(e*0.20 + sw*e*0.26)];
+    // la cheville part EN ARRIÈRE : c'est ça, le digitigrade
+    const cheville = [genou[0] - av[0]*(e*0.12 - sw*e*0.10),
+                      genou[1] - e*0.38,
+                      genou[2] - av[2]*(e*0.12 - sw*e*0.10)];
+    const pied = [cheville[0] + av[0]*e*0.26,
+                  j.y + e*0.02,
+                  cheville[2] + av[2]*e*0.26];
+    cTube(ha, e*0.135, genou, e*0.095, peau, 5);
+    cTube(genou, e*0.095, cheville, e*0.075, peau, 5);
+    cTube(cheville, e*0.075, pied, e*0.05, peau, 4);
   }
 }
 
-/** Envoie le tampon au GPU et dessine. */
 export function dessinerCreatures(){
   gl.bindVertexArray(crea.vao);
   gl.bindBuffer(gl.ARRAY_BUFFER, crea.bp); gl.bufferSubData(gl.ARRAY_BUFFER, 0, cP, 0, cN_);

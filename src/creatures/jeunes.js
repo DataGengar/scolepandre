@@ -36,6 +36,7 @@
    Aucun jeune ne peut donc rester immobile plus de quatre secondes.        */
 
 import {SETUP} from '../setup.js';
+import {edifices} from '../monde/edifices.js';
 import {clamp, deltaAngle} from '../noyau/math.js';
 import {rnd, ri} from '../noyau/rng.js';
 import {
@@ -109,11 +110,59 @@ export function majPopulation(joueur){
   // assez pour faire une pointe de coût sur un seul tour de boucle.
   let ajoutes = 0;
   while(jeunes.length < voulu && ajoutes < 2){
-    const p = pointDApparition(joueur, 26, 90);
+    /* D'abord une brèche d'église ; à défaut, n'importe où. */
+    const p = pointDeBreche(joueur, 22, 90) || pointDApparition(joueur, 26, 90);
     if(!p) break;
     jeunes.push(nouveauJeune(p.x, p.z, p.y));
     ajoutes++;
   }
+}
+
+/* ═══════════════ D'OÙ ILS SORTENT ═══════════════
+   « Des gobelins qui s'échappent des églises et envahissent le monde. »
+
+   Ils ne naissent pas n'importe où : ils SORTENT. Chaque cathédrale a une
+   brèche dans le dallage de son chœur, et c'est par là qu'ils remontent. Le
+   monde est donc envahi DEPUIS des points précis, ce qui change tout par
+   rapport à une apparition uniforme :
+
+     · on peut remonter à la source. Trois cathédrales, trois foyers, et la
+       densité décroît quand on s'en éloigne — sans qu'aucune règle ne le
+       dise, simplement parce qu'ils marchent depuis là ;
+     · s'approcher d'une église devient une décision. C'est là que sont les
+       vitraux, les tours, ce qu'on veut voir — et c'est de là qu'ils sortent ;
+     · on comprend le monde sans qu'on nous l'explique.
+
+   Si aucune cathédrale n'est atteignable — trop loin, ou monde sans église —
+   on retombe sur l'ancienne apparition dispersée. Un monde sans gobelins
+   serait plus étrange qu'un gobelin sans église.                            */
+
+function pointDeBreche(joueur, dMin, dMax){
+  if(!edifices.length) return null;
+  // les brèches à portée : ni sur nous, ni à l'autre bout du monde
+  const proches = [];
+  for(const e of edifices){
+    if(!e.breche) continue;
+    const d = Math.hypot(e.breche.x - joueur.x, e.breche.z - joueur.z);
+    if(d > dMax * 2.4) continue;
+    proches.push(e);
+  }
+  if(!proches.length) return null;
+
+  const e = proches[ri(0, proches.length - 1)];
+  /* Ils sortent du trou, puis s'égaillent. On les pose donc dans un anneau
+     autour de la brèche, pas dessus : sinon ils apparaissent tous au même
+     point et le premier bloque les suivants. */
+  for(let k = 0; k < 40; k++){
+    const a = rnd() * 6.283, d = 1.5 + rnd() * SETUP.jeunes.rayonBreche;
+    const wx = e.breche.x + Math.cos(a)*d, wz = e.breche.z + Math.sin(a)*d;
+    const cx = w2c(wx), cz = w2c(wz);
+    if(!isFree(cx, cz)) continue;
+    const dj = Math.hypot(wx - joueur.x, wz - joueur.z);
+    if(dj < dMin) continue;               // pas dans le dos du joueur
+    return {x: wx, z: wz, y: floorH[idx(cx, cz)]};
+  }
+  return null;
 }
 
 /** Une cellule libre à bonne distance du joueur, ou null. */
@@ -157,7 +206,33 @@ export function updateJeunes(dt, joueur, temps, sons){
 
     // 3. L'ESSOUFFLEMENT. Ils ne peuvent pas charger indéfiniment.
     j.reposT = Math.max(0, j.reposT - dt);
-    let charge = d < S.porteeCharge && !joueur.abrite
+    /* ── LÂCHE SEUL, HARDI EN MEUTE ──
+       Un gobelin isolé tourne autour et n'ose pas. À partir de trois, ils se
+       jettent. C'est ce qui les rend inquiétants plutôt que pénibles : on
+       peut en tenir un à distance, on ne peut pas en tenir cinq, et on voit
+       le basculement arriver.
+
+       Ça donne aussi un sens au pied-de-biche. Tuer le troisième d'un groupe
+       de quatre ne fait pas que retirer un ennemi : ça fait RECULER les
+       trois autres, d'un coup. Une arme qui change une situation vaut mieux
+       qu'une arme qui grignote une barre de vie. */
+    let voisins = 0;
+    for(const autre of jeunes){
+      if(autre === j) continue;
+      if(Math.hypot(autre.x - j.x, autre.z - j.z) < S.rayonMeute) voisins++;
+    }
+    const enMeute = voisins + 1 >= S.tailleMeute;
+    j.enMeute = enMeute;
+    if(!enMeute && d < S.porteeCharge * 1.4 && d > 2.2){
+      /* Il rôde : il garde ses distances et tourne. Il n'attaque pas, mais
+         il ne part pas non plus — et c'est en le regardant tourner qu'on
+         entend arriver les autres. */
+      const a = Math.atan2(j.z - joueur.z, j.x - joueur.x) + 0.9;
+      j.cible = {x: joueur.x + Math.cos(a)*S.rayonRode,
+                 z: joueur.z + Math.sin(a)*S.rayonRode};
+    }
+
+    let charge = enMeute && d < S.porteeCharge && !joueur.abrite
               && j.reposT <= 0 && !j.leurre && j.fuiteT <= 0;
     if(charge){
       j.chargeT += dt;

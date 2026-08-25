@@ -496,6 +496,16 @@ export const SETUP = {
 
   /* ─────────────── JEUNES ─────────────── */
   jeunes:{
+    /* ─── LES GOBELINS ───
+        Ils ont remplacé les larves : « les bébés scolopandres sont nuls et
+        cons ». Ils sortent des brèches ouvertes dans le chœur des
+        cathédrales, et ils sont LÂCHES SEULS, HARDIS EN MEUTE — voir
+        creatures/jeunes.js. */
+    rayonBreche:11,      // ils s'égaillent autour du trou, pas dessus
+    tailleMeute:3,       // à partir de combien ils osent
+    rayonMeute:9,        // à quelle distance ils se comptent
+    rayonRode:7.5,       // le cercle qu'ils tracent quand ils n'osent pas
+
     /* Ils meurent, la mère non. Deux coups de pied-de-biche, un tir. */
     pv:100,
     sonneSecondes:1.1,     // étourdissement après un coup non fatal
