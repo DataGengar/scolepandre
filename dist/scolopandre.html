@@ -156,7 +156,8 @@
 <div id="bar">
   <div id="keys"><b>ZQSD</b> avancer · <b>MAJ</b> courir · <b>C</b> ramper ·
     <b>F</b> lampe · <b>CLIC DROIT</b> brandir · <b>E</b> cachette / échelle ·
-    <b>ESPACE</b> sauter · <b>CLIC</b> leurre · <b>G</b> feu · <b>V</b> fusée ·
+    <b>ESPACE</b> sauter · <b>CLIC</b> frapper / leurre · <b>1 2 3</b> arme ·
+    <b>X</b> changer · <b>G</b> feu · <b>V</b> fusée ·
     <b>B</b> pancarte · <b>R</b> se dégager · <b>TAB</b> sismographe ·
     <b>I</b> collection · <b>P</b> réglages · <b>MAJ+R</b> nouveau monde</div>
   <div id="right">
@@ -676,6 +677,10 @@ const SETUP = {
 
   /* ─────────────── JEUNES ─────────────── */
   jeunes:{
+    /* Ils meurent, la mère non. Deux coups de pied-de-biche, un tir. */
+    pv:100,
+    sonneSecondes:1.1,     // étourdissement après un coup non fatal
+
     maxParProfondeur:9,
     vitesseErrance:1.3,
     /* 4.2 en v3.0, contre 3.2 en marche pour le joueur : ils rattrapaient
@@ -771,6 +776,39 @@ const SETUP = {
   /* ─────────────── SANTÉ ───────────────
      Il n'y avait aucun point de vie en v3.0 : on mourait d'un coup. Les
      trousses médicales demandées impliquaient de pouvoir être blessé. */
+  /* ─── ARMES ───
+      Une arme ACHÈTE DU TEMPS contre la mère, elle ne la tue pas : tout le
+      jeu tient sur le fait qu'elle est inarrêtable. Voir joueur/armes.js. */
+  armes:{
+    reculSecondes:2.6,      // durée de repli pour une répulsion de 1.0
+    /* Chaque coup encaissé la rend moins impressionnable. 0.62 veut dire que
+       le deuxième coup vaut 62 % du premier, le troisième 38 %. Sans cette
+       décroissance, marteler la même touche la tiendrait à distance
+       indéfiniment et le jeu serait résolu. */
+    accoutumanceBase:0.62,
+    oubliSecondes:38,       // temps pour oublier un coup
+    cellulesDepart:0,       // le thunderbolt se trouve vide
+    cellulesParTas:4,       // munitions ramassées d'un coup
+    nbArmesDansLeMonde:14,  // exemplaires semés
+    nbTasDeCellules:26,
+
+    /* ─── COMMENT ON LA TIENT ───
+        L'arme est dessinée devant la caméra, pas dans le monde. Ces valeurs
+        sont en mètres, dans le repère de l'œil : X à droite, Y en haut,
+        Z devant. */
+    tenueX:0.30, tenueY:-0.26, tenueZ:0.52,
+    orientation:-1.5708,     // l'arme est bâtie le long de +X : on la tourne
+    balanLateral:0.030,      // amplitude du pas, à gauche-droite
+    balanVertical:0.022,
+    /* Le retard sur le regard. C'est le détail le moins cher et celui qui
+       change le plus : sans lui, on tient une décalcomanie collée à l'écran.
+       `suiviRegard` est une vitesse de rattrapage, `amplitudeRetard` dit
+       de combien l'arme se laisse distancer. */
+    suiviRegard:11.0,
+    amplitudeRetard:0.55,
+    inclinaisonCoup:0.9,     // radians, au sommet du geste
+  },
+
   sante:{
     max:100,
     degatsJeune:22,      // une morsure de jeune
@@ -4501,6 +4539,75 @@ function addProp(kind, x, z, i){
       }
       solid = false; break; }
 
+    /* ══════════════ LES ARMES ══════════════
+       Elles vivent ici, avec le décor, et ce n'est pas un rangement par
+       défaut : c'est ce qui les rend éditables dans la forge sans une ligne
+       de code en plus. La forge charge un élément par son nom, le retouche,
+       et le réécrit. Une arme est un élément comme un autre — sauf qu'on la
+       tient.
+
+       Elles sont donc bâties À L'ORIGINE, couchées le long de +X, la poignée
+       vers l'arrière. joueur/vue-arme.js les prend telles quelles et les
+       place devant la caméra ; monde/props.js les pose au sol quand elles
+       traînent dans le monde. Une seule géométrie pour les deux cas. */
+
+    case 'armePiedDeBiche': {
+      const acier = [.26,.255,.25], rouille = [.30,.16,.09];
+      const L = 0.92;                       // longueur totale, en mètres
+      // le fût, légèrement conique
+      parts.push({tube:[[wx - L*0.45, h+0.04, wz], .022,
+                        [wx + L*0.34, h+0.04, wz], .018, 6], c: acier});
+      // le col courbe, en trois segments : c'est lui qui dit « pied-de-biche »
+      const col = [[0.34, 0.04], [0.44, 0.055], [0.50, 0.095], [0.52, 0.15]];
+      for(let k=0; k<col.length-1; k++)
+        parts.push({tube:[[wx + L*col[k][0],   h + col[k][1],   wz], .018,
+                          [wx + L*col[k+1][0], h + col[k+1][1], wz], .016, 5],
+                    c: acier});
+      // la fourche, fendue
+      for(const sd of [1,-1])
+        parts.push({coin: 1, x: wx + L*0.545, y: h + 0.165, z: wz + sd*0.016,
+                    sx:0.075, sy:0.045, sz:0.016, c: acier, ry: 0});
+      // le talon aplati, à l'autre bout
+      parts.push({x: wx - L*0.47, y: h+0.04, z: wz,
+                  sx:0.075, sy:0.012, sz:0.038, c: acier, r:0.22});
+      // la poignée, usée
+      parts.push({tube:[[wx - L*0.30, h+0.04, wz], .028,
+                        [wx - L*0.05, h+0.04, wz], .027, 6], c: rouille});
+      solid = false; break; }
+
+    case 'armeThunderbolt': {
+      const corps = [.19,.20,.22], cuivre = [.34,.21,.11];
+      const arc   = [0.45, 0.80, 2.20];     // émissif : l'arc électrique
+      const L = 0.66;
+
+      // le canon : deux rails parallèles, et c'est entre eux que ça claque
+      for(const sd of [1,-1])
+        parts.push({tube:[[wx - L*0.05, h+0.05, wz + sd*0.030], .014,
+                          [wx + L*0.52, h+0.05, wz + sd*0.030], .012, 5],
+                    c: cuivre});
+      // l'arc entre les rails, à la bouche
+      parts.push({tube:[[wx + L*0.50, h+0.05, wz - 0.028], .008,
+                        [wx + L*0.50, h+0.05, wz + 0.028], .008, 4],
+                  c: arc, emis: 1});
+      // le bloc : la masse de l'arme
+      parts.push({x: wx - L*0.10, y: h+0.05, z: wz,
+                  sx: L*0.42, sy: 0.10, sz: 0.075, c: corps});
+      // la crosse, inclinée
+      parts.push({x: wx - L*0.40, y: h+0.015, z: wz,
+                  sx: 0.20, sy: 0.055, sz: 0.058, c: corps, r: 0.16});
+      // la poignée, sous le bloc
+      parts.push({x: wx - L*0.14, y: h-0.035, z: wz,
+                  sx: 0.055, sy: 0.12, sz: 0.05, c: corps, r: -0.20});
+      // la cellule, qui luit faiblement quand elle est chargée
+      parts.push({x: wx - L*0.02, y: h+0.115, z: wz,
+                  sx: 0.11, sy: 0.035, sz: 0.05,
+                  c: [arc[0]*0.5, arc[1]*0.5, arc[2]*0.5], emis: 1});
+
+      if(lights.length < SETUP.decor.maxLumieres)
+        lights.push({x:wx + L*0.4, y:h+0.12, z:wz,
+                     c:[0.16,0.28,0.72], ph:rnd()*6.28});
+      solid = false; break; }
+
     case 'carcasse': {
       // une voiture, sur le flanc ou sur le toit. Jamais à l'endroit.
       const L = rf(3.6, 4.6), W = rf(1.6, 1.9), H = rf(1.2, 1.5);
@@ -4835,6 +4942,12 @@ function batirVillage(v, c, RC){
   };
 
   v.angleCabane = rnd()*6.283;
+  /* Les armes traînent dans les villages : c'est là qu'il y avait des gens,
+     donc c'est là qu'on a essayé de se défendre. Elles ne sont pas semées
+     partout — en trouver une doit être un événement. */
+  poser('armePiedDeBiche', rnd() < 0.55 ? 1 : 0, 0.30, 1.0);
+  poser('armeThunderbolt', rnd() < 0.22 ? 1 : 0, 0.55, 1.0);
+
   poser('maison',     ri(...V.maisons),     0.40, 1.0);
   /* Deux formes valent mieux qu'une : un village de maisons toutes pareilles
      se lit comme une grille d'objets, pas comme un lieu. */
@@ -5019,6 +5132,315 @@ function viderVillages(){
 }
 
   return { bois, chargerVillagesVus, dansCabane, dansSafe, fusees, marquerDecouvert, placerBoisEtFusees, placerVillages, trousses, viderVillages, villages };
+})();
+
+/* ─── src/joueur/armes.js ─── */
+__M['M_joueur_armes'] = (function(){
+  const { SETUP } = __M['M_setup'];
+  const { rnd } = __M['M_noyau_rng'];
+/* ═══ JOUEUR / ARMES ═══
+   De quoi se défendre. Enfin.
+
+   ── LA RÈGLE, ET ELLE NE SE NÉGOCIE PAS ────────────────────────────────────
+   ON NE TUE PAS LA MÈRE.
+
+   Tout le jeu tient sur le fait qu'elle est inarrêtable : elle est aveugle,
+   elle t'entend, et la seule réponse est de disparaître. Lui donner des points
+   de vie transformerait un jeu d'horreur en jeu de tir, et le premier joueur
+   qui la tuerait n'aurait plus jamais peur.
+
+   Une arme ACHÈTE DU TEMPS. C'est tout, et c'est déjà beaucoup :
+
+     · sur la MÈRE — un coup au but la fait reculer et la met en retrait. On
+       gagne quelques secondes pour fuir, on ne gagne pas le combat. Chaque
+       coup suivant porte moins : elle apprend.
+     · sur les JEUNES — là, oui, on tue. Ils sont nombreux, rapides, et sans
+       arme on ne pouvait que les subir.
+     · le BRUIT — tirer s'entend de très loin. Le thunderbolt règle un
+       problème et en crée un plus gros, ce qui est exactement ce qu'une arme
+       doit faire dans ce jeu.
+
+   ── LES ARMES SONT DES DONNÉES ─────────────────────────────────────────────
+   Une arme est une entrée de table : un nom, des dégâts, une cadence, une
+   portée, un type de munition, et le nom de l'élément qui lui sert de modèle.
+   La forge sait déjà composer et écrire de la géométrie ; il suffit qu'elle
+   sache écrire ici aussi. Rien dans ce fichier ne code en dur une forme.    */
+
+
+
+
+/* ═══════════════ LE CATALOGUE ═══════════════
+
+   `modele`    le nom de l'élément (monde/props.js) qui donne sa géométrie
+   `genre`     'melee' ou 'tir'
+   `degats`    sur un jeune. La mère, elle, ne perd pas de vie : voir plus bas
+   `cadence`   secondes entre deux coups
+   `portee`    mètres
+   `arc`       demi-angle utile, en radians (mêlée : on balaie ; tir : on vise)
+   `bruit`     rayon de la vibration émise. C'est le vrai coût d'une arme
+   `recul`     poussée appliquée à ce qui est touché
+   `munition`  null pour la mêlée, sinon la clé dans `reserves`             */
+
+const ARMES = {
+
+  /* Les mains vides ne sont pas une arme : c'est l'emplacement où l'on
+     retrouve le geste du jeu d'origine — lancer un leurre. Le clic gauche
+     garde donc exactement son comportement d'avant tant qu'on n'a rien
+     ramassé, et personne n'a de nouvelle touche à apprendre. */
+  mains: {
+    nom: 'MAINS', modele: null, genre: 'leurre',
+    degats: 0, cadence: 0.35, portee: 0, arc: 0,
+    bruit: 0, recul: 0, munition: null, repousse: 0,
+  },
+
+  piedDeBiche: {
+    nom: 'PIED-DE-BICHE', modele: 'armePiedDeBiche', genre: 'melee',
+    degats: 58, cadence: 0.78, portee: 2.3, arc: 0.85,
+    bruit: 11, recul: 4.5, munition: null,
+    /* Un coup de barre sur une carapace, ça la fait reculer. Ça ne la blesse
+       pas — mais elle ne s'y attendait pas, et c'est la seconde qui compte. */
+    repousse: 1.0,
+    aide: 'Lourd, lent, silencieux. Ce qu\'on prend quand on ne veut pas '
+        + 'ameuter le reste.',
+  },
+
+  thunderbolt: {
+    nom: 'THUNDERBOLT', modele: 'armeThunderbolt', genre: 'tir',
+    degats: 140, cadence: 1.35, portee: 34, arc: 0.05,
+    /* 46 m de vibration. C'est ÉNORME — un pas fait 4, un leurre 30. Tirer,
+       c'est dire au monde entier où l'on se trouve, et c'est délibéré : sans
+       ce prix, une arme à distance viderait le jeu de sa tension. */
+    bruit: 46, recul: 9, munition: 'cellule',
+    repousse: 2.4,
+    aide: 'Une décharge. Elle traverse, elle assomme, et elle s\'entend à '
+        + 'quarante mètres.',
+  },
+};
+
+/** L'ordre dans lequel les touches 1..N les sélectionnent. */
+const ORDRE_ARMES = ['mains', 'piedDeBiche', 'thunderbolt'];
+
+/* ═══════════════ ÉTAT ═══════════════ */
+
+const armes = {
+  /** Ce qu'on possède. Les poings, toujours. */
+  possedees: ['mains'],
+  courante: 'mains',
+
+  reserves: {cellule: 0},
+
+  /** Animation : 0 au repos, monte à 1 pendant le coup. */
+  balan: 0,
+  cd: 0,                 // temps avant de pouvoir frapper à nouveau
+  dernierCoup: 0,        // pour l'affichage
+};
+
+function reinitialiserArmes(){
+  armes.possedees = ['mains'];
+  armes.courante = 'mains';
+  armes.reserves.cellule = SETUP.armes.cellulesDepart;
+  armes.balan = 0; armes.cd = 0; armes.dernierCoup = 0;
+}
+
+const armeCourante = () => ARMES[armes.courante] || ARMES.mains;
+
+function ramasserArme(cle){
+  if(!ARMES[cle] || armes.possedees.includes(cle)) return false;
+  armes.possedees.push(cle);
+  armes.courante = cle;
+  return true;
+}
+
+function choisirArme(n){
+  const cle = ORDRE_ARMES[n];
+  if(!cle || !armes.possedees.includes(cle)) return false;
+  armes.courante = cle;
+  return true;
+}
+
+/** Passe à l'arme suivante possédée. */
+function armeSuivante(){
+  const dispo = ORDRE_ARMES.filter(k => armes.possedees.includes(k));
+  const i = dispo.indexOf(armes.courante);
+  armes.courante = dispo[(i + 1) % dispo.length];
+  return armes.courante;
+}
+
+function majArmes(dt){
+  armes.cd = Math.max(0, armes.cd - dt);
+  // le balancement retombe vite : c'est un coup, pas un geste
+  armes.balan = Math.max(0, armes.balan - dt * 4.2);
+}
+
+/* ═══════════════ FRAPPER ═══════════════ */
+
+/**
+ * Utilise l'arme courante.
+ *
+ * Ce module ne connaît ni la mère ni les jeunes : il calcule QUI est dans
+ * l'arc et à quelle distance, et rend la main. C'est jeu.js qui applique.
+ * Sans cette séparation, armes.js importerait les créatures, les créatures
+ * importeraient le joueur, et on ne pourrait plus tester une arme seule.
+ *
+ * @param joueur  pour la position et le regard
+ * @param cibles  [{x, z, rayon, ref}] — ce qui peut être touché
+ * @returns {tire, arme, touches:[{ref, degats, poussee}], bruit} ou null
+ */
+function frapper(joueur, cibles){
+  const A = armeCourante();
+  if(armes.cd > 0 || A.genre === 'leurre') return null;
+
+  if(A.munition){
+    if((armes.reserves[A.munition] | 0) <= 0)
+      return {tire:false, vide:true, arme:A};
+    armes.reserves[A.munition]--;
+  }
+
+  armes.cd = A.cadence;
+  armes.balan = 1;
+  armes.dernierCoup = 0;
+
+  const fx = -Math.sin(joueur.yaw), fz = -Math.cos(joueur.yaw);
+  const touches = [];
+
+  for(const c of cibles){
+    const dx = c.x - joueur.x, dz = c.z - joueur.z;
+    const d = Math.hypot(dx, dz);
+    if(d > A.portee + (c.rayon || 0)) continue;
+    if(d < 1e-3) continue;
+
+    /* L'angle au but. Une mêlée BALAIE : tout ce qui est devant est touché.
+       Un tir VISE : il faut être aligné. D'où deux arcs très différents, et
+       une tolérance qui s'élargit quand la cible est proche — sinon toucher
+       un jeune collé à soi devient impossible, ce qui est absurde. */
+    const cos = (dx*fx + dz*fz) / d;
+    const tolerance = A.arc + Math.atan2(c.rayon || 0.4, Math.max(0.5, d));
+    if(cos < Math.cos(tolerance)) continue;
+
+    // la distance émousse la mêlée, pas le tir
+    const affaibli = A.genre === 'melee'
+      ? 1 - 0.35 * Math.min(1, d / A.portee)
+      : 1;
+
+    touches.push({
+      ref: c.ref,
+      degats: A.degats * affaibli,
+      poussee: A.recul * affaibli,
+      distance: d,
+      dx: dx/d, dz: dz/d,
+    });
+
+    // un tir s'arrête à la première cible ; une barre traverse le groupe
+    if(A.genre === 'tir') break;
+  }
+
+  return {tire:true, arme:A, touches, bruit:A.bruit};
+}
+
+/* ═══════════════ CE QU'UNE ARME FAIT À LA MÈRE ═══════════════ */
+
+/**
+ * Combien de temps elle recule, en secondes. Zéro veut dire « rien ».
+ *
+ * ELLE N'A PAS DE POINTS DE VIE, et n'en aura pas. Ce que renvoie cette
+ * fonction, c'est un DÉLAI : le temps qu'elle passe en retrait avant de
+ * reprendre. On l'achète, on ne la gagne pas.
+ *
+ * Et le prix monte. Chaque coup encaissé la rend moins impressionnable —
+ * `accoutumance` ne redescend qu'avec le temps. Sans cela, il suffirait de
+ * marteler la même touche pour la tenir à distance indéfiniment, et le jeu
+ * serait résolu.
+ */
+const memoire = {accoutumance: 0};
+
+function reculMere(arme){
+  if(!arme.repousse) return 0;
+  const S = SETUP.armes;
+  const facteur = Math.pow(S.accoutumanceBase, memoire.accoutumance);
+  memoire.accoutumance++;
+  return arme.repousse * S.reculSecondes * facteur;
+}
+
+function oublierCoups(dt){
+  // elle oublie lentement : une minute de calme rend une arme à moitié utile
+  memoire.accoutumance = Math.max(0,
+    memoire.accoutumance - dt / SETUP.armes.oubliSecondes);
+}
+
+/* ═══════════════ LES ARMES QUI TRAÎNENT ═══════════════
+   Semées comme le bois et les trousses : un objet au sol qu'on ramasse en
+   marchant dessus. On ne montre pas leur position sur la carte — trouver une
+   arme doit être un événement, pas une course à l'objectif. */
+
+/** [{x, y, z, cle, pris}] */
+const armesAuSol = [];
+
+/** [{x, y, z, n, pris}] — des cellules pour le thunderbolt. */
+const cellulesAuSol = [];
+
+/**
+ * @param placer  (liste, combien, fabriquer) fourni par monde/index.js, qui
+ *                seul sait trouver une cellule libre. armes.js ne doit pas
+ *                importer la grille : il est aussi utilisé par la forge et
+ *                par les tests, où il n'y a pas de monde.
+ */
+function placerArmes(placer){
+  armesAuSol.length = 0;
+  cellulesAuSol.length = 0;
+  const S = SETUP.armes;
+
+  /* Deux tiers de pieds-de-biche, un tiers de thunderbolts. L'arme à
+     distance doit rester rare : c'est elle qui déséquilibrerait le jeu si on
+     en trouvait partout. */
+  placer(armesAuSol, S.nbArmesDansLeMonde, (x, y, z) => ({
+    x, y, z, pris: false,
+    cle: rnd() < 0.68 ? 'piedDeBiche' : 'thunderbolt',
+  }));
+
+  placer(cellulesAuSol, S.nbTasDeCellules, (x, y, z) => ({
+    x, y, z, pris: false, n: SETUP.armes.cellulesParTas,
+  }));
+}
+
+function reprendreArmesAuSol(){
+  for(const a of armesAuSol) a.pris = false;
+  for(const c of cellulesAuSol) c.pris = false;
+}
+
+/**
+ * Ramassage automatique en marchant dessus.
+ * @returns {arme, cellules} — ce qui vient d'être pris, ou des valeurs nulles
+ */
+function ramasserArmes(joueur){
+  const R2 = 1.5 * 1.5;
+  let arme = null, cellules = 0;
+
+  for(const a of armesAuSol){
+    if(a.pris) continue;
+    const dx = a.x - joueur.x, dz = a.z - joueur.z;
+    if(dx*dx + dz*dz > R2) continue;
+    if(Math.abs(a.y - joueur.gy) > 2.2) continue;
+    a.pris = true;
+    /* Déjà possédée ? On la laisse au sol plutôt que de la faire disparaître
+       pour rien — mais on prend quand même les cellules qu'elle porte. */
+    if(ramasserArme(a.cle)) arme = a.cle;
+    else { a.pris = false; }
+  }
+
+  for(const c of cellulesAuSol){
+    if(c.pris) continue;
+    const dx = c.x - joueur.x, dz = c.z - joueur.z;
+    if(dx*dx + dz*dz > R2) continue;
+    if(Math.abs(c.y - joueur.gy) > 2.2) continue;
+    c.pris = true;
+    armes.reserves.cellule += c.n;
+    cellules += c.n;
+  }
+
+  return {arme, cellules};
+}
+
+  return { ARMES, ORDRE_ARMES, armeCourante, armeSuivante, armes, armesAuSol, cellulesAuSol, choisirArme, frapper, majArmes, memoire, oublierCoups, placerArmes, ramasserArme, ramasserArmes, reculMere, reinitialiserArmes, reprendreArmesAuSol };
 })();
 
 /* ─── src/monde/maillage.js ─── */
@@ -5577,7 +5999,7 @@ __M['M_monde_index'] = (function(){
   const { ri, graine } = __M['M_noyau_rng'];
   const { semerBruit } = __M['M_noyau_bruit'];
   const { BIOMES } = __M['M_monde_biomes'];
-  const { GW, GH, FLOOR, grid, floorH, ceilH, biome, sky, vide, idx, viderGrille, calculerOuverture, majBornes, rebuildNavCost, bornes } = __M['M_monde_grille'];
+  const { GW, GH, FLOOR, grid, floorH, ceilH, biome, sky, vide, blocked, idx, viderGrille, calculerOuverture, majBornes, rebuildNavCost, bornes, celluleLibre, c2w } = __M['M_monde_grille'];
   const { creuserPlan, relaxerEpine, finaliserRelief, poserPlafonds, quantifierRelief, salles, releve } = __M['M_monde_generation'];
   const { creuserGouffres, gouffres } = __M['M_monde_relief'];
   const { relierLeMonde, percerEnclaves } = __M['M_monde_connexite'];
@@ -5585,6 +6007,7 @@ __M['M_monde_index'] = (function(){
   const { placerCachettes, cachettes } = __M['M_monde_cachettes'];
   const { placerProps, viderDecor, props, lights, colliders } = __M['M_monde_props'];
   const { placerVillages, placerBoisEtFusees, viderVillages, villages } = __M['M_monde_villages'];
+  const { placerArmes, armesAuSol, cellulesAuSol } = __M['M_joueur_armes'];
   const { indexerProps, libererTousLesPaves, statsMaillage } = __M['M_monde_maillage'];
   const { importee } = __M['M_monde_import_png'];
   const { plan, planActif } = __M['M_monde_plan'];
@@ -5601,6 +6024,7 @@ __M['M_monde_index'] = (function(){
    la génération tient en ~1,4 s (mesuré), mais rendre la main reste utile :
    sans ça la page se fige, et sur une machine lente ça dure plusieurs
    secondes. Le rapport final donne la durée réelle.                        */
+
 
 
 
@@ -5704,6 +6128,17 @@ function* construireMonde(hooks){
   yield {nom:'bois et fusées', part:0.93};
   placerBoisEtFusees();
 
+  /* Les armes. `placerArmes` ne connaît pas la grille — il reçoit de quoi
+     poser, pour rester utilisable par la forge et par les tests, où il n'y a
+     pas de monde. */
+  placerArmes((liste, combien, fabriquer) => {
+    for(let k=0; k<40000 && liste.length < combien; k++){
+      const c = celluleLibre(ri), i = idx(c.x, c.z);
+      if(blocked[i] || vide[i]) continue;
+      liste.push(fabriquer(c2w(c.x), floorH[i] + 0.24, c2w(c.z)));
+    }
+  });
+
   /* ── DERNIER CONTRÔLE DE PASSAGE ──
      Une seconde passe de perçage, APRÈS le décor. La première tourne avant
      que les éléments ne soient posés : villages, cachettes et décor peuvent
@@ -5787,6 +6222,144 @@ function rapportMonde(){
 }
 
   return { bois, cachettes, colliders, construireMonde, dansSafe, fusees, gouffres, lights, monde, props, rapportMonde, trousses, villages };
+})();
+
+/* ─── src/joueur/vue-arme.js ─── */
+__M['M_joueur_vue_arme'] = (function(){
+  const { SETUP } = __M['M_setup'];
+  const { gl, libererMesh } = __M['M_noyau_gl'];
+  const { M } = __M['M_noyau_math'];
+  const { cuireParts } = __M['M_monde_maillage'];
+  const { armes, armeCourante } = __M['M_joueur_armes'];
+/* ═══ JOUEUR / VUE DE L'ARME ═══
+   Ce qu'on tient. Dessiné devant la caméra, à la première personne.
+
+   ── POURQUOI CE N'EST PAS UN ÉLÉMENT DE DÉCOR DE PLUS ──────────────────────
+   Une arme en main ne vit pas dans le monde : elle suit la caméra, elle ne
+   doit être ni brouillardée ni masquée par une paroi, et elle est éclairée par
+   la lampe qu'on tient — c'est-à-dire par une source qui est exactement à
+   l'œil. Passer par le maillage des pavés reviendrait à la reconstruire à
+   chaque pas.
+
+   Elle est donc cuite UNE FOIS, à l'origine, puis posée devant l'œil par une
+   matrice. La géométrie vient de `monde/props.js` : la même que celle qui
+   traîne au sol, la même que celle qu'on retouche dans la forge.
+
+   ── LE BALANCEMENT ─────────────────────────────────────────────────────────
+   Trois mouvements se superposent, et il les faut tous les trois pour que
+   l'objet paraisse tenu plutôt que collé à l'écran :
+
+     · le PAS — l'arme monte et descend avec la marche ;
+     · le RETARD — quand on tourne la tête, elle suit avec un temps de retard ;
+     · le COUP — l'animation de frappe, pilotée par `armes.balan`.
+
+   Sans le retard, on tient une décalcomanie. C'est le moins cher des trois et
+   celui qui change le plus.                                                 */
+
+
+
+
+
+
+
+/* Le maillage de chaque arme, cuit à la demande et gardé. Il y en a deux :
+   inutile d'inventer une gestion de cache. */
+const maillages = new Map();
+
+/** Retard de la visée sur le regard. */
+const retard = {yaw: 0, pitch: 0};
+
+const mat = M.mk(), _a = M.mk(), _b = M.mk(), _c = M.mk();
+
+/**
+ * @param fabriquer  (nomModele) => [parts] — fourni par jeu.js, qui seul sait
+ *                   appeler addProp dans un bac à sable
+ */
+function maillagePour(nomModele, fabriquer){
+  if(!nomModele) return null;
+  if(maillages.has(nomModele)) return maillages.get(nomModele);
+  let m = null;
+  try{
+    const parts = fabriquer(nomModele);
+    m = parts && parts.length ? cuireParts(parts) : null;
+  }catch(e){
+    console.warn('arme', nomModele, e);
+  }
+  maillages.set(nomModele, m);
+  return m;
+}
+
+function viderMaillages(){
+  for(const m of maillages.values()) if(m) libererMesh(m);
+  maillages.clear();
+}
+
+function majVueArme(dt, joueur){
+  /* Le retard : on interpole vers le regard, jamais dessus. Le coefficient
+     dépend de dt pour que le ressenti ne change pas avec la fréquence
+     d'images — à 30 ips comme à 144. */
+  const k = 1 - Math.exp(-SETUP.armes.suiviRegard * dt);
+  // l'écart d'angle, ramené dans [-π, π] : sinon un passage par ±π fait
+  // faire un tour complet à l'arme
+  let d = joueur.yaw - retard.yaw;
+  while(d >  Math.PI) d -= Math.PI*2;
+  while(d < -Math.PI) d += Math.PI*2;
+  retard.yaw += d * k;
+  retard.pitch += (joueur.pitch - retard.pitch) * k;
+}
+
+/**
+ * La matrice modèle de l'arme, dans le repère du monde.
+ * @returns null s'il n'y a rien à dessiner
+ */
+function matriceArme(joueur, oeilY, temps){
+  const A = armeCourante();
+  if(!A.modele) return null;
+  const S = SETUP.armes;
+
+  // le balancement du pas : deux fois la cadence en vertical, une en latéral
+  const marche = Math.min(1, joueur.vitesse / 3.2);
+  const bx = Math.sin(joueur.bob) * S.balanLateral * marche;
+  const by = Math.cos(joueur.bob * 2) * S.balanVertical * marche;
+
+  /* Le coup. `balan` va de 1 à 0 ; on en tire une courbe qui part vite et
+     revient doucement — un coup est un geste asymétrique. */
+  const b = armes.balan;
+  const coup = b * b * (3 - 2*b);
+  const avance = coup * (A.genre === 'melee' ? 0.42 : 0.10);
+  const leve   = coup * (A.genre === 'melee' ? 0.55 : 0.06);
+  const recul  = coup * (A.genre === 'tir' ? 0.14 : 0);
+
+  /* Le décalage de visée : l'arme est tenue à droite et en bas, comme on
+     tient réellement quelque chose. Le retard sur le regard s'ajoute ici. */
+  let ecartY = (joueur.yaw - retard.yaw) * S.amplitudeRetard;
+  const ecartP = (joueur.pitch - retard.pitch) * S.amplitudeRetard;
+
+  const dx = S.tenueX + bx + ecartY;
+  const dy = S.tenueY + by + ecartP + leve;
+  const dz = -(S.tenueZ - avance + recul);      // -Z : devant la caméra
+
+  /* Passage du repère caméra au monde. On refait la rotation de la vue, à
+     l'envers : lacet puis tangage, appliqués à l'écart de tenue. */
+  const cp = Math.cos(-joueur.pitch), sp = Math.sin(-joueur.pitch);
+  const y1 = dy*cp - dz*sp, z1 = dy*sp + dz*cp;
+  const cy = Math.cos(joueur.yaw), sy = Math.sin(joueur.yaw);
+  const wx = dx*cy + z1*sy;
+  const wz = -dx*sy + z1*cy;
+
+  /* L'arme est bâtie couchée le long de +X, poignée vers l'arrière. On la
+     tourne pour qu'elle pointe devant, puis on ajoute le tangage et
+     l'inclinaison du coup. */
+  M.trans(_a, joueur.x + wx, oeilY + y1, joueur.z + wz);
+  M.rotY(_b, joueur.yaw + S.orientation);   M.mul(_c, _a, _b);
+  M.rotZ(_b, -joueur.pitch + coup * S.inclinaisonCoup); M.mul(mat, _c, _b);
+  return mat;
+}
+
+/** L'arme est-elle assez avancée dans son coup pour porter ? */
+const auContact = () => armes.balan > 0.55;
+
+  return { auContact, maillagePour, majVueArme, matriceArme, viderMaillages };
 })();
 
 /* ─── src/monde/sortie.js ─── */
@@ -6822,6 +7395,28 @@ function setState(s){
   if(s === ST.LISTEN) creature.listenT = 1.4 + rnd()*2.1;
 }
 
+/**
+ * Un coup l'a fait reculer.
+ *
+ * ELLE NE PERD PAS DE VIE, et n'en perdra pas : tout le jeu tient sur le fait
+ * qu'elle est inarrêtable. Ce que fait une arme, c'est ACHETER DU TEMPS — on
+ * la met en retrait pour quelques secondes, et sa croyance sur notre position
+ * est brouillée, pas effacée. Elle sait toujours à peu près où l'on est ; elle
+ * n'y va simplement plus tout de suite.
+ *
+ * @param secondes  durée de repli. Zéro veut dire « ça ne l'a pas impressionnée ».
+ */
+function repousserMere(secondes){
+  if(secondes <= 0) return false;
+  setState(ST.RETREAT);
+  /* On remonte stateT pour que la durée demandée décide, et non les 7 s en dur
+     du cas RETREAT : c'est l'arme qui fixe le répit, pas la machine d'états. */
+  creature.stateT = Math.max(0, 7 - secondes);
+  creature.belief.conf *= 0.35;
+  creature.chaseT = 0;
+  return true;
+}
+
 /* ─────────────── perception ─────────────── */
 
 /**
@@ -7089,7 +7684,7 @@ function sampleBody(back){
   return h[h.length-1];
 }
 
-  return { brancherCri, creature, sampleBody, spawnCreature, updateCreature };
+  return { brancherCri, creature, repousserMere, sampleBody, spawnCreature, updateCreature };
 })();
 
 /* ─── src/creatures/jeunes.js ─── */
@@ -7186,6 +7781,11 @@ function nouveauJeune(wx, wz, wy){
     path:null, pathIdx:1, repathT:0, cible:null,
     // charge : elle s'essouffle, et un leurre la détourne
     chargeT:0, reposT:0, leurre:null, leurreT:0, fuiteT:0,
+    /* Ils peuvent mourir, depuis qu'on a des armes. La mère, elle, n'a pas
+       de points de vie et n'en aura pas : voir joueur/armes.js. */
+    pv: SETUP.jeunes.pv,
+    sonne: 0,                 // secondes d'étourdissement après un coup
+
     // détecteur de blocage
     refX:wx, refZ:wz, blocT:0, coinceT:0,
     // rendu
@@ -7396,7 +7996,41 @@ function praticable(wx, wz, depuis){
 
 function viderJeunes(){ jeunes.length = 0; }
 
-  return { attirerJeunes, brancherFeu, brancherStridulation, jeunes, majPopulation, updateJeunes, viderJeunes };
+
+/* ═══════════════ LES COUPS ═══════════════
+   Un jeune, ça se tue. C'est la différence de fond avec la mère, et c'est ce
+   qui donne un sens aux armes : sans elles, on ne pouvait que subir les
+   jeunes, qui sont nombreux et rapides.
+
+   Un coup non fatal ÉTOURDIT. C'est important : frapper doit produire un
+   effet visible même quand ça ne suffit pas, sinon on ne sait pas si l'on a
+   touché.                                                                   */
+
+/**
+ * @returns 'mort', 'touche', ou null si la référence n'existe plus
+ */
+function blesserJeune(j, degats, poussee, dx, dz){
+  const k = jeunes.indexOf(j);
+  if(k < 0) return null;
+
+  j.pv -= degats;
+  if(j.pv <= 0){
+    jeunes.splice(k, 1);
+    return 'mort';
+  }
+
+  j.sonne = Math.max(j.sonne, SETUP.jeunes.sonneSecondes);
+  /* La poussée : on le repousse dans l'axe du coup. Elle passe par la même
+     porte que tout le reste — pas de téléportation, on décale la cible et le
+     déplacement fait le travail. */
+  j.x += dx * poussee * 0.22;
+  j.z += dz * poussee * 0.22;
+  j.cible = {x: j.x + dx * 6, z: j.z + dz * 6};
+  j.path = null;
+  return 'touche';
+}
+
+  return { attirerJeunes, blesserJeune, brancherFeu, brancherStridulation, jeunes, majPopulation, updateJeunes, viderJeunes };
 })();
 
 /* ─── src/creatures/geometrie.js ─── */
@@ -11970,6 +12604,48 @@ function rendre(ctx){
   gl.uniformMatrix4fv(uS.uModel, false, IDENT);
   dessinerCreatures();
 
+  /* ── l'ARME EN MAIN ──
+     Dessinée dans la passe monde, donc éclairée par la lampe qu'on tient et
+     par ce qui se trouve autour : c'est ce qui la rattache à la scène. Mais
+     avec un `uEmit` léger et sans brouillard propre — elle est à cinquante
+     centimètres de l'œil, la noyer dans la brume n'aurait aucun sens.
+
+     Le tampon de profondeur est effacé juste avant : une arme tenue ne doit
+     jamais être coupée par une paroi qu'on frôle. C'est la convention de tous
+     les jeux à la première personne, et on la remarque surtout quand elle
+     manque. */
+  if(ctx.armeMesh && ctx.armeModele){
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.uniform3fv(uS.uTint, [1,1,1]);
+    gl.uniform1f(uS.uEmit, 0.05);
+    gl.uniformMatrix4fv(uS.uModel, false, ctx.armeModele);
+    gl.bindVertexArray(ctx.armeMesh.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, ctx.armeMesh.count);
+    gl.bindVertexArray(null);
+    gl.uniform1f(uS.uEmit, 0);
+  }
+
+  /* ── l'ARME EN MAIN ──
+     Dessinée dans la passe monde, donc éclairée par la lampe qu'on tient et
+     par ce qui se trouve autour : c'est ce qui la rattache à la scène. Mais
+     avec un `uEmit` léger et sans brouillard propre — elle est à cinquante
+     centimètres de l'œil, la noyer dans la brume n'aurait aucun sens.
+
+     Le tampon de profondeur est effacé juste avant : une arme tenue ne doit
+     jamais être coupée par une paroi qu'on frôle. C'est la convention de tous
+     les jeux à la première personne, et on la remarque surtout quand elle
+     manque. */
+  if(ctx.armeMesh && ctx.armeModele){
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.uniform3fv(uS.uTint, [1,1,1]);
+    gl.uniform1f(uS.uEmit, 0.05);
+    gl.uniformMatrix4fv(uS.uModel, false, ctx.armeModele);
+    gl.bindVertexArray(ctx.armeMesh.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, ctx.armeMesh.count);
+    gl.bindVertexArray(null);
+    gl.uniform1f(uS.uEmit, 0);
+  }
+
   /* ── les cartes, avec leur programme texturé ──
      Après le reste de la passe monde : elles écrivent dans le même tampon de
      profondeur, donc elles s'occultent correctement avec le décor. */
@@ -12468,9 +13144,24 @@ const COULEUR_PALIER = ['#8fa88c', '#b8a25f', '#6f9fc0', '#b4553f'];
 function majHUD(ctx){
   const {joueur, biome, nappe, pavesVus, pavesTotal, graine, sortie, monde} = ctx;
 
-  // ── leurres en main
+  /* ── EN MAIN ──
+     Les mains vides montrent les leurres, comme avant. Une arme montre son
+     nom et, s'il en faut, ses munitions. Un seul emplacement pour les deux :
+     on tient une chose à la fois, et l'afficher deux fois brouillerait la
+     seule question qui compte — qu'est-ce que je fais si ça arrive ? */
   const l = el('lures');
-  if(l) l.innerHTML = '◆'.repeat(joueur.held) + '<u>' + '◆'.repeat(3-joueur.held) + '</u>';
+  if(l){
+    const A = ctx.arme;
+    if(!A || A.genre === 'leurre'){
+      l.innerHTML = '◆'.repeat(joueur.held)
+                  + '<u>' + '◆'.repeat(3-joueur.held) + '</u>';
+    } else {
+      const mun = A.munition
+        ? '  <u>·</u>  ' + (ctx.munitions | 0)
+        : '';
+      l.innerHTML = A.nom + mun;
+    }
+  }
 
   // ── lieu et altitude
   const p = el('place');
@@ -12610,6 +13301,8 @@ __M['M_jeu'] = (function(){
   const { GW, GH, CELL, idx, isFloor, w2c, c2w, groundAt, degagement, biomeAt, openN, sky, floorH, bornes, celluleLibre, rebuildNavCost } = __M['M_monde_grille'];
   const Grille = __M['M_monde_grille'];
   const { construireMonde, rapportMonde, monde, props, lights, colliders } = __M['M_monde_index'];
+  const { armes, ARMES, armeCourante, choisirArme, armeSuivante, majArmes, frapper, reculMere, memoire, oublierCoups, reinitialiserArmes, armesAuSol, cellulesAuSol, ramasserArmes, reprendreArmesAuSol } = __M['M_joueur_armes'];
+  const { majVueArme, matriceArme, maillagePour, viderMaillages } = __M['M_joueur_vue_arme'];
   const { gouffres, effondrerZone } = __M['M_monde_relief'];
   const { cachettes, cachetteProche, dansCachette } = __M['M_monde_cachettes'];
   const { addProp } = __M['M_monde_props'];
@@ -12625,8 +13318,8 @@ __M['M_jeu'] = (function(){
   const { possede, ajouter, charger: chargerCollection, majAffichage } = __M['M_carte_collection'];
   const { ST } = __M['M_creatures_etats'];
   const { directeur } = __M['M_creatures_directeur'];
-  const { creature, spawnCreature, updateCreature, brancherCri } = __M['M_creatures_mere'];
-  const { jeunes, majPopulation, updateJeunes, viderJeunes, brancherStridulation, brancherFeu, attirerJeunes } = __M['M_creatures_jeunes'];
+  const { creature, repousserMere, spawnCreature, updateCreature, brancherCri } = __M['M_creatures_mere'];
+  const { jeunes, majPopulation, updateJeunes, viderJeunes, brancherStridulation, brancherFeu, attirerJeunes, blesserJeune } = __M['M_creatures_jeunes'];
   const { creerCreature } = __M['M_creatures_geometrie'];
   const { joueur, touches, sons, odeur, spawnJoueur, updateJoueur, indexerColliders, bloqueA, heurteElement, coteSol, majEtage, basculerRampe, emettreSon, decroitreTraces, echelleIci, emprunterEchelle, debloquer, sauter } = __M['M_joueur_joueur'];
   const { CHUTE, tirerChuteSismique, impactSol, verifierVide, reinitialiserChute } = __M['M_joueur_chute'];
@@ -12657,6 +13350,8 @@ __M['M_jeu'] = (function(){
      les nappes, le vent, les effondrements . . src/audio/
      la caméra, les lumières, le sismographe  . src/rendu/
    ══════════════════════════════════════════════════════════════════════════ */
+
+
 
 
 
@@ -12761,6 +13456,9 @@ async function genererMonde(nouvelleGraine){
   reinitialiserChute();
   reinitialiserSante();
   reinitialiserFeu();
+  reinitialiserArmes();
+  reprendreArmesAuSol();
+  viderMaillages();
   reprendreTous();
   chargerPancartes(graine());
   chargerVillagesVus(graine());
@@ -12798,7 +13496,13 @@ function brancherEntrees(){
 
   addEventListener('mousedown', e => {
     if(!jeu.enCours) return;
-    if(e.button === 0) lancerLeurre();
+    /* Clic gauche : on utilise CE QU'ON TIENT. Les mains vides gardent leur
+       geste d'origine — lancer un leurre — donc rien ne change tant qu'on n'a
+       rien ramassé, et il n'y a pas de nouvelle touche à apprendre. */
+    if(e.button === 0){
+      if(armeCourante().genre === 'leurre') lancerLeurre();
+      else utiliserArme();
+    }
     // clic droit maintenu : brandir la lampe. Les jeunes reculent, le jus fond.
     if(e.button === 2) inventaire.brandit = true;
   });
@@ -12858,6 +13562,12 @@ function brancherEntrees(){
       flash(d > 0 ? 'DÉGAGÉ · ' + d.toFixed(1) + ' m' : 'AUCUNE ISSUE À PROXIMITÉ');
     }
     if(e.code === 'KeyE'){ e.preventDefault(); actionContextuelle(); }
+    /* 1, 2, 3 choisissent ; X fait tourner, pour ceux qui ne comptent pas. */
+    if(/^Digit[1-9]$/.test(e.code)){
+      const n = +e.code.slice(5) - 1;
+      if(choisirArme(n)) flash(armeCourante().nom);
+    }
+    if(e.code === 'KeyX'){ e.preventDefault(); flash(ARMES[armeSuivante()].nom); }
     /* Ramper : « C », comme l'annonce la barre d'aide. CapsLock reste accepté
        — c'était la seule touche câblée jusqu'ici, et changer un réflexe sans
        prévenir est pire que d'en garder deux. */
@@ -12938,6 +13648,50 @@ function gererPancarte(){
 function lancerLeurre(){
   if(joueur.prone > 0 || joueur.abrite) return;
   if(lancer(joueur, joueur.derive)) Audio.effets.lance();
+}
+
+/* ═══════════════ FRAPPER ═══════════════
+   armes.js calcule QUI est dans l'arc ; c'est ici qu'on applique. La
+   séparation n'est pas cosmétique : sans elle, armes.js importerait les
+   créatures, les créatures importeraient le joueur, et on ne pourrait plus
+   éprouver une arme toute seule.
+
+   L'ORDRE DES CONSÉQUENCES COMPTE. Le bruit part TOUJOURS, touché ou non :
+   c'est le prix de l'arme, et il ne doit pas dépendre de l'adresse. Un
+   thunderbolt tiré dans le vide ameute autant qu'un thunderbolt au but. */
+function utiliserArme(){
+  if(joueur.prone > 0 || joueur.abrite) return;
+
+  // les cibles : les jeunes, puis la mère
+  const cibles = jeunes.map(j => ({x:j.x, z:j.z, rayon:0.55, ref:j}));
+  cibles.push({x:creature.x, z:creature.z, rayon:1.6, ref:creature});
+
+  const r = frapper(joueur, cibles);
+  if(!r) return;                       // encore en récupération
+  if(r.vide){ flash('PLUS DE CELLULES'); Audio.effets.vide?.(); return; }
+
+  Audio.effets.arme?.(r.arme.genre);
+  emettreSon(joueur.x, joueur.z, r.bruit, false);
+  joueur.shake = Math.max(joueur.shake, r.arme.genre === 'tir' ? 0.35 : 0.16);
+
+  let tues = 0, touches = 0;
+  for(const t of r.touches){
+    if(t.ref === creature){
+      /* La mère. Pas de dégâts — un délai. Et le délai fond à chaque coup :
+         marteler la même touche ne doit pas la tenir à distance
+         indéfiniment, sinon le jeu est résolu. */
+      const sec = reculMere(r.arme);
+      if(repousserMere(sec)) flash('ELLE RECULE · ' + sec.toFixed(1) + ' s');
+      else flash('ÇA NE LUI FAIT RIEN');
+      continue;
+    }
+    const issue = blesserJeune(t.ref, t.degats, t.poussee, t.dx, t.dz);
+    if(issue === 'mort') tues++;
+    else if(issue === 'touche') touches++;
+  }
+
+  if(tues) flash(tues > 1 ? tues + ' ABATTUS' : 'ABATTU');
+  else if(touches) flash('TOUCHÉ');
 }
 
 /**
@@ -13095,6 +13849,7 @@ function coeur(now){
   if(compteurUI > 0.2){
     compteurUI = 0;
     majHUD({
+    arme: armeCourante(), munitions: armes.reserves.cellule,
       joueur, biome: jeu.biome, nappe: Audio.nomNappe(),
       pavesVus: visuel.pavesVus, pavesTotal: paves.size, graine: graine(),
       sortie: objectif.sortie, monde,
@@ -13130,6 +13885,22 @@ function simuler(dt){
   updateSante(dt);
   const pris = ramasserFeu(joueur);
   if(pris.bois || pris.fusees) Audio.effets.ramasse();
+
+  /* ── les armes ── */
+  majArmes(dt);
+  oublierCoups(dt);
+  majVueArme(dt, joueur);
+  {
+    const pr = ramasserArmes(joueur);
+    if(pr.arme){
+      Audio.effets.ramasse();
+      flash(ARMES[pr.arme].nom + ' — ' + (ARMES[pr.arme].aide || ''));
+    }
+    if(pr.cellules){
+      Audio.effets.ramasse();
+      flash('+' + pr.cellules + ' CELLULES  (' + armes.reserves.cellule + ')');
+    }
+  }
   if(ramasserTrousse(joueur.x, joueur.gy, joueur.z)){
     Audio.effets.soin(); flash('TROUSSE UTILISÉE');
   }
@@ -13323,8 +14094,50 @@ function dessinerImage(dt, dP){
     cielOuvert: jeu.cielOuvert,
     monde: {bois, fusees, trousses, feux, fuseesActives, pancartes},
     identite,
+    /* L'arme en main. Son maillage est cuit à la demande, à partir de la
+       VRAIE géométrie de monde/props.js — la même qu'on retouche dans la
+       forge et la même qui traîne au sol. */
+    armeMesh: maillagePour(armeCourante().modele, geometrieDeProp),
+    armeModele: matriceArme(joueur, joueur.gy + P.hauteurOeil, jeu.temps),
   });
   dessinerScope(joueur, sons, odeur, dP);
+}
+
+/**
+ * La géométrie d'un élément de props.js, hors du monde.
+ *
+ * Même bac à sable que la forge : on prépare une cellule, on appelle la VRAIE
+ * fonction, on récupère ce qu'elle a produit, on remet tout en place. C'est
+ * laid, et c'est ce qui garantit qu'une arme en main est exactement celle
+ * qu'on a dessinée.
+ */
+function geometrieDeProp(nom){
+  const avantP = props.length, avantL = lights.length;
+  const cx = 3, cz = 3, i = Grille.idx(cx, cz);
+  const sauve = {g:Grille.grid[i], f:Grille.floorH[i], c:Grille.ceilH[i],
+                 b:Grille.biome[i], bl:Grille.blocked[i]};
+  Grille.grid[i] = Grille.FLOOR; Grille.floorH[i] = 0; Grille.ceilH[i] = 6;
+  Grille.blocked[i] = 0;
+
+  try{ addProp(nom, cx, cz, i); }catch(e){ console.warn('arme', nom, e); }
+
+  const neufs = props.slice(avantP);
+  props.length = avantP; lights.length = avantL;
+  Grille.grid[i] = sauve.g; Grille.floorH[i] = sauve.f;
+  Grille.ceilH[i] = sauve.c; Grille.biome[i] = sauve.b;
+  Grille.blocked[i] = sauve.bl;
+
+  // recentrer sur l'origine : bâti autour de la cellule d'essai
+  const dx = Grille.c2w(cx), dz = Grille.c2w(cz);
+  const parts = [];
+  for(const pr of neufs) for(const q of pr.parts){
+    const c = JSON.parse(JSON.stringify(q));
+    if(c.tube){ c.tube[0][0]-=dx; c.tube[0][2]-=dz;
+                c.tube[2][0]-=dx; c.tube[2][2]-=dz; }
+    else { c.x -= dx; c.z -= dz; }
+    parts.push(c);
+  }
+  return parts;
 }
 
 /* ─────────────── démarrage ─────────────── */
@@ -13396,7 +14209,12 @@ async function demarrer(){
       /* De quoi faire marcher le joueur depuis un outil : diag_passage.py
          lui fait traverser de vrais ponts avec le vrai code, plutôt que de
          croire un graphe. */
-      bloqueA, coteSol, majEtage, debloquer, heurteElement, indexerColliders,
+      bloqueA, coteSol, majEtage,
+      /* Les armes, pour outils/smoke_armes.py. Le module entier plutôt que
+         des morceaux : le test doit pouvoir éprouver le vrai chemin. */
+      armes: {etat: armes, ARMES, frapper, reculMere, memoire,
+              armeCourante, choisirArme},
+      armesAuSol, cellulesAuSol, ramasserArmes, blesserJeune, jeunes, debloquer, heurteElement, indexerColliders,
       regenerer: g => genererMonde(g),
       effondrement: declencherEffondrement,
     };

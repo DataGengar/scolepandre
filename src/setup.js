@@ -494,12 +494,15 @@ export const SETUP = {
     limiteurRatio:8,
     limiteurKnee:12,
 
-    gainNote:0.52,       // 0.30 en v2
-    gainPedale:0.34,     // 0.26 en v2
+    /* Le moteur de drones vient de SessionMasterTauri : ses tables de
+       fréquences portent leur propre niveau en dB, relevé sur des
+       enregistrements. Ces gains ne font que les mettre à l'échelle du jeu. */
+    gainNote:0.30,
+    gainPedale:0.23,
+    attaquePedale:9,     // secondes de montée : elle s'installe, elle n'arrive pas
+    gainBruit:0.30,      // le lit de bruit, mis à l'échelle par drone.bruit
 
     // Progression harmonique : le cœur du « plus mélodieux ».
-    accordDuree:[25,50], // secondes, tiré entre les deux
-    accordFondu:8,
 
     reverbCourte:3.5,    // boyau exigu
     reverbLongue:16,     // grande salle

@@ -187,4 +187,11 @@ export const CODE_BIOME = [
 
 /** Index de la nappe audio pour un biome. Un pour un, mais nommé : si un jour
     deux biomes partagent une nappe, c'est ici que ça se dit. */
-export const NAPPE_DE_BIOME = ['gouffre','givre','beton','gelisol','ville'];
+/* Quel drone pour quel biome. Les identifiants viennent de audio/nappes.js,
+   dont le moteur est repris de SessionMasterTauri.
+
+   Le choix n'est pas décoratif : « caverne » a sa fondamentale à 55 Hz et
+   monte peu, « abysse » espace ses notes de 1,5 s et porte 49 % de bruit,
+   « cathédrale » est en quintes très ouvertes — c'est elle qui ira sous les
+   voûtes. Chaque endroit doit s'entendre avant de se voir. */
+export const NAPPE_DE_BIOME = ['caverne','brume','abysse','suspendu','cathedrale'];

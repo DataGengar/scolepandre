@@ -1,426 +1,354 @@
 /* ═══ AUDIO / NAPPES ═══
-   Les drones d'ambiance. Un par biome, en fondu sortant/entrant.
+   Les drones d'ambiance. Un par biome.
 
-   ── CE QUI A CHANGÉ, ET POURQUOI ───────────────────────────────────────────
-   La v2 faisait : pédale tenue + marche aléatoire sur une gamme. Une marche
-   aléatoire n'est pas une mélodie, c'est un mouvement brownien — d'où le
-   « pas assez mélodieux ». Trois changements :
+   ── D'OÙ VIENT CE MOTEUR ───────────────────────────────────────────────────
+   Il est repris de SessionMasterTauri, sur demande d'Orlando, et la version
+   précédente a été jetée. Elle faisait pédale tenue plus marche aléatoire sur
+   une gamme, avec des accords qui se succédaient. C'était « juste passable »,
+   et il avait raison : un mouvement brownien sur une gamme n'est pas une
+   mélodie, et une harmonie qui change toute seule finit par raconter quelque
+   chose qu'on n'a pas demandé.
 
-   1. HARMONIE. Chaque drone a un MODE (les modes sombres : phrygien, mineur
-      harmonique, locrien) et une PROGRESSION de degrés. Un accord est tenu 25
-      à 50 s puis fondu vers le suivant. La voix mélodique choisit ses notes
-      DANS L'ACCORD COURANT, pas dans toute la gamme : c'est ce qui transforme
-      la dérive en musique. Elle privilégie le mouvement conjoint, avec un saut
-      de temps en temps.
+   ── CE QUI FAIT LA DIFFÉRENCE ──────────────────────────────────────────────
+   CE NE SONT PAS DES ACCORDS TENUS. Chaque drone est une PÉDALE sur laquelle
+   se pose un ARPÈGE LENT : une note toutes les 0,6 à 1,5 s selon le drone,
+   tenue environ 1,6 s. Deux ou trois notes se recouvrent donc en permanence,
+   et c'est ce recouvrement — pas l'accord — qui produit la matière.
 
-   2. REGISTRE. Les fondamentales descendent encore (16–28 Hz au lieu de 20–37)
-      et une voix médiane tient la tierce mineure ou la quinte diminuée — c'est
-      l'intervalle qui fait la couleur sinistre. Plus grave ET plus sombre.
+   Les fréquences ne sont pas construites depuis une gamme théorique : elles
+   sont RELEVÉES sur des enregistrements réels, par analyse résolue dans le
+   temps, avec leur niveau en dB. C'est pour ça que ça sonne comme un lieu et
+   pas comme un synthétiseur.
 
-   3. NIVEAU. Gains de note et de pédale relevés, limiteur desserré, courbe de
-      volume linéarisée. Tout est dans SETUP.audio.
+   Deux règles héritées, et gardées :
+     1. Un drone ne se transforme JAMAIS en un autre. Changer de biome fait un
+        fondu sortant complet puis un fondu entrant.
+     2. À l'intérieur d'un drone, la mélodie ne se répète pas. Les notes sont
+        tirées par une marche sur la gamme relevée, à pas voisin la plupart du
+        temps et saut de temps en temps : c'est ce qui fait entendre une LIGNE
+        plutôt qu'une suite de notes au hasard.
 
-   RÈGLE CONSERVÉE : un drone ne se transforme jamais en un autre. Changer de
-   biome fait un fondu sortant complet puis un fondu entrant. Marcher dans la
-   glacière EST le geste.                                                    */
+   ── DEUX OCTAVES PLUS BAS ──────────────────────────────────────────────────
+   Demandé explicitement. SessionMaster est un fond de travail ; ici c'est un
+   souterrain. `TRANSPOSITION` vaut donc 0,25.
+
+   Attention : deux octaves sous 55 Hz font 13,75 Hz, sous le seuil d'audition.
+   Les fondamentales les plus basses ne s'entendent plus comme des notes mais
+   comme une pression — c'est voulu, et c'est pour cela que chaque drone garde
+   des partiels plus hauts dans sa gamme. Un drone entièrement transposé sous
+   30 Hz serait silencieux sur un ordinateur portable.                       */
 
 import {SETUP} from '../setup.js';
-import {A, dbG, bruitBuffer, bruitBrunBuffer, ping} from './contexte.js';
+import {A, dbG, bruitBuffer} from './contexte.js';
 
-/* ─────────────── modes ─────────────── */
-/* En demi-tons depuis la tonique. Ce sont tous des modes mineurs sombres. */
-const MODES = {
-  phrygien:        [0,1,3,5,7,8,10],
-  mineurHarmonique:[0,2,3,5,7,8,11],
-  locrien:         [0,1,3,5,6,8,10],
-  mineurNaturel:   [0,2,3,5,7,8,10],
-};
+/** Deux octaves sous les valeurs relevées. */
+const TRANSPOSITION = 0.25;
 
-/**
- * Un accord = trois degrés empilés en tierces DANS le mode.
- * Renvoie les demi-tons depuis la tonique.
- */
-function accordDe(mode, degre){
-  const m = MODES[mode];
-  const note = d => m[d % m.length] + 12 * Math.floor(d / m.length);
-  return [note(degre), note(degre+2), note(degre+4)];
-}
+/* ═══════════════ LES DRONES ═══════════════
 
-const hz = (racine, demiTons) => racine * Math.pow(2, demiTons/12);
+   `pedale`  notes tenues sous l'arpège, [Hz, dB]
+   `gamme`   les notes de l'arpège, [Hz, dB] — relevées, pas calculées
+   `duree`   tenue d'une note, en secondes
+   `ecart`   temps entre deux attaques
+   `coupure` fréquence du passe-bas sur le lit de bruit
+   `pente`   pente relevée : au-delà de −13 dB/oct on met deux filtres
+   `bruit`   niveau du lit de bruit, 0 à 1                                   */
 
-/* ─────────────── les drones ─────────────── */
-/* racine : la tonique en Hz, très bas.
-   progression : degrés du mode, dans l'ordre. i, VI, iv, V… sombres. */
 export const DRONES = [
   {
-    id:'gouffre', nom:'Gouffre',
-    racine:20.6, mode:'phrygien', progression:[0,5,3,1],
-    coupure:34, pente:-13.5, bruit:0.22,
-    duree:3.6, ecart:2.1,
+    id:'caverne', nom:'Caverne', sous:'la mineur, fondamentale à 55 Hz',
+    pedale:[],
+    gamme:[[55.0,-6.5], [110.0,-9.2], [164.8,-17.4], [220.0,-14.5],
+           [329.6,-15.1], [440.0,-20.4], [659.3,-18.2]],
+    duree:1.6, ecart:0.6, coupure:55, pente:-11.2, bruit:0.07,
   },
   {
-    id:'givre', nom:'Givre',
-    racine:27.5, mode:'locrien', progression:[0,4,2,6],
-    coupure:68, pente:-10.5, bruit:0.40,
-    duree:3.0, ecart:1.7,
+    id:'brume', nom:'Brume', sous:'si mineur, mouvement dense',
+    pedale:[],
+    gamme:[[110.0,-15.0], [123.5,-10.8], [146.8,-8.3], [185.0,-8.5],
+           [233.1,-9.6]],
+    duree:1.8, ecart:0.6, coupure:494, pente:-12.2, bruit:0.20,
   },
   {
-    id:'beton', nom:'Béton',
-    racine:16.4, mode:'mineurNaturel', progression:[0,3,5,4],
-    coupure:28, pente:-8.0, bruit:0.56,
-    duree:4.2, ecart:2.9,
+    id:'suspendu', nom:'Suspendu', sous:'la sans tierce, notes rares',
+    pedale:[[220.0,-6.0], [329.6,-6.0]],
+    gamme:[[110.0,-7.0], [174.6,-7.2], [293.7,-7.7], [349.2,-10.7],
+           [440.0,-13.1], [587.3,-5.2], [659.3,-12.2]],
+    duree:1.8, ecart:0.8, coupure:112, pente:-11.2, bruit:0.09,
   },
   {
-    id:'ville', nom:'Ville rouge',
-    racine:21.8, mode:'mineurHarmonique', progression:[0,5,4,0,3],
-    coupure:32, pente:-12.0, bruit:0.32,
-    duree:3.8, ecart:2.5,
+    id:'clairiere', nom:'Clairière', sous:'do majeur, arpège calme sur pédale',
+    pedale:[[164.8,-6.0], [196.0,-6.0]],
+    gamme:[[65.4,-6.6], [130.8,-10.9], [246.9,-8.8], [329.6,-8.5],
+           [392.0,-11.5]],
+    duree:1.6, ecart:0.6, coupure:166, pente:-14.4, bruit:0.04,
   },
   {
-    id:'gelisol', nom:'Gélisol',
-    racine:24.5, mode:'phrygien', progression:[0,2,5,4],
-    coupure:46, pente:-11.5, bruit:0.44,
-    duree:3.4, ecart:2.4,
+    id:'cathedrale', nom:'Cathédrale', sous:'quintes de ré♯, très ouvert',
+    pedale:[],
+    gamme:[[155.6,-4.0], [233.1,-5.9], [311.1,-4.1], [349.2,-4.5],
+           [466.2,-7.1], [740.0,-6.7]],
+    duree:1.6, ecart:0.6, coupure:77, pente:-9.2, bruit:0.17,
+  },
+  {
+    id:'abysse', nom:'Abysse', sous:'sol souterrain, notes très espacées',
+    pedale:[],
+    gamme:[[98.0,-3.9], [196.0,-13.7], [220.0,-13.7], [784.0,-9.3]],
+    duree:1.4, ecart:1.5, coupure:99, pente:-7.4, bruit:0.49,
   },
 ];
 
-/* ─────────────── état ─────────────── */
+/* ═══════════════ ÉTAT ═══════════════ */
+
 const N = {
-  drone:null, id:null,
-  pedales:[], mediane:null,
-  src:null, fb1:null, fb2:null, gb:null,
-  horloge:null, horlogeEvt:null, horlogeAccord:null, retourMaree:null,
-  accord:0, dernierDegre:null,
-  grondement:null,
+  drone:null, dernier:null, horloge:null,
+  pedales:[], bruitSrc:null, bruitG:null, f1:null, f2:null,
+  bus:null, gain:null,
+  gen:0,                    // génération : invalide les rappels d'un ancien drone
   enTransition:false,
 };
 
 export const nomNappe = () => N.drone ? N.drone.nom : '—';
 
-/* ─────────────── voix ─────────────── */
+const droneDe = id => DRONES.find(d => d.id === id) || DRONES[0];
+
+/* ═══════════════ UNE NOTE ═══════════════ */
 
 /**
- * Une note tenue, deux oscillateurs légèrement désaccordés qui battent.
- * @param opts.attaque / opts.relache pour les apparitions lentes.
+ * Une note de l'arpège, ou de la pédale.
+ *
+ * Deux oscillateurs désaccordés de ±3 cents : c'est ce qui donne l'épaisseur.
+ * Un seul sonne comme un test de tonalité.
+ *
+ * L'enveloppe est exponentielle des deux côtés — jamais linéaire, jamais
+ * jusqu'à zéro. `exponentialRampToValueAtTime(0)` est interdit par la norme et
+ * lève une exception ; 0,0001 est inaudible et légal.
  */
-function jouerNote(freq, db, duree, gmax, opts){
-  opts = opts || {};
-  const ctx = A.ctx, t = ctx.currentTime;
-  const att = opts.attaque || Math.min(duree*0.45, 1.4);
-  const rel = opts.relache || duree*0.9;
-  const cible = Math.max(0.0002, dbG(db) * gmax);
+function jouerNote(freq, db, duree, attaque){
+  const ctx = A.ctx;
+  if(!ctx || !N.bus) return;
+  const t = ctx.currentTime;
+  const relache = Math.max(0.4, duree * 0.55);
+  const cible = dbG(db) * SETUP.audio.gainNote;
+
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(cible, t + att);
+  g.gain.exponentialRampToValueAtTime(cible, t + attaque);
   g.gain.setValueAtTime(cible, t + duree);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + duree + rel);
-  g.connect(A.pan);
-  const oscs = [-3,3].map(cents => {
+  g.gain.exponentialRampToValueAtTime(0.0001, t + duree + relache);
+  g.connect(N.bus);
+
+  const oscs = [-3, 3].map(cents => {
     const o = ctx.createOscillator();
-    o.type = 'sine'; o.frequency.value = freq; o.detune.value = cents;
-    o.connect(g); o.start(t); o.stop(t + duree + rel + 0.2);
+    o.type = 'sine';
+    o.frequency.value = freq;
+    o.detune.value = cents;
+    o.connect(g);
+    o.start(t);
+    o.stop(t + duree + relache + 0.2);
     return o;
   });
+
+  /* Sans déconnexion explicite, les nœuds éteints s'accumulent : au bout
+     d'une heure de jeu cela fait plusieurs milliers de gains fantômes. */
   oscs[1].onended = () => { try{ g.disconnect(); }catch(e){} };
 }
 
+/* ═══════════════ L'ARPÈGE ═══════════════ */
+
 /**
- * La voix mélodique. Elle choisit un degré de L'ACCORD COURANT et une octave,
- * en privilégiant le mouvement conjoint. C'est ici que la nappe devient une
- * mélodie plutôt qu'un tirage.
+ * Le degré suivant : un pas voisin la plupart du temps, un saut parfois.
+ *
+ * C'est LE détail qui fait entendre une ligne plutôt qu'une suite de notes au
+ * hasard. Un tirage uniforme donne du bruit ; une boucle donne une comptine.
  */
-function planifierMelodie(){
-  if(!A.ctx || !N.drone) return;
-  const d = N.drone;
-  const notes = accordDe(d.mode, d.progression[N.accord]);
-
-  // pas conjoint la plupart du temps, saut d'accord parfois
-  let i;
-  if(N.dernierDegre === null) i = Math.floor(Math.random()*notes.length);
-  else {
-    const pas = (Math.random() < 0.70 ? 1 : 2) * (Math.random() < 0.5 ? -1 : 1);
-    i = (N.dernierDegre + pas + notes.length*3) % notes.length;
+function choisirIndex(n){
+  if(n <= 1) return 0;
+  if(N.dernier === null){ N.dernier = Math.floor(Math.random()*n); return N.dernier; }
+  let i = N.dernier;
+  for(let essai = 0; essai < 8 && i === N.dernier; essai++){
+    const pas = (Math.random() < 0.72 ? 1 : 2) * (Math.random() < 0.5 ? -1 : 1);
+    i = N.dernier + pas;
+    if(i < 0) i += n;
+    if(i >= n) i -= n;
   }
-  N.dernierDegre = i;
-
-  /* La mélodie plane au-dessus du grave — mais deux octaves plus bas qu'en
-     v3.0, où elle montait jusqu'à +60 demi-tons (660 Hz). À cette hauteur
-     elle sonnait « joli », pas menaçant. Entre +24 et +36, soit 80 à 220 Hz,
-     elle reste dans le registre sombre et se mêle aux pédales. */
-  const octave = 24 + [0,0,0,12,12][Math.floor(Math.random()*5)];
-  const f = hz(d.racine, notes[i] + octave);
-  const db = -7 - i*2.5 - (octave > 30 ? 4 : 0);
-
-  jouerNote(f, db, d.duree * (0.8 + Math.random()*0.5), SETUP.audio.gainNote);
-  N.horloge = setTimeout(planifierMelodie, d.ecart * (0.7 + Math.random()*0.8) * 1000);
+  N.dernier = i;
+  return i;
 }
 
-/**
- * Les pédales — le sol de la nappe.
- *
- * ── POURQUOI ÇA NE SONNAIT PAS « GRAVE » (v3.0) ────────────────────────────
- * Retour de test : « ça doit être beaucoup plus grave et flippant ».
- * Paradoxalement, c'était parce que c'était TROP bas. Les fondamentales
- * étaient à 16–27 Hz : sous le seuil d'audition, et carrément absentes de
- * n'importe quel haut-parleur d'ordinateur. On n'entendait donc pas un grave,
- * on n'entendait RIEN, et il ne restait que la voix aiguë.
- *
- * Quatre voix maintenant, dont une seule est un vrai sub :
- *   −12 dt   le SUB à la fréquence réelle du drone : on le sent, on ne
- *            l'entend pas. Il donne le poids.
- *     0      la tonique remontée d'une octave — 33 à 55 Hz, LE grave audible
- *    +7      la quinte, même octave
- *   +13      la neuvième mineure, très en retrait : c'est l'intervalle qui
- *            gratte. Le « flippant » ne vient pas de la hauteur, il vient de
- *            la dissonance tenue.
- */
+function planifier(){
+  if(!A.ctx || !N.drone) return;
+  const d = N.drone;
+  const [f, db] = d.gamme[choisirIndex(d.gamme.length)];
+
+  /* Durée et écart tirés AUTOUR des valeurs relevées. Une cadence
+     parfaitement régulière s'entend comme une horloge, et une horloge dans un
+     souterrain, on l'écoute au lieu de l'oublier. */
+  const duree = d.duree * (0.8 + Math.random()*0.5);
+  jouerNote(f * TRANSPOSITION, db, duree, 0.30);
+
+  const ecart = d.ecart * (0.7 + Math.random()*0.8);
+  N.horloge = setTimeout(planifier, ecart * 1000);
+}
+
+/* ═══════════════ LA PÉDALE ═══════════════ */
+
 function monterPedale(d){
   const ctx = A.ctx, t = ctx.currentTime;
-  //            demi-tons, dB, type d'onde
-  const voix = [
-    [-12, -3.0, 'sine'],      // sub : le poids
-    [ 12, -5.5, 'sine'],      // tonique audible
-    [ 19, -11.0,'sine'],      // quinte
-    [ 25, -19.0,'triangle'],  // neuvième mineure : la dissonance qui gratte
-  ];
-  N.pedales = voix.map(([demi, db, type], i) => {
-    const f = hz(d.racine, demi);
-    const g = ctx.createGain(), cible = dbG(db) * SETUP.audio.gainPedale;
+  N.pedales = d.pedale.map(([f, db], i) => {
+    const g = ctx.createGain();
+    const cible = dbG(db) * SETUP.audio.gainPedale;
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(cible, t + 11);
-    g.connect(A.pan);
-    // deux oscillateurs désaccordés : ils battent, et le battement respire
-    const oscs = [-4, 4].map(c => {
+    g.gain.exponentialRampToValueAtTime(cible, t + SETUP.audio.attaquePedale);
+    g.connect(N.bus);
+
+    const oscs = [-3, 3].map(cents => {
       const o = ctx.createOscillator();
-      o.type = type; o.frequency.value = f; o.detune.value = c;
-      o.connect(g); o.start(t); return o;
+      o.type = 'sine';
+      o.frequency.value = f * TRANSPOSITION;
+      o.detune.value = cents;
+      o.connect(g);
+      o.start(t);
+      return o;
     });
-    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.043 + i*0.017;
-    const prof = ctx.createGain(); prof.gain.value = cible*0.26;
-    lfo.connect(prof).connect(g.gain); lfo.start(t);
+
+    // Elle respire très lentement, sinon elle s'entend comme une sirène.
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.043 + i * 0.017;
+    const prof = ctx.createGain();
+    prof.gain.value = cible * 0.22;
+    lfo.connect(prof).connect(g.gain);
+    lfo.start(t);
+
     return {g, oscs, lfo};
   });
 }
 
-/**
- * La voix médiane : elle tient la TIERCE de l'accord courant, deux octaves
- * au-dessus de la pédale. C'est elle qui porte la couleur — mineure, ou
- * diminuée en locrien. Elle glisse d'un accord au suivant.
- */
-function monterMediane(d){
-  const ctx = A.ctx, t = ctx.currentTime;
-  const notes = accordDe(d.mode, d.progression[0]);
-  const g = ctx.createGain();
-  const cible = dbG(-13) * SETUP.audio.gainPedale;
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(cible, t + 14);
-  g.connect(A.pan);
-  const oscs = [-4, 4].map(c => {
-    const o = ctx.createOscillator();
-    o.type = 'triangle';                 // un peu d'harmoniques : moins lisse
-    o.frequency.value = hz(d.racine, notes[1] + 12);
-    o.detune.value = c; o.connect(g); o.start(t); return o;
-  });
-  N.mediane = {g, oscs};
-}
+/* ═══════════════ LE LIT DE BRUIT ═══════════════ */
 
-/**
- * Avance d'un accord. La médiane glisse vers sa nouvelle tierce en
- * SETUP.audio.accordFondu secondes — c'est le mouvement harmonique qu'on
- * entend, et c'est ce qui manquait complètement en v2.
- */
-function avancerAccord(){
-  if(!A.ctx || !N.drone) return;
-  const d = N.drone;
-  N.accord = (N.accord + 1) % d.progression.length;
-  const notes = accordDe(d.mode, d.progression[N.accord]);
-  if(N.mediane){
-    const t = A.ctx.currentTime, f = hz(d.racine, notes[1] + 12);
-    N.mediane.oscs.forEach(o =>
-      o.frequency.setTargetAtTime(f, t, SETUP.audio.accordFondu/3));
-  }
-  const [a,b] = SETUP.audio.accordDuree;
-  N.horlogeAccord = setTimeout(avancerAccord, (a + Math.random()*(b-a)) * 1000);
-}
-
-/* ─────────────── lit de bruit ─────────────── */
-
-function construireBruit(d){
+function monterBruit(d){
   const ctx = A.ctx;
   const src = ctx.createBufferSource();
-  src.buffer = bruitBuffer(ctx, 8); src.loop = true;
+  src.buffer = bruitBuffer(ctx, 6);
+  src.loop = true;
+
+  /* Un biquad passe-bas vaut −12 dB/octave. La pente relevée dit combien il
+     en faut : au-delà de −13, un seul filtre ne suffit pas. */
   const f1 = ctx.createBiquadFilter();
-  f1.type = 'lowpass'; f1.frequency.value = d.coupure; f1.Q.value = d.pente > -10 ? 0.4 : 0.7;
-  let out = f1, f2 = null;
+  f1.type = 'lowpass';
+  f1.frequency.value = d.coupure;
+  f1.Q.value = d.pente > -10 ? 0.4 : 0.7;
+  src.connect(f1);
+  let sortie = f1;
+
+  let f2 = null;
   if(d.pente <= -13){
     f2 = ctx.createBiquadFilter();
-    f2.type = 'lowpass'; f2.frequency.value = d.coupure*1.3; f2.Q.value = 0.5;
-    f1.connect(f2); out = f2;
+    f2.type = 'lowpass';
+    f2.frequency.value = d.coupure * 1.3;
+    f2.Q.value = 0.5;
+    sortie.connect(f2);
+    sortie = f2;
   }
-  const g = ctx.createGain(); g.gain.value = d.bruit * 0.34;
-  src.connect(f1); out.connect(g); g.connect(A.pan); src.start();
-  N.src = src; N.fb1 = f1; N.fb2 = f2; N.gb = g;
-}
 
-/* ─────────────── événements lents ─────────────── */
-
-/* La cloche : une note de l'accord courant, très haut, très loin. 6 s
-   d'attaque — une apparition, jamais une frappe. */
-function evtCloche(){
-  const d = N.drone;
-  const notes = accordDe(d.mode, d.progression[N.accord]);
-  const n = notes[Math.floor(Math.random()*notes.length)];
-  jouerNote(hz(d.racine, n + 48), -22, 4, SETUP.audio.gainNote, {attaque:6, relache:12});
-}
-
-/* La marée : la coupure du lit de bruit s'ouvre lentement puis se referme.
-   Le fond « respire ». */
-function evtMaree(){
-  const gen = A.gen, base = N.drone.coupure;
-  N.fb1.frequency.setTargetAtTime(base*3, A.ctx.currentTime, 8);
-  if(N.fb2) N.fb2.frequency.setTargetAtTime(base*3.9, A.ctx.currentTime, 8);
-  N.retourMaree = setTimeout(() => {
-    if(!A.ctx || gen !== A.gen || !N.fb1) return;
-    N.fb1.frequency.setTargetAtTime(base, A.ctx.currentTime, 8);
-    if(N.fb2) N.fb2.frequency.setTargetAtTime(base*1.3, A.ctx.currentTime, 8);
-  }, 25000);
-}
-
-/* Le soupir : un glissando descendant très lent sur la quinte diminuée. Le son
-   le plus explicitement inquiétant de la nappe. Nouveau en v3. */
-function evtSoupir(){
-  const d = N.drone, ctx = A.ctx, t = ctx.currentTime;
-  const o = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter();
-  o.type = 'triangle';
-  o.frequency.setValueAtTime(hz(d.racine, 30), t);
-  o.frequency.exponentialRampToValueAtTime(hz(d.racine, 18), t + 9);
-  f.type = 'lowpass'; f.frequency.value = 340; f.Q.value = 2.2;
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(dbG(-16)*SETUP.audio.gainNote, t + 3.5);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 11);
-  o.connect(f).connect(g).connect(A.pan);
-  o.start(t); o.stop(t + 11.5);
-  o.onended = () => { try{ g.disconnect(); }catch(e){} };
-}
-
-function planifierEvt(premier){
-  clearTimeout(N.horlogeEvt);
-  const min = premier ? 0.5 + Math.random()*1.0 : 1.4 + Math.random()*3;
-  const gen = A.gen;
-  N.horlogeEvt = setTimeout(() => {
-    if(gen !== A.gen) return;
-    const lot = [evtCloche, evtSoupir];
-    if(N.drone.bruit >= 0.10 && N.fb1) lot.push(evtMaree);
-    try{ lot[Math.floor(Math.random()*lot.length)](); }catch(e){}
-    planifierEvt(false);
-  }, min * 60000);
-}
-
-/* ─────────────── montage / démontage ─────────────── */
-
-/**
- * LE GRONDEMENT — nouveau en v3.1.
- * Un bruit brun passé dans un passe-bas très résonant qui balaie lentement
- * entre 40 et 110 Hz. Ce n'est pas une note : c'est une masse qui bouge sous
- * le sol. C'est ce qui manquait pour que la nappe soit inquiétante en
- * permanence plutôt que seulement triste.
- */
-function monterGrondement(d){
-  const ctx = A.ctx, t = ctx.currentTime;
-  const src = ctx.createBufferSource();
-  src.buffer = bruitBrunBuffer(ctx, 11); src.loop = true;
-  const f1 = ctx.createBiquadFilter();
-  f1.type = 'lowpass'; f1.frequency.value = 70; f1.Q.value = 9;
-  const g = ctx.createGain(); g.gain.value = 0.0001;
-  g.gain.exponentialRampToValueAtTime(0.34, t + 9);
-  src.connect(f1).connect(g).connect(A.pan);
-  // balayage très lent : le sol respire
-  const lfo = ctx.createOscillator(); lfo.frequency.value = 0.023;
-  const prof = ctx.createGain(); prof.gain.value = 34;
-  lfo.connect(prof).connect(f1.frequency); lfo.start(t);
+  const g = ctx.createGain();
+  g.gain.value = d.bruit * SETUP.audio.gainBruit;
+  sortie.connect(g).connect(N.bus);
   src.start();
-  N.grondement = {src, g, lfo, f1};
+
+  N.bruitSrc = src; N.bruitG = g; N.f1 = f1; N.f2 = f2;
 }
 
-function monterDrone(d){
-  N.drone = d; N.id = d.id; N.dernierDegre = null; N.accord = 0;
-  monterPedale(d);
-  monterMediane(d);
-  monterGrondement(d);
-  construireBruit(d);
-  planifierMelodie();
-  planifierEvt(true);
-  const [a,b] = SETUP.audio.accordDuree;
-  N.horlogeAccord = setTimeout(avancerAccord, (a + Math.random()*(b-a)) * 1000);
-}
+/* ═══════════════ MONTER, DESCENDRE ═══════════════ */
 
-function descendreDrone(apres){
+function demonter(){
+  clearTimeout(N.horloge); N.horloge = null;
   const ctx = A.ctx;
-  if(!ctx){ if(apres) apres(); return; }
-  [N.horloge, N.horlogeEvt, N.horlogeAccord, N.retourMaree].forEach(clearTimeout);
-  N.horloge = N.horlogeEvt = N.horlogeAccord = N.retourMaree = null;
+  if(!ctx) return;
+  const t = ctx.currentTime;
 
-  const t = ctx.currentTime, rel = 3.5;
-  const eteindre = v => { try{
-    v.g.gain.cancelScheduledValues(t);
-    v.g.gain.setValueAtTime(Math.max(0.0001, v.g.gain.value), t);
-    v.g.gain.exponentialRampToValueAtTime(0.0001, t + rel);
-    v.oscs.forEach(o => o.stop(t + rel + 0.3));
-    if(v.lfo) v.lfo.stop(t + rel + 0.3);
-  }catch(e){} };
+  for(const p of N.pedales){
+    try{
+      p.g.gain.cancelScheduledValues(t);
+      p.g.gain.setValueAtTime(Math.max(0.0001, p.g.gain.value), t);
+      p.g.gain.exponentialRampToValueAtTime(0.0001, t + 2.0);
+      p.oscs.forEach(o => o.stop(t + 2.3));
+      p.lfo.stop(t + 2.3);
+    }catch(e){}
+  }
+  N.pedales = [];
 
-  N.pedales.forEach(eteindre);
-  if(N.mediane) eteindre(N.mediane);
-  if(N.gb){ try{
-    N.gb.gain.cancelScheduledValues(t);
-    N.gb.gain.setValueAtTime(N.gb.gain.value, t);
-    N.gb.gain.linearRampToValueAtTime(0.0001, t + rel);
-    N.src.stop(t + rel + 0.3);
-  }catch(e){} }
-
-  if(N.grondement){ try{
-    N.grondement.g.gain.cancelScheduledValues(t);
-    N.grondement.g.gain.setValueAtTime(N.grondement.g.gain.value, t);
-    N.grondement.g.gain.linearRampToValueAtTime(0.0001, t + rel);
-    N.grondement.src.stop(t + rel + 0.3);
-    N.grondement.lfo.stop(t + rel + 0.3);
-  }catch(e){} }
-
-  N.pedales = []; N.mediane = null; N.grondement = null;
-  N.src = N.gb = N.fb1 = N.fb2 = null;
-  if(apres) setTimeout(apres, (rel + 0.4) * 1000);
+  if(N.bruitG){
+    try{
+      N.bruitG.gain.cancelScheduledValues(t);
+      N.bruitG.gain.setValueAtTime(Math.max(0.0001, N.bruitG.gain.value), t);
+      N.bruitG.gain.exponentialRampToValueAtTime(0.0001, t + 2.0);
+      N.bruitSrc.stop(t + 2.3);
+    }catch(e){}
+  }
+  N.bruitSrc = N.bruitG = N.f1 = N.f2 = null;
+  N.dernier = null;
 }
 
-/* ─────────────── API ─────────────── */
+function monter(d){
+  const ctx = A.ctx;
+  if(!ctx) return;
+  N.drone = d;
+
+  if(!N.bus){
+    N.bus = ctx.createGain();
+    N.bus.gain.value = 1;
+    N.bus.connect(A.pan);
+  }
+  monterPedale(d);
+  monterBruit(d);
+  planifier();
+}
+
+/* ═══════════════ INTERFACE ═══════════════ */
 
 export function demarrerNappe(id){
-  monterDrone(DRONES.find(d => d.id === id) || DRONES[0]);
+  if(!A.ctx) return;
+  demonter();
+  monter(droneDe(id));
 }
 
-/** Fondu sortant puis entrant. Jamais de morphose : c'est la règle. */
+/**
+ * Change de drone.
+ *
+ * RÈGLE : un drone ne se transforme jamais en un autre. On éteint
+ * complètement, puis on rallume. Interpoler entre deux tables de fréquences
+ * relevées ne donne rien de musical — juste une bouillie pendant dix secondes.
+ * Marcher d'un biome à l'autre EST le geste, et il doit s'entendre.
+ */
 export function changerNappe(id){
-  const d = DRONES.find(x => x.id === id) || DRONES[0];
-  if(!A.ctx || N.enTransition || d.id === N.id) return;
-  N.enTransition = true; N.id = d.id;
-  const gen = A.gen;
-  descendreDrone(() => {
-    if(gen !== A.gen) return;
+  if(!A.ctx) return;
+  if(N.drone && N.drone.id === id) return;
+  if(N.enTransition) return;
+
+  N.enTransition = true;
+  const gen = ++N.gen;
+  demonter();
+  setTimeout(() => {
+    if(gen !== N.gen){ N.enTransition = false; return; }
+    monter(droneDe(id));
     N.enTransition = false;
-    monterDrone(d);
-  });
+  }, 2400);
 }
 
-/** Un accroc bref dans la nappe : elle vient de te repérer. */
+/**
+ * Un accroc : la nappe se fige une seconde, puis reprend.
+ *
+ * Utilisé quand la créature passe tout près. Ce n'est pas un effet sonore,
+ * c'est une ABSENCE : on remarque le silence d'un fond qu'on avait cessé
+ * d'entendre, et c'est bien plus efficace qu'un bruit de plus.
+ */
 export function accroc(){
-  if(!A.ctx || !N.drone) return;
+  if(!A.ctx || !N.bus) return;
   const t = A.ctx.currentTime;
-  N.pedales.forEach(v => {
-    try{
-      const g = v.g.gain.value;
-      v.g.gain.cancelScheduledValues(t);
-      v.g.gain.setValueAtTime(g, t);
-      v.g.gain.linearRampToValueAtTime(g*0.15, t + 0.08);
-      v.g.gain.setTargetAtTime(g, t + 0.5, 1.4);
-    }catch(e){}
-  });
+  const g = N.bus.gain;
+  g.cancelScheduledValues(t);
+  g.setValueAtTime(g.value, t);
+  g.exponentialRampToValueAtTime(0.06, t + 0.10);
+  g.exponentialRampToValueAtTime(1.0, t + 1.30);
 }
